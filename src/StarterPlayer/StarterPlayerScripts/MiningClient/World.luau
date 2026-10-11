@@ -122,6 +122,7 @@ function World.new(ctx)
  -- Break + rebuild sequence (also used by the owner's Mine module, which passes the fresh
  -- server state so the new pile does not wait for attribute replication).
  function self.PlayBreak(view,local2D,state)
+  if not view.Core then return end -- streamed out: the pile is rebuilt when the core returns
   local def=view.Def or oreDef(view.Corner:GetAttribute('BrokenId'))
   local cf=pileCF(view)
   local center=(cf and cf.Position or view.Core.Position)+Vector3.new(0,3.2,0)
@@ -212,7 +213,7 @@ function World.new(ctx)
  local function applyPromptAccess(view)
   local owner=isOwner(view.Corner)
   local busy=(ctx.Mine and ctx.Mine.Active)or(ctx.Gym and ctx.Gym.Active)
-  for _,p in ipairs(view.Prompts)do
+  for p in pairs(view.Prompts)do
    local want=owner and not busy
    if p.Enabled~=want then p.Enabled=want end
   end
@@ -251,10 +252,16 @@ function World.new(ctx)
   end
  end
 
- local prompts={} -- ProximityPrompt -> {Kind, Corner}
+ local KIND={MiningOrePrompt='Ore',MiningOreClick='Ore',MiningPickaxeShopPrompt='Shop',MiningPickaxeShopClick='Shop',
+  MiningStrengthPrompt='Gym',MiningStrengthClick='Gym'}
+ local attach -- defined below
+ -- Prompts are resolved from the prompt itself, so E works even for pieces that streamed in
+ -- after the corner was attached.
  game:GetService('ProximityPromptService').PromptTriggered:Connect(function(prompt)
-  local row=prompts[prompt]
-  if row then self.Trigger(row.Kind,row.Corner)end
+  local kind=KIND[prompt.Name];if not kind or not prompt:IsA('ProximityPrompt')then return end
+  local corner=prompt:FindFirstAncestor('MiningCorner');if not corner then return end
+  if not self.Views[corner]then attach(corner)end
+  self.Trigger(kind,corner)
  end)
  local function trigger(kind,corner)
   if not isOwner(corner)then if ctx.Hud then ctx.Hud.Toast(Text.Get('NOT_YOURS'),ctx.U.Colors.red)end;return end
@@ -277,7 +284,7 @@ function World.new(ctx)
   if isOwner(corner)and ctx.Mine and ctx.Mine.Active then return end
   if ctx.Anim then ctx.Anim.RemoteHit(corner)end
   local cam=workspace.CurrentCamera
-  if not cam or(cam.CFrame.Position-view.Core.Position).Magnitude>90 then return end
+  if not cam or not view.Core or(cam.CFrame.Position-view.Core.Position).Magnitude>90 then return end
   local att=self.HitPoint(view,cam.CFrame.Position)
   if att and view.Def then
    local tier=M.Pickaxes[corner:GetAttribute('PickaxeLevel')or 1]
@@ -311,31 +318,65 @@ function World.new(ctx)
   self.UpdateLabel(view,state)
  end
 
- local function attach(corner)
-  if self.Views[corner]then return end
-  local core=corner:WaitForChild('MiningOreCore',10);if not core or not corner.Parent then return end
-  core:WaitForChild('OreRoot',5)
-  local view={Corner=corner,Core=core,Prompts={},Connections={},HitPoints={},Serial=-1,
+ -- StreamingEnabled: the MiningCorner model can reach this client long before its parts (players
+ -- spawn ~260 studs away), and parts stream out and back in. So the view exists as soon as the
+ -- model does, every piece is registered when it arrives, and the pile is built whenever the
+ -- ore core is present (and removed when it streams out). Nothing here waits or gives up.
+ local function syncCore(view)
+  if self.Views[view.Corner]~=view then return end
+  local core=view.Corner:FindFirstChild('MiningOreCore')
+  local ready=core and core:IsA('BasePart')and core:FindFirstChild('OreRoot')~=nil
+  if ready then
+   if view.Core~=core then
+    destroyPile(view);view.Core=core
+    if view.Label then view.Label.Adornee=core end
+   end
+   if not view.Pile then buildPile(view,false)end
+  elseif view.Core then
+   destroyPile(view);view.Core=nil
+   if view.Label then view.Label.Adornee=nil end
+   if ctx.Mine and ctx.Mine.Corner==view.Corner then ctx.Mine.Exit('streamed')end
+  end
+ end
+ local function register(view,d)
+  local corner=view.Corner
+  if d:IsA('ProximityPrompt')and KIND[d.Name]then
+   if view.Prompts[d]then return end
+   view.Prompts[d]=d:GetPropertyChangedSignal('Enabled'):Connect(function()applyPromptAccess(view)end)
+   localizePrompt(d)
+  elseif d:IsA('ClickDetector')and KIND[d.Name]then
+   if view.Clicks[d]then return end
+   view.Clicks[d]=d.MouseClick:Connect(function(who)
+    if who~=player then return end
+    if (ctx.Mine and ctx.Mine.Active)or(ctx.Gym and ctx.Gym.Active)or ctx.MenuOpen()then return end
+    trigger(KIND[d.Name],corner)
+   end)
+  end
+ end
+ local function unregister(view,d)
+  local c=view.Prompts[d]or view.Clicks[d]
+  if c then c:Disconnect();view.Prompts[d]=nil;view.Clicks[d]=nil end
+ end
+ -- Pieces arrive in bursts: refresh signs, rack, prompt access and the pile once per burst.
+ local function queueRefresh(view)
+  if view.RefreshQueued then return end
+  view.RefreshQueued=true
+  task.defer(function()
+   view.RefreshQueued=false
+   if self.Views[view.Corner]~=view then return end
+   localizeSigns(view.Corner);updateRack(view);applyPromptAccess(view);syncCore(view)
+  end)
+ end
+
+ function attach(corner)
+  if self.Views[corner]or not corner:IsDescendantOf(workspace)then return self.Views[corner]end
+  local view={Corner=corner,Core=nil,Prompts={},Clicks={},Connections={},HitPoints={},Serial=-1,
    HitSerial=corner:GetAttribute('HitSerial')or 0,BreakSerial=corner:GetAttribute('BreakSerial')or 0}
   self.Views[corner]=view
-  for _,d in ipairs(corner:GetDescendants())do
-   if d:IsA('ProximityPrompt')then
-    table.insert(view.Prompts,d);localizePrompt(d)
-    table.insert(view.Connections,d:GetPropertyChangedSignal('Enabled'):Connect(function()applyPromptAccess(view)end))
-    prompts[d]={Kind=d.Name=='MiningOrePrompt'and'Ore'or d.Name=='MiningPickaxeShopPrompt'and'Shop'or'Gym',Corner=corner}
-   elseif d:IsA('ClickDetector')then
-    table.insert(view.Connections,d.MouseClick:Connect(function(who)
-     if who~=player then return end
-     if (ctx.Mine and ctx.Mine.Active)or(ctx.Gym and ctx.Gym.Active)or ctx.Main:GetAttribute('OpenMenu')~=nil then return end
-     trigger(d.Name=='MiningOreClick'and'Ore'or d.Name=='MiningPickaxeShopClick'and'Shop'or'Gym',corner)
-    end))
-   end
-  end
-  localizeSigns(corner)
-  applyPromptAccess(view)
-  updateRack(view)
-  buildPile(view,false)
-  view.Serial=corner:GetAttribute('OreSerial')or 0
+  for _,d in ipairs(corner:GetDescendants())do register(view,d)end
+  table.insert(view.Connections,corner.DescendantAdded:Connect(function(d)register(view,d);queueRefresh(view)end))
+  table.insert(view.Connections,corner.DescendantRemoving:Connect(function(d)unregister(view,d);queueRefresh(view)end))
+  localizeSigns(corner);updateRack(view);applyPromptAccess(view);syncCore(view)
   -- One update changes several attributes; read them together once they have all arrived.
   local orePending=false
   local function queueOre()
@@ -358,18 +399,21 @@ function World.new(ctx)
   if ctx.Anim then ctx.Anim.RemoteTraining(corner,false)end
   table.insert(view.Connections,corner:GetAttributeChangedSignal('HitSerial'):Connect(function()onHit(view)end))
   table.insert(view.Connections,corner:GetAttributeChangedSignal('OwnerUserId'):Connect(function()
-   applyPromptAccess(view);updateRack(view);buildPile(view,false)
+   applyPromptAccess(view);updateRack(view);if view.Core then buildPile(view,false)end
   end))
   table.insert(view.Connections,corner:GetAttributeChangedSignal('WeightOwned'):Connect(function()updateRack(view)end))
   table.insert(view.Connections,corner.AncestryChanged:Connect(function()
    if not corner:IsDescendantOf(workspace)then self.Detach(corner)end
   end))
+  if ctx.Log then ctx.Log('corner attached: '..corner:GetFullName()..' (ore core streamed in: '..tostring(view.Core~=nil)..')')end
+  return view
  end
  function self.Detach(corner)
   local view=self.Views[corner];if not view then return end
   self.Views[corner]=nil
   for _,c in ipairs(view.Connections)do c:Disconnect()end
-  for p in pairs(prompts)do if prompts[p].Corner==corner then prompts[p]=nil end end
+  for _,c in pairs(view.Prompts)do c:Disconnect()end
+  for _,c in pairs(view.Clicks)do c:Disconnect()end
   destroyPile(view)
   if view.Label then view.Label:Destroy()end
   if view.ScaleValue then view.ScaleValue:Destroy()end

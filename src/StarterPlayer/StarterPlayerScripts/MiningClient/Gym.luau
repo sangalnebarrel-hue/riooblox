@@ -326,14 +326,14 @@ function Gym.new(ctx)
  -- ENTER / EXIT -----------------------------------------------------------------------------
  function self.Enter(corner)
   if self.Active or(ctx.Mine and ctx.Mine.Active)then return end
-  if ctx.Main:GetAttribute('OpenMenu')~=nil then return end
+  if ctx.MenuOpen()then Hud.Toast(Text.L('Close the menu first','Сначала закрой меню'),U.Colors.gold);return end
   local token={};self.Token=token
   self.Active=true;self.Corner=corner;lastActivity=os.clock();height=0;holding=false
   World.RefreshPrompts()
   local ok,msg=Net.Invoke('MiningTrainBegin',{})
   -- Re-validate after the round-trip (menu opened, yard changed hands or Exit ran meanwhile).
   local current=self.Token==token and self.Active
-  if not ok or not current or ctx.Main:GetAttribute('OpenMenu')~=nil or not corner:IsDescendantOf(workspace)
+  if not ok or not current or ctx.MenuOpen()or not corner:IsDescendantOf(workspace)
    or corner:GetAttribute('OwnerUserId')~=player.UserId then
    if current then
     self.Active=false;self.Corner=nil;self.Token=nil;World.RefreshPrompts()

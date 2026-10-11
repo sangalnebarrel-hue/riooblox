@@ -87,7 +87,8 @@ local function build(yard:Model):Model
  if existing then existing:Destroy()end
  local root=Instance.new('Model');root.Name='MiningCorner'
  -- Streams as one piece; always present for the owner once AddPersistentPlayer is called.
- pcall(function()root.ModelStreamingMode=Enum.ModelStreamingMode.PersistentPerPlayer end)
+ local okMode,errMode=pcall(function()root.ModelStreamingMode=Enum.ModelStreamingMode.PersistentPerPlayer end)
+ if not okMode then warn('DOGROTS mining: ModelStreamingMode not set on '..yard.Name..': '..tostring(errMode))end
  local cf,sx=placement(yard)
  local function at(k,h,d)return cf*CFrame.new(sx*k,h,-d)end -- k: towards kennels, d: towards walkway
  root:SetAttribute('LayoutVersion',LAYOUT_VERSION)
@@ -277,7 +278,8 @@ local function bind(yard,player)
  end))
  table.insert(b.Connections,player.CharacterAdded:Connect(function()task.wait(.5);if bindings[yard]==b then syncHeld(player)end end))
  -- The owner always has their own corner streamed in (tutorial markers, mining from afar).
- pcall(function()root:AddPersistentPlayer(player)end)
+ local okPersist,errPersist=pcall(function()root:AddPersistentPlayer(player)end)
+ if not okPersist then warn('DOGROTS mining: AddPersistentPlayer failed for '..yard.Name..': '..tostring(errPersist))end
  apply(root,player);setPrompts(root,true);syncHeld(player)
 end
 
