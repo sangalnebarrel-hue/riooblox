@@ -2,7 +2,7 @@
 -- Instances are disposable projections. Placed/Ready reservations survive death, rejoin and server changes; only a manual Open grants a dog.
 local RS=game:GetService('ReplicatedStorage');local Players=game:GetService('Players');local Http=game:GetService('HttpService')
 local R=require(script.Parent.Rules);local C=require(RS.LuckyLifecycleConfig);local Blocks=require(RS.LuckyBlockConfig);local Dogs=require(script.Parent.DogDefinitions)
-local Commerce=require(script.Parent.YardCommerce);local Visual=require(RS.LuckyBlockVisuals)
+local Commerce=require(script.Parent.YardCommerce);local Visual=require(RS.LuckyBlockVisuals);local Show=require(RS:WaitForChild('Lucky'):WaitForChild('LuckyShow'))
 local L={Models={},Opening={},Retries={},Presented={},ReadyTimers={}};local random=Random.new()
 local function rt()return require(script.Parent.Runtime)end
 local function rewards()return require(script.Parent.RewardService)end
@@ -216,11 +216,20 @@ function L.Open(player,a)
   -- Presentation is the critical path: tell the client before doing any full
   -- projection/reconciliation or persistence work.
   local model=L.Models[player.UserId..':'..uid]
-  if model then model:SetAttribute('BlockState','Opened');task.delay(.55,function()if model.Parent then model:Destroy()end end);L.Models[player.UserId..':'..uid]=nil end
-  -- A Secret first walks out of the block on its pad (everyone sees its arrival);
-  -- the opener's reward card follows once the arrival has landed.
-  local cardDelay=0
   local dog=type(result)=='table'and result.Dog
+  if model then
+   -- Spectator presentation (client LuckyLifecycleFX): what popped out, and when.
+   if dog then
+    local def=Dogs[dog.DogId]
+    model:SetAttribute('RewardDogId',dog.DogId);model:SetAttribute('RewardRank',def and def.Rank or 1)
+    model:SetAttribute('RewardVariant',tostring(dog.Variant or'Normal'));model:SetAttribute('RewardName',tostring(dog.DisplayName or(def and def.DisplayName)or dog.DogId))
+   end
+   model:SetAttribute('OpenedAt',workspace:GetServerTimeNow())
+   model:SetAttribute('BlockState','Opened');task.delay(.55,function()if model.Parent then model:Destroy()end end);L.Models[player.UserId..':'..uid]=nil
+  end
+  -- A Secret walks out of the block on its pad (everyone sees its arrival) once the opener's
+  -- roulette has landed: the card goes out now carrying RevealAt, the cinematic starts then.
+  local revealAt
   local Reveal=require(script.Parent.Parent.SecretReveal)
   if dog and Dogs[dog.DogId]and Dogs[dog.DogId].Rank==6 and Reveal.Has(dog.DogId)and not L.Presented[uid]then
    local pad=Commerce.Yard(player)
@@ -228,14 +237,20 @@ function L.Open(player,a)
    if pad and pad:IsA('BasePart')then
     local root=player.Character and player.Character:FindFirstChild('HumanoidRootPart')
     local ground=pad.Position+Vector3.new(0,pad.Size.Y/2,0)
-    local ok,shown=pcall(Reveal.Show,dog.DogId,ground,root and root.Position-ground or pad.CFrame.LookVector,{Venue='Yard',By=player.DisplayName})
-    if ok and shown then cardDelay=math.max(0,Reveal.Hold(dog.DogId)-.8)end
+    local facing=root and root.Position-ground or pad.CFrame.LookVector
+    local lead=Show.Timing.SecretReveal;revealAt=workspace:GetServerTimeNow()+lead
+    task.delay(lead,function()
+     local ok,err=pcall(Reveal.Show,dog.DogId,ground,facing,{Venue='Yard',By=player.DisplayName})
+     if not ok then warn('Lucky Secret reveal failed:',err)end
+    end)
    end
   end
   if not L.Presented[uid]then
    L.Presented[uid]=true
-   local function card()if player.Parent then RS.RewardPresentation:FireClient(player,{OpenedBlock=result,Cue='Open'})end end
-   if cardDelay>0 then task.delay(cardDelay,card)else card()end
+   -- RevealAt is presentation only: copy so the saved receipt/history never carry it.
+   local payload=result
+   if revealAt and type(result)=='table'then payload=table.clone(result);payload.RevealAt=revealAt end
+   if player.Parent then RS.RewardPresentation:FireClient(player,{OpenedBlock=payload,Cue='Open'})end
   end
   task.defer(function()
    if not player.Parent then return end

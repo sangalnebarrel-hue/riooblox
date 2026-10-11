@@ -345,7 +345,12 @@ local function spawnBlock(forced)
   local n=rng:NextNumber()*total
   for i,w in ipairs(weights)do n-=w;if n<0 then tier=BlockConfig.Rarities[i];break end end
  end
- local model=BlockVisuals.Build(tier or 'Common');weldToRoot(model);model.Parent=active
+ local model=BlockVisuals.Build(tier or 'Common');weldToRoot(model)
+ -- Clients stream the whole block in at once and time its arrival FX from SpawnedAt.
+ local atomic,err=pcall(function()model.ModelStreamingMode=Enum.ModelStreamingMode.Atomic end)
+ if not atomic then warn('DOG LINE: atomic block streaming unavailable',err)end
+ model:SetAttribute('SpawnedAt',workspace:GetServerTimeNow())
+ model.Parent=active
  movePivot(model,pivotAt(model,linePosition(spawnPoint),facing(endPoint.Position-spawnPoint.Position,Vector3.zAxis)))
  Blocks.Register(model,tier or 'Common');lineTween(model)
  billboard(model,{DisplayName=(tier or 'Common')..' BLOCK',Rarity=tier,Price=BlockConfig.ConveyorPrices[tier]})

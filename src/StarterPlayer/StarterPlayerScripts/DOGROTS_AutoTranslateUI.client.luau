@@ -1915,6 +1915,23 @@ local function _startDogrotsRussianUI()
         ["—"] = "—",
         ["□ SELECT"] = "□ ВЫБРАТЬ",
         ["✓ SELECTED"] = "✓ ВЫБРАНО",
+        -- Lucky Block roulette (Modules/LuckyReel)
+        ["COMMON LUCKY BLOCK"] = "ОБЫЧНЫЙ СЧАСТЛИВЫЙ БЛОК",
+        ["RARE LUCKY BLOCK"] = "РЕДКИЙ СЧАСТЛИВЫЙ БЛОК",
+        ["EPIC LUCKY BLOCK"] = "ЭПИЧЕСКИЙ СЧАСТЛИВЫЙ БЛОК",
+        ["LEGENDARY LUCKY BLOCK"] = "ЛЕГЕНДАРНЫЙ СЧАСТЛИВЫЙ БЛОК",
+        ["MYTHIC LUCKY BLOCK"] = "МИФИЧЕСКИЙ СЧАСТЛИВЫЙ БЛОК",
+        ["SECRET LUCKY BLOCK"] = "СЕКРЕТНЫЙ СЧАСТЛИВЫЙ БЛОК",
+        ["NICE!"] = "НЕПЛОХО!",
+        ["RARE!"] = "РЕДКОЕ!",
+        ["EPIC!"] = "ЭПИЧЕСКОЕ!",
+        ["LEGENDARY!"] = "ЛЕГЕНДАРНОЕ!",
+        ["MYTHIC!!"] = "МИФИЧЕСКОЕ!!",
+        ["SECRET!!!"] = "СЕКРЕТНОЕ!!!",
+        ["YOU GOT"] = "ТЕБЕ ВЫПАЛО",
+        ["SO CLOSE!"] = "ПОЧТИ!",
+        ["WATCH YOUR YARD!"] = "СМОТРИ НА УЧАСТОК!",
+        ["Your Secret dog is arriving in your yard!"] = "Твоя секретная собака появляется на участке!",
     }
 
     local patterns = {

@@ -84,15 +84,10 @@ function S.PresentWorld(c,result)
  task.delay(math.max(0,finish-workspace:GetServerTimeNow()),finishSpin)
  c.Draw()
 end
-function S.Present(c,result)
- if result.Kind=='Block'or result.Cue=='Pickup'then return end
- if not result.Tier then return S.PresentWorld(c,result)end
- local gui=script.Parent.Parent;local Navigation=require(script.Parent.GUIIntegration)
- local rewardEpoch=Navigation.BeginReward(result.Receipt or result.BlockUid);if not rewardEpoch then return end
- local old=gui:FindFirstChild('RewardReveal');if old then old:Destroy()end
+-- The original opening card: 2 s block shake, then the dog. Used for non-dog rewards and as the
+-- fallback when the Lucky roulette (LuckyReel) cannot run.
+local function classic(c:any,result:any,overlay:any)
  Audio.Cue('buy');local U=c.U
- local overlay=U.New('Frame',{Name='RewardReveal',Size=UDim2.fromScale(1,1),BackgroundTransparency=1,ZIndex=100,Active=true},gui)
- overlay.Destroying:Connect(function()task.defer(function()Navigation.EndReward(rewardEpoch)end)end)
  local box=U.Modal(overlay,'RewardCard','OPENING…',580,480)
  local heading=box:FindFirstChild('Label');if heading then heading.Name='RewardStatus'end
  local title=U.Center(box,result.Tier:upper()..' LUCKY BLOCK',20,66,540,44,24,U.Colors.gold,true)
@@ -118,6 +113,37 @@ function S.Present(c,result)
   if t>=2 then reveal()end
  end)
  return{Reveal=reveal,Close=function()overlay:Destroy()end}
+end
+local reelLoaded,Reel=false,nil
+local function luckyReel()
+ if not reelLoaded then
+  reelLoaded=true
+  local ok,module=pcall(require,script.Parent:WaitForChild('LuckyReel',5))
+  if ok and type(module)=='table'then Reel=module else warn('[RewardScreens] LuckyReel unavailable: '..tostring(module))end
+ end
+ return Reel
+end
+task.defer(function()local reel=luckyReel();if reel then pcall(reel.Warm)end end)
+function S.Present(c,result)
+ if result.Kind=='Block'or result.Cue=='Pickup'then return end
+ if not result.Tier then return S.PresentWorld(c,result)end
+ local gui=script.Parent.Parent;local Navigation=require(script.Parent.GUIIntegration)
+ -- Lucky Block dog: the CS:GO-style roulette, landing on the server's dog. It owns the receipt
+ -- (BeginReward/EndReward) and falls back to the classic card on any error.
+ local reel=type(result.Dog)=='table'and result.Dog.DogId~=nil and luckyReel()
+ if reel then
+  local ok,handle=pcall(reel.Present,{U=c.U,Gui=gui,Navigation=Navigation,
+   Preview=function(parent,x,y,w,h)preview(c,parent,result,x,y,w,h)end,
+   Block=function(parent,x,y,w,h)return block(parent,result.Tier,x,y,w,h)end,
+   Classic=function(overlay)return classic(c,result,overlay)end},result)
+  if ok then return handle end
+  warn('[RewardScreens] LuckyReel failed: '..tostring(handle))
+ end
+ local rewardEpoch=Navigation.BeginReward(result.Receipt or result.BlockUid);if not rewardEpoch then return end
+ local old=gui:FindFirstChild('RewardReveal');if old then old:Destroy()end
+ local overlay=c.U.New('Frame',{Name='RewardReveal',Size=UDim2.fromScale(1,1),BackgroundTransparency=1,ZIndex=100,Active=true},gui)
+ overlay.Destroying:Connect(function()task.defer(function()Navigation.EndReward(rewardEpoch)end)end)
+ return classic(c,result,overlay)
 end
 local ticketPrices={};local ticketLoading={};local ticketRetry={}
 -- Bought DOG TOKENS count once the machine sells them and Roblox allows this account to use them.
