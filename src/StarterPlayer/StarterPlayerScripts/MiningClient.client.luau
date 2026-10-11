@@ -15,25 +15,39 @@ local STUDIO=RunService:IsStudio()
 -- DIAGNOSTICS ------------------------------------------------------------------------------------
 local panel=nil
 local lines={}
+local function render()
+ if not panel then return end
+ panel.Parent.Enabled=#lines>0
+ panel.Text='[Studio] DOGROTS mining (see Output):\n'..table.concat(lines,'\n',math.max(1,#lines-4))
+end
 local function report(message)
  warn('DOGROTS mining: '..message)
  if not STUDIO then return end
  table.insert(lines,message)
  if not panel then
   local g=Instance.new('ScreenGui');g.Name='MiningDiagnostics';g.ResetOnSpawn=false;g.DisplayOrder=200;g:SetAttribute('NoTranslate',true)
-  local l=Instance.new('TextLabel');l.Name='Errors';l.AnchorPoint=Vector2.new(0,1);l.Position=UDim2.new(0,8,1,-8);l.Size=UDim2.new(.6,0,0,140)
-  l.BackgroundColor3=Color3.fromRGB(60,10,20);l.BackgroundTransparency=.15;l.TextColor3=Color3.new(1,1,1);l.TextSize=13
+  local l=Instance.new('TextLabel');l.Name='Errors';l.AnchorPoint=Vector2.new(0,1);l.Position=UDim2.new(0,8,1,-8)
+  l.Size=UDim2.fromOffset(460,0);l.AutomaticSize=Enum.AutomaticSize.Y
+  l.BackgroundColor3=Color3.fromRGB(60,10,20);l.BackgroundTransparency=.25;l.TextColor3=Color3.new(1,1,1);l.TextSize=12
   l.Font=Enum.Font.Code;l.TextWrapped=true;l.TextXAlignment=Enum.TextXAlignment.Left;l.TextYAlignment=Enum.TextYAlignment.Top
   l:SetAttribute('NoTranslate',true);l.Parent=g;g.Parent=playerGui;panel=l
  end
- panel.Text='[Studio] DOGROTS mining problems (see Output):\n'..table.concat(lines,'\n',math.max(1,#lines-6))
+ render()
+end
+-- A problem that went away (e.g. something we waited for finally arrived) leaves the panel.
+local function resolved(message)
+ local i=table.find(lines,message);if not i then return end
+ table.remove(lines,i);render()
+ if STUDIO then print('DOGROTS mining: resolved: '..message)end
 end
 -- WaitForChild that says what it is waiting for instead of hanging silently.
 local function need(parent,name)
- local child=parent:WaitForChild(name,12)
+ local child=parent:WaitForChild(name,30)
  if not child then
-  report('still waiting for '..parent:GetFullName()..'.'..name)
+  local message='still waiting for '..parent:GetFullName()..'.'..name
+  report(message)
   child=parent:WaitForChild(name)
+  resolved(message)
  end
  return child
 end
@@ -113,13 +127,17 @@ for _,name in ipairs({'Net','Anim','FX','World'})do start(name)end
 if ctx.World and ctx.World.Start then load('World.Start',ctx.World.Start)end
 
 -- The game's main GUI (HUD money counter, PAWPAD navigation, UITheme).
+-- It is copied into PlayerGui when the character first spawns, which can take a while in Studio.
 local main=playerGui:FindFirstChild('ScreenGui')
 local waitedFrom=os.clock()
+local HUD_WAIT='still waiting for PlayerGui.ScreenGui (the game HUD)'
+local reported=false
 while not main do
  task.wait(.25)
  main=playerGui:FindFirstChild('ScreenGui')
- if not main and waitedFrom and os.clock()-waitedFrom>15 then waitedFrom=nil;report('still waiting for PlayerGui.ScreenGui (the game HUD)')end
+ if not main and not reported and os.clock()-waitedFrom>60 then reported=true;report(HUD_WAIT)end
 end
+if reported then resolved(HUD_WAIT)end
 ctx.Main=main
 local modules=need(main,'Modules')
 local theme=load('UITheme',function()return require(need(modules,'UITheme'))end)

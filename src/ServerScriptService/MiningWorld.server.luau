@@ -9,7 +9,7 @@ local Models=require(RS:WaitForChild('Mining'):WaitForChild('MiningModels'))
 local M=Config.Mining
 local yardsFolder=workspace:WaitForChild('DOGROTS_District'):WaitForChild('04_PlayerYards')
 
-local LAYOUT_VERSION=23
+local LAYOUT_VERSION=24
 local PAD_SIZE=Vector3.new(23,.5,18)
 
 local function part(parent,name,size,cf,color,mat,props)
@@ -18,14 +18,11 @@ end
 local function rgb(r,g,b)return Color3.fromRGB(r,g,b)end
 
 -- PLACEMENT ------------------------------------------------------------------------------------
--- Beside kennel 1 (DigSlot_1), ~9 studs from its floor (moved 5 studs away from it after the
--- first Studio test), at the kennel end of the cosmetic garden.
--- Checked in 3D against every PlotAppearance stage (levels 1-9) and skin (14) in all 8 yards:
--- only the Earthquake skin's flat ground crack reaches under the pad (hidden there, see
--- coverGround). Further from the kennels the level-8 garden pavilion (all skins but UFOInvasion and
--- RainbowRift) and the RainbowRift /
--- UFOInvasion / TimeWarp centrepieces start; the old spot mirrored from the Lucky Pads was
--- covered by them.
+-- On the kennel end of the yard's CosmeticGarden (the raised grass patch next to kennel 1), as
+-- the owner asked after the Studio tests. PlotAppearance builds its garden centrepieces (level-8
+-- pavilion, UFO, rainbow, clock gears) MINING_CLEARANCE studs deeper in the garden, so checked in
+-- 3D against every stage (levels 1-9) and skin (14) in all 8 yards only the Earthquake skin's flat
+-- ground crack reaches under the pad (hidden there, see coverGround).
 -- Returns the corner CFrame and sx: LookVector points to the central walkway; local +X*sx points
 -- towards the kennels / street (yards 5-8 are mirror images of yards 1-4).
 local function placement(yard)
@@ -43,12 +40,12 @@ local function placement(yard)
  end
  local center
  if frame then
-  center=frame:PointToWorldSpace(Vector3.new(-18*sx,0,-.5))
+  center=frame:PointToWorldSpace(Vector3.new(-18*sx,0,-6.5))
  else
   -- Fallback with the same result for the standard yards.
   local x=foundation and foundation.Position.X or yard:GetPivot().Position.X
   local z=spawn and spawn.Position.Z or yard:GetPivot().Position.Z
-  center=Vector3.new((x<0 and-1 or 1)*105.5,1.13,z+18)
+  center=Vector3.new((x<0 and-1 or 1)*111.5,1.13,z+18)
   sx=x<0 and 1 or-1
   frame=CFrame.lookAt(Vector3.new(x,1.2,z),Vector3.new(x+(x<0 and-1 or 1),1.2,z))
  end

@@ -1,5 +1,6 @@
 {
  "modified": [
+  "ReplicatedStorage/PlotAppearance",
   "ServerScriptService/MapAmbience",
   "ReplicatedStorage/DogEconomy/Config",
   "ServerScriptService/Economy/Engine",
