@@ -81,7 +81,12 @@ function Gym.new(ctx)
 
  -- STATE --------------------------------------------------------------------------------------
  local height,lastTap,cooldownUntil,lastActivity=0,0,0,0
- local busy,sending=false,false
+ local busy,sending,holding=false,false,false
+ -- The server needs Cooldown*CooldownTolerance+MinLiftTime between reps (its clock); counting
+ -- from our response is always on the safe side. A rep finished earlier waits at the top.
+ local repReadyAt=0
+ -- Last time the server's 25 s training window was refreshed (Begin, rep, weight change).
+ local sessionAt=0
  local connections={}
  local savedCamera=nil
  local function weightDef()return M.Weights[Net.Attr('MiningWeight',0)]end
@@ -92,9 +97,10 @@ function Gym.new(ctx)
 
  local function request(action,args,okColor)
   if busy then return false end
-  busy=true
+  busy=true;lastActivity=os.clock()
   local ok,msg=Net.Invoke(action,args)
   busy=false
+  if ok then sessionAt=os.clock()end
   if ok then if okColor then Audio.Play('Buy');Hud.Toast(msg,okColor)end
   else Audio.Play('Deny');Hud.Toast(msg,U.Colors.red)end
   if self.Active then self.Render()end
@@ -162,6 +168,8 @@ function Gym.new(ctx)
   task.spawn(function()
    local ok,msg=Net.Invoke('MiningTrain',{})
    sending=false
+   repReadyAt=os.clock()+def.Cooldown*M.CooldownTolerance+M.MinLiftTime+.03
+   if ok then sessionAt=os.clock()end
    if not self.Active then return end
    local character=player.Character;local head=character and character:FindFirstChild('Head')
    local pos=head and head.Position+Vector3.new(0,2.2,0)
@@ -196,7 +204,18 @@ function Gym.new(ctx)
   lastTap=os.clock()
   liftScale.Scale=.92;TweenService:Create(liftScale,TweenInfo.new(.12,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Scale=1}):Play()
   Audio.Play('Lift',nil,height)
-  if height>=1 then completeRep()end
+  if height>=1 then
+   local wait=repReadyAt-os.clock()
+   if wait<=0 then completeRep()
+   elseif not holding then
+    holding=true
+    local token=self.Token
+    task.delay(wait,function()
+     if self.Token~=token then return end -- left (or re-entered) while holding
+     holding=false;if self.Active then completeRep()end
+    end)
+   end
+  end
  end
  liftButton.InputBegan:Connect(function(input)
   if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then tap()end
@@ -204,7 +223,9 @@ function Gym.new(ctx)
 
  local function step(dt)
   local level=Net.Attr('MiningWeight',1)
-  if os.clock()<cooldownUntil or sending then
+  if holding then
+   height=1 -- locked out at the top until the server accepts the next rep
+  elseif os.clock()<cooldownUntil or sending then
    height=math.max(0,height-dt*2.6) -- set down after a completed rep
   elseif os.clock()-lastTap>.12 then
    height=math.max(0,height-dt*fallRate(level))
@@ -213,7 +234,12 @@ function Gym.new(ctx)
   weightIcon.Position=UDim2.fromScale(.5,1-height)
   weightIcon.TextColor3=height>.85 and U.Colors.gold or Color3.new(1,1,1)
   Anim.SetLift(true,height)
-  if os.clock()-lastActivity>IDLE_EXIT then self.Exit('idle')end
+  if os.clock()-lastActivity>IDLE_EXIT then self.Exit('idle');return end
+  -- Keep the weight in hand (server TrainingUntil) while the player is still here.
+  if os.clock()-sessionAt>M.SessionSeconds*.7 and not busy then
+   sessionAt=os.clock()
+   task.spawn(function()if self.Active then Net.Invoke('MiningTrainBegin',{})end end)
+  end
  end
 
  -- CAMERA / MOVEMENT -------------------------------------------------------------------------
@@ -261,13 +287,22 @@ function Gym.new(ctx)
  function self.Enter(corner)
   if self.Active or(ctx.Mine and ctx.Mine.Active)then return end
   if ctx.Main:GetAttribute('OpenMenu')~=nil then return end
-  self.Active=true;self.Corner=corner;lastActivity=os.clock();height=0
+  local token={};self.Token=token
+  self.Active=true;self.Corner=corner;lastActivity=os.clock();height=0;holding=false
   World.RefreshPrompts()
   local ok,msg=Net.Invoke('MiningTrainBegin',{})
-  if not ok then
-   self.Active=false;self.Corner=nil;World.RefreshPrompts()
-   Hud.Toast(msg,U.Colors.red);Audio.Play('Deny');return
+  -- Re-validate after the round-trip (menu opened, yard changed hands or Exit ran meanwhile).
+  local current=self.Token==token and self.Active
+  if not ok or not current or ctx.Main:GetAttribute('OpenMenu')~=nil or not corner:IsDescendantOf(workspace)
+   or corner:GetAttribute('OwnerUserId')~=player.UserId then
+   if current then
+    self.Active=false;self.Corner=nil;self.Token=nil;World.RefreshPrompts()
+    if not ok then Hud.Toast(msg,U.Colors.red);Audio.Play('Deny')end
+   end
+   if ok and not self.Active then task.spawn(Net.Invoke,'MiningTrainEnd',{})end
+   return
   end
+  sessionAt=os.clock()
   ctx.Main:SetAttribute('MiningActive',true)
   setControls(false)
   CAS:BindActionAtPriority('DOGROTS_MiningLift',function(_,inputState)
@@ -280,6 +315,18 @@ function Gym.new(ctx)
   RunService:BindToRenderStep('DOGROTS_MiningTraining',Enum.RenderPriority.Input.Value+1,step)
   for _,name in ipairs({'MiningStrength','MiningWeight','MiningWeightOwned'})do
    table.insert(connections,player:GetAttributeChangedSignal(name):Connect(function()if not busy then self.Render()end end))
+  end
+  local stats=player:FindFirstChild('leaderstats');local coins=stats and stats:FindFirstChild('Coins')
+  if coins then
+   local function affordKey()
+    local cash=Net.Cash();local key={}
+    for i,w in ipairs(M.Weights)do key[i]=cash>=w.Price and'1'or'0'end
+    return table.concat(key)
+   end
+   local lastKey=affordKey()
+   table.insert(connections,coins.Changed:Connect(function()
+    local key=affordKey();if key~=lastKey and not busy then lastKey=key;self.Render()end
+   end))
   end
   table.insert(connections,ctx.Main:GetAttributeChangedSignal('OpenMenu'):Connect(function()
    if ctx.Main:GetAttribute('OpenMenu')~=nil then self.Exit('menu')end
@@ -296,8 +343,9 @@ function Gym.new(ctx)
  end
 
  function self.Exit(_reason)
+  self.Token=nil
   if not self.Active then return end
-  self.Active=false
+  self.Active=false;holding=false
   RunService:UnbindFromRenderStep('DOGROTS_MiningTraining')
   CAS:UnbindAction('DOGROTS_MiningLift')
   for _,c in ipairs(connections)do c:Disconnect()end

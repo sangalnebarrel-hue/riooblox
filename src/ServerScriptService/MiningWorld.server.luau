@@ -9,7 +9,7 @@ local Models=require(RS:WaitForChild('Mining'):WaitForChild('MiningModels'))
 local M=Config.Mining
 local yardsFolder=workspace:WaitForChild('DOGROTS_District'):WaitForChild('04_PlayerYards')
 
-local LAYOUT_VERSION=21
+local LAYOUT_VERSION=22
 local PAD_SIZE=Vector3.new(23,.5,18)
 
 local function part(parent,name,size,cf,color,mat,props)
@@ -75,8 +75,10 @@ local function prompt(parent,name,action,object,distance)
  p.MaxActivationDistance=distance or 8;p.RequiresLineOfSight=false;p.Enabled=false;p.Parent=parent
  return p
 end
+-- 16 studs: every clickable piece is within ~9 studs of MiningPad, and Runtime accepts mining
+-- actions up to 32 studs from it, so a click can never open something whose actions then fail.
 local function click(parent,name)
- local c=Instance.new('ClickDetector');c.Name=name;c.MaxActivationDistance=26;c.Parent=parent;return c
+ local c=Instance.new('ClickDetector');c.Name=name;c.MaxActivationDistance=16;c.Parent=parent;return c
 end
 
 local function build(yard:Model):Model

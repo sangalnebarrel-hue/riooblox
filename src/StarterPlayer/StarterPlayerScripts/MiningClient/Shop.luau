@@ -164,8 +164,16 @@ function Shop.new(ctx)
  end
  task.spawn(function()
   local stats=player:WaitForChild('leaderstats',30);local coins=stats and stats:WaitForChild('Coins',30)
+  -- Coins change often (dogs dig); rebuild the cards only when a price becomes (un)affordable.
+  local function affordKey()
+   local cash=Net.Cash();local key={}
+   for i,p in ipairs(M.Pickaxes)do key[i]=cash>=p.Price and'1'or'0'end
+   return table.concat(key)
+  end
+  local lastKey=''
   if coins then coins.Changed:Connect(function()if self.IsOpen and not busy then
    local s=stateNow();subtitle.Text=Text.Get('YOUR_COINS',Text.Short(s.Cash))..'   ·   '..Text.Get('YOUR_STRENGTH',s.Strength)
+   local key=affordKey();if key~=lastKey then lastKey=key;self.Render()end
   end end)end
  end)
  UIS.InputBegan:Connect(function(input)if self.IsOpen and(input.KeyCode==Enum.KeyCode.Escape or input.KeyCode==Enum.KeyCode.ButtonB)then self.Close()end end)

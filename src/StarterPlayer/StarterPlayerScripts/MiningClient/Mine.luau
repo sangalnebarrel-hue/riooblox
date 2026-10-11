@@ -77,6 +77,7 @@ function Mine.new(ctx)
  local connections={}
  local resyncing=false
 
+ local lastPaidHit=0
  local function pick()return M.Pickaxes[(state and state.PickaxeLevel)or Net.Attr('MiningPickaxe',1)]or M.Pickaxes[1]end
  local function tier()return pick().FX or 1 end
 
@@ -92,7 +93,7 @@ function Mine.new(ctx)
   hpText.Text=Text.Get('HP',hp,max)
   local p=pick()
   infoLeft.Text=(p.Icon or'⛏')..' '..Text.Name(p)..'  ·  '..Text.Get('ORE_VALUE',Text.Short(s.OreValue or 0))
-  local combo=s.Combo or 0
+  local combo=(os.clock()-lastPaidHit<M.ComboTimeout)and(s.Combo or 0)or 0
   comboLabel.Text=combo>=2 and Text.Get('COMBO',combo)or''
  end
 
@@ -241,14 +242,15 @@ function Mine.new(ctx)
    return
   end
   local key=Text.Key(type(result)=='table'and result.Message or nil)
-  if item.Miss or key=='MISS'or key=='STALE'then refreshPanel();return end
-  if key=='TOO_LATE'then if pos then FX.Popup(pos,message,U.Colors.red)end;refreshPanel();return end
   -- Responses can overtake each other; the server's hit counter orders them.
   local patch=type(result)=='table'and result.StatePatch
   local s=type(patch)=='table'and patch.Mining or(type(result)=='table'and result.MiningState)
-  if type(s)~='table'then return end
-  local fresh=not state or(s.Hits or 0)>=(state.Hits or 0)
+  local fresh=type(s)=='table'and(not state or(s.Hits or 0)>=(state.Hits or 0))
   if fresh then state=s end
+  if item.Miss or key=='MISS'or key=='STALE'then refreshPanel();return end
+  if key=='TOO_LATE'then if pos then FX.Popup(pos,message,U.Colors.red)end;refreshPanel();return end
+  if type(s)~='table'then return end
+  lastPaidHit=os.clock()
   local payout=s.LastPayout or 0
   if pos then
    if s.LastCrit then
@@ -377,6 +379,7 @@ function Mine.new(ctx)
     end
    end
   end
+  if comboLabel.Text~=''and now-lastPaidHit>=M.ComboTimeout then comboLabel.Text=''end
   if now-lastActivity>IDLE_EXIT then self.Exit('idle')end
  end
 
@@ -392,12 +395,21 @@ function Mine.new(ctx)
    return
   end
   view=World.View(corner);if not view then return end
+  local token={};self.Token=token
   self.Active=true;self.Corner=corner;state=s;lastActivity=os.clock()
   World.RefreshPrompts()
   local ok,msg=Net.Invoke('MiningBegin',{})
-  if not ok then
-   self.Active=false;self.Corner=nil;World.RefreshPrompts()
-   Hud.Toast(msg,U.Colors.red);Audio.Play('Deny')
+  -- Anything may have happened during the round-trip (a menu opened, the yard changed hands,
+  -- Exit ran): only a still-current, still-valid entry may continue.
+  local current=self.Token==token and self.Active
+  if not ok or not current or ctx.Main:GetAttribute('OpenMenu')~=nil or not corner:IsDescendantOf(workspace)
+   or corner:GetAttribute('OwnerUserId')~=player.UserId then
+   if current then
+    self.Active=false;self.Corner=nil;self.Token=nil;view=nil;World.RefreshPrompts()
+    if not ok then Hud.Toast(msg,U.Colors.red);Audio.Play('Deny')end
+   end
+   -- Close the server session we just opened unless a newer entry already owns it.
+   if ok and not self.Active then task.spawn(Net.Invoke,'MiningEnd',{})end
    return
   end
   ctx.Main:SetAttribute('MiningActive',true)
@@ -432,6 +444,7 @@ function Mine.new(ctx)
  end
 
  function self.Exit(_reason)
+  self.Token=nil
   if not self.Active then return end
   self.Active=false
   RunService:UnbindFromRenderStep('DOGROTS_MiningSession')
