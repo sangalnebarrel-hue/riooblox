@@ -39,7 +39,7 @@ local function start(name)
  end)
  if not ok then warn('DOGROTS mining: '..name..' failed to start: '..tostring(err))end
 end
-for _,name in ipairs({'Net','Anim','FX','Hud','World','Mine','Shop','Gym'})do start(name)end
+for _,name in ipairs({'Net','Anim','FX','Hud','World','Mine','Shop','Gym','Debug'})do start(name)end
 if ctx.World and ctx.World.Start then
  local ok,err=pcall(ctx.World.Start);if not ok then warn('DOGROTS mining: world start failed: '..tostring(err))end
 end

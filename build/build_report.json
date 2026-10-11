@@ -11,6 +11,7 @@
   "StarterGui/ScreenGui/Modules/OnboardingGuide"
  ],
  "created": [
+  "ServerScriptService/MiningStudioTest (Script)",
   "ServerScriptService/MiningWorld (Script)",
   "ReplicatedStorage/DogEconomy/MiningConfig (ModuleScript)",
   "ReplicatedStorage/Mining (Folder)",
@@ -21,6 +22,7 @@
   "ServerScriptService/Economy/MiningSessions (ModuleScript)",
   "StarterPlayer/StarterPlayerScripts/MiningClient (LocalScript)",
   "StarterPlayer/StarterPlayerScripts/MiningClient/Anim (ModuleScript)",
+  "StarterPlayer/StarterPlayerScripts/MiningClient/Debug (ModuleScript)",
   "StarterPlayer/StarterPlayerScripts/MiningClient/FX (ModuleScript)",
   "StarterPlayer/StarterPlayerScripts/MiningClient/Gym (ModuleScript)",
   "StarterPlayer/StarterPlayerScripts/MiningClient/Hud (ModuleScript)",

@@ -2,6 +2,7 @@
 -- Balance model and the simulator: docs/MINING.md, tools/balance_sim.py.
 local M={
  Version=2,
+ StudioCheats=false,       -- F8 test panel in Studio also on a published place (writes the real DataStore!)
  MaxStrength=1100,
  SessionSeconds=25,         -- a mining session stays open this long after the last hit
  CooldownTolerance=.8,      -- server accepts hits/reps at 80% of the nominal cooldown (latency)
