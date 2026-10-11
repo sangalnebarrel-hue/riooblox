@@ -212,8 +212,10 @@ function Screens.Build(c)
   U.Text(settings,'Learn kennels, selling, mining and Lucky Blocks.',20,323,W-40,48,18,P.muted)
  else
   local help=U.Scroll(root,'HelpContent',0,0,W,H)
-  U.Center(help,'DOG LINE → YARD → DIG → DISCOVER\nManage your team in Dogs. Sell ordinary loot at the NPC shop.\nInventory holds your unique discoveries.\nBetween digs: mine ore, train Strength, buy pickaxes.',20,18,W-48,W<450 and 240 or 150,23,P.text,true)
-  U.Button(help,'ShowMap','DISTRICT MAP',20,W<450 and 278 or 190,W-48,47,function()c.Options.openMap()end,P.blue)
+  -- Room for four lines that wrap on phones and run longer in Russian.
+  local helpH=W<450 and 300 or(c.Mobile and 220 or 170)
+  U.Center(help,'DOG LINE → YARD → DIG → DISCOVER\nManage your team in Dogs. Sell ordinary loot at the NPC shop.\nInventory holds your unique discoveries.\nBetween digs: mine ore, train Strength, buy pickaxes.',20,18,W-48,helpH,23,P.text,true)
+  U.Button(help,'ShowMap','DISTRICT MAP',20,18+helpH+22,W-48,47,function()c.Options.openMap()end,P.blue)
  end
 end
 

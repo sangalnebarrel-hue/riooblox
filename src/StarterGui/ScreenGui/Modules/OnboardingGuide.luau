@@ -59,7 +59,17 @@ function Guide.Start(gui,navigation)
    render()
   end)
  end
+ local myYard
  local function go(card)
+  -- Mining steps: the world marker already points at the sign / ore / rack, so a player who is
+  -- already at the corner must not get a waypoint back to the yard entrance.
+  local step=stage()
+  if step==7 or step==8 then
+   local yard=myYard();local corner=yard and yard:FindFirstChild('MiningCorner')
+   local pad=corner and corner:FindFirstChild('MiningPad')
+   local root=player.Character and player.Character:FindFirstChild('HumanoidRootPart')
+   if pad and root and pad:IsA('BasePart')and root:IsA('BasePart')and(root.Position-pad.Position).Magnitude<60 then render();return end
+  end
   if card.Page then navigation.OpenPage(card.Page)
   elseif card.Destination then navigation.Navigate(card.Destination)end
  end
@@ -88,7 +98,7 @@ function Guide.Start(gui,navigation)
   if object:IsA('BasePart')then return object end
   return object:FindFirstChildWhichIsA('BasePart',true)
  end
- local function myYard()
+ function myYard()
   local map=workspace:FindFirstChild('DOGROTS_District');local yards=map and map:FindFirstChild('04_PlayerYards')
   if not yards then return end
   for _,yard in ipairs(yards:GetChildren())do
