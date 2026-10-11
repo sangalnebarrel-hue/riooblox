@@ -228,12 +228,11 @@ def main():
         print("  %d %-16s price %12s  needs %4d str  +%-3d/rep  cap %4d  -> %5.1f min to cap" % (
             i, w["Id"], f"{int(w['Price']):,}", w["Strength"], w["Gain"], w["Cap"], secs / 60))
     print()
-    print("Pickaxe strength gates vs weight caps:")
+    print("Pickaxe strength gates: the first weight whose cap reaches the requirement")
     for i, p in enumerate(M["Pickaxes"], 1):
         need = p["Strength"]
-        weights = [w for w in M["Weights"] if w["Strength"] <= need]
-        best = max(weights, key=lambda w: w["Cap"]) if weights else None
-        print("  %-18s needs %4d  reachable with %s (cap %s)" % (p["Id"], need, best and best["Id"], best and best["Cap"]))
+        first = next((w for w in M["Weights"] if w["Cap"] >= need), None)
+        print("  %-12s needs %4d  -> train with %s (cap %s)" % (p["Id"], need, first and first["Id"], first and int(first["Cap"])))
 
 
 if __name__ == "__main__":
