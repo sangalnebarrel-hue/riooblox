@@ -251,6 +251,11 @@ function World.new(ctx)
   end
  end
 
+ local prompts={} -- ProximityPrompt -> {Kind, Corner}
+ game:GetService('ProximityPromptService').PromptTriggered:Connect(function(prompt)
+  local row=prompts[prompt]
+  if row then self.Trigger(row.Kind,row.Corner)end
+ end)
  local function trigger(kind,corner)
   if not isOwner(corner)then if ctx.Hud then ctx.Hud.Toast(Text.Get('NOT_YOURS'),ctx.U.Colors.red)end;return end
   if kind=='Ore'and ctx.Mine then ctx.Mine.Enter(corner)
@@ -263,8 +268,11 @@ function World.new(ctx)
  local function onHit(view)
   local corner=view.Corner
   local serial=corner:GetAttribute('HitSerial')or 0
-  if serial<=(view.HitSerial or 0)then view.HitSerial=serial;return end
+  local previous=view.HitSerial or 0
   view.HitSerial=serial
+  if serial<=previous then return end
+  -- A big jump is a profile load / yard hand-over, not a swing.
+  if serial-previous>3 or(corner:GetAttribute('OwnerUserId')or 0)==0 then return end
   -- The owner's own session draws its hits itself (instantly, without network delay).
   if isOwner(corner)and ctx.Mine and ctx.Mine.Active then return end
   local cam=workspace.CurrentCamera
@@ -279,8 +287,9 @@ function World.new(ctx)
  local function onOre(view)
   local corner=view.Corner
   local serial=corner:GetAttribute('OreSerial')or 0
-  local broke=(corner:GetAttribute('BreakSerial')or 0)>(view.BreakSerial or 0)
-  view.BreakSerial=corner:GetAttribute('BreakSerial')or 0
+  local breaks=corner:GetAttribute('BreakSerial')or 0
+  local broke=breaks-(view.BreakSerial or 0)==1 and(corner:GetAttribute('OwnerUserId')or 0)~=0
+  view.BreakSerial=breaks
   if serial==view.Serial then
    if view.Pile then setScale(view,targetScale(view),.18)end
    self.UpdateLabel(view);return
@@ -311,9 +320,7 @@ function World.new(ctx)
    if d:IsA('ProximityPrompt')then
     table.insert(view.Prompts,d);localizePrompt(d)
     table.insert(view.Connections,d:GetPropertyChangedSignal('Enabled'):Connect(function()applyPromptAccess(view)end))
-    table.insert(view.Connections,d.Triggered:Connect(function()
-     trigger(d.Name=='MiningOrePrompt'and'Ore'or d.Name=='MiningPickaxeShopPrompt'and'Shop'or'Gym',corner)
-    end))
+    prompts[d]={Kind=d.Name=='MiningOrePrompt'and'Ore'or d.Name=='MiningPickaxeShopPrompt'and'Shop'or'Gym',Corner=corner}
    elseif d:IsA('ClickDetector')then
     table.insert(view.Connections,d.MouseClick:Connect(function(who)
      if who~=player then return end
@@ -343,6 +350,7 @@ function World.new(ctx)
   local view=self.Views[corner];if not view then return end
   self.Views[corner]=nil
   for _,c in ipairs(view.Connections)do c:Disconnect()end
+  for p in pairs(prompts)do if prompts[p].Corner==corner then prompts[p]=nil end end
   destroyPile(view)
   if view.Label then view.Label:Destroy()end
   if view.ScaleValue then view.ScaleValue:Destroy()end

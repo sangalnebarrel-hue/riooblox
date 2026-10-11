@@ -6,7 +6,9 @@
   "ServerScriptService/Economy/OnboardingRules",
   "ServerScriptService/Economy/Rules",
   "ServerScriptService/Economy/Runtime",
-  "StarterPlayer/StarterPlayerScripts/DOGROTS_AutoTranslateUI"
+  "StarterPlayer/StarterPlayerScripts/DOGROTS_AutoTranslateUI",
+  "StarterGui/ScreenGui/Modules/EconomyScreens",
+  "StarterGui/ScreenGui/Modules/OnboardingGuide"
  ],
  "created": [
   "ServerScriptService/MiningWorld (Script)",
