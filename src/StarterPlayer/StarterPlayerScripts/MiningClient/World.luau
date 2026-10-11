@@ -108,7 +108,7 @@ function World.new(ctx)
   local center=model:GetPivot().Position+Vector3.new(0,3,0)
   for _,d in ipairs(model:GetDescendants())do
    if d:IsA('BasePart')and d.Transparency<1 then
-    d.Anchored=false;d.CanCollide=not fx().Low();d.Massless=true
+    d.Anchored=false;d.CanCollide=false;d.CanQuery=false;d.CanTouch=false;d.Massless=true
     local dir=(d.Position-center);dir=dir.Magnitude>.01 and dir.Unit or Vector3.new(0,1,0)
     d.AssemblyLinearVelocity=(dir+Vector3.new(0,.9,0)).Unit*(16+math.random()*14)
     d.AssemblyAngularVelocity=Vector3.new(math.random()-.5,math.random()-.5,math.random()-.5)*14
@@ -275,11 +275,13 @@ function World.new(ctx)
   if serial-previous>3 or(corner:GetAttribute('OwnerUserId')or 0)==0 then return end
   -- The owner's own session draws its hits itself (instantly, without network delay).
   if isOwner(corner)and ctx.Mine and ctx.Mine.Active then return end
+  if ctx.Anim then ctx.Anim.RemoteHit(corner)end
   local cam=workspace.CurrentCamera
-  local att=self.HitPoint(view,cam and cam.CFrame.Position)
+  if not cam or(cam.CFrame.Position-view.Core.Position).Magnitude>90 then return end
+  local att=self.HitPoint(view,cam.CFrame.Position)
   if att and view.Def then
    local tier=M.Pickaxes[corner:GetAttribute('PickaxeLevel')or 1]
-   fx().Hit(att.WorldPosition,att:GetAttribute('Normal'),oreColor(view.Def),Enum.Material.Slate,tier and tier.FX or 1,corner:GetAttribute('HitQuality'),corner:GetAttribute('HitCrit'))
+   fx().Hit(att.WorldPosition,att:GetAttribute('Normal'),oreColor(view.Def),Enum.Material.Slate,tier and tier.FX or 1,corner:GetAttribute('HitQuality'),corner:GetAttribute('HitCrit'),true)
    self.Wobble(view,.6)
    Audio.Play(corner:GetAttribute('HitCrit')and'Crit'or'Hit',view.Core,tier and tier.FX or 1)
   end
@@ -334,9 +336,26 @@ function World.new(ctx)
   updateRack(view)
   buildPile(view,false)
   view.Serial=corner:GetAttribute('OreSerial')or 0
-  for _,name in ipairs({'OreSerial','OreHP','OreId'})do
-   table.insert(view.Connections,corner:GetAttributeChangedSignal(name):Connect(function()onOre(view)end))
+  -- One update changes several attributes; read them together once they have all arrived.
+  local orePending=false
+  local function queueOre()
+   if orePending then return end
+   orePending=true
+   task.defer(function()orePending=false;if self.Views[corner]==view then onOre(view)end end)
   end
+  for _,name in ipairs({'OreSerial','OreHP','OreId','BreakSerial'})do
+   table.insert(view.Connections,corner:GetAttributeChangedSignal(name):Connect(queueOre))
+  end
+  local reps=corner:GetAttribute('TrainSerial')or 0
+  table.insert(view.Connections,corner:GetAttributeChangedSignal('Training'):Connect(function()
+   if ctx.Anim then ctx.Anim.RemoteTraining(corner,false)end
+  end))
+  table.insert(view.Connections,corner:GetAttributeChangedSignal('TrainSerial'):Connect(function()
+   local now=corner:GetAttribute('TrainSerial')or 0
+   local step=now-reps;reps=now
+   if ctx.Anim and step>=1 and step<=3 then ctx.Anim.RemoteTraining(corner,true)end
+  end))
+  if ctx.Anim then ctx.Anim.RemoteTraining(corner,false)end
   table.insert(view.Connections,corner:GetAttributeChangedSignal('HitSerial'):Connect(function()onHit(view)end))
   table.insert(view.Connections,corner:GetAttributeChangedSignal('OwnerUserId'):Connect(function()
    applyPromptAccess(view);updateRack(view);buildPile(view,false)

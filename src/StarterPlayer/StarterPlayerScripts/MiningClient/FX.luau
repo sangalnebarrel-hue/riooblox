@@ -46,11 +46,11 @@ function FX.new(ctx)
   Debris:AddItem(a,2.5)
  end
 
- -- Physical rock chips that bounce off and fade.
+ -- Rock chips that fly off and fade. Non-colliding: they spawn inside the ore hitbox.
  function self.Chunks(pos,color,material,count,dir,speed)
   for _=1,n(count or 4)do
    local p=Instance.new('Part');p.Name='OreChip';p.Size=Vector3.new(1,1,1)*(.25+math.random()*.45)
-   p.Color=color;p.Material=material or Enum.Material.Slate;p.CanCollide=true;p.CanQuery=false;p.CanTouch=false;p.Massless=true
+   p.Color=color;p.Material=material or Enum.Material.Slate;p.CanCollide=false;p.CanQuery=false;p.CanTouch=false;p.Massless=true
    p.CFrame=CFrame.new(pos)*CFrame.Angles(math.random()*6,math.random()*6,math.random()*6)
    p.Parent=folder
    local d=((dir or Vector3.new(0,1,0))+Vector3.new(math.random()-.5,math.random()*.8,math.random()-.5)).Unit
@@ -115,7 +115,8 @@ function FX.new(ctx)
   TweenService:Create(flash,TweenInfo.new(.4),{BackgroundTransparency=1}):Play()
  end
  function self.Shake(amount)
-  if self.ReducedMotion()then return end
+  -- Only the mining camera consumes shake; outside a session it would just pile up.
+  if self.ReducedMotion()or not(ctx.Mine and ctx.Mine.Active)then return end
   self.ShakeAmount=math.min(1.2,self.ShakeAmount+(amount or .3))
  end
 
@@ -147,7 +148,8 @@ function FX.new(ctx)
   end
  end
 
- -- Pickaxe-tier hit effect. tier 1..7, quality 1/2, crit bool.
+ -- Pickaxe-tier hit effect. tier 1..7, quality 1/2, crit bool; remote = another player's hit
+-- (particles and rings only, no screen flash or shake).
  local TIER={
   {Texture=SMOKE,Color=Color3.fromRGB(170,150,120),Count=5,Chunks=3,Speed=NumberRange.new(4,9),LightEmission=0},
   {Texture=SMOKE,Color=Color3.fromRGB(160,160,160),Count=6,Chunks=4,Speed=NumberRange.new(5,10),LightEmission=0,Sparks=4},
@@ -157,7 +159,7 @@ function FX.new(ctx)
   {Texture=FIRE,Color=Color3.fromRGB(255,140,50),Color2=Color3.fromRGB(255,60,20),Count=16,Chunks=6,Ring=true,Embers=true},
   {Texture=SPARK,Color=Color3.fromRGB(200,120,255),Color2=Color3.fromRGB(90,30,170),Count=26,Chunks=7,Ring=true,Void=true},
  }
- function self.Hit(pos,normal,oreColor,oreMaterial,tier,quality,crit)
+ function self.Hit(pos,normal,oreColor,oreMaterial,tier,quality,crit,remote)
   local row=TIER[math.clamp(tier or 1,1,#TIER)]
   local mult=(quality==2 and 1.5 or 1)*(crit and 1.6 or 1)
   local dir=normal or Vector3.new(0,1,0)
@@ -173,8 +175,9 @@ function FX.new(ctx)
    self.Burst(pos,{Color=Color3.fromRGB(240,200,255),Count=14,Speed=NumberRange.new(-14,-8),Spread=Vector2.new(180,180),Acceleration=Vector3.zero,Lifetime=NumberRange.new(.3,.5)})
   end
   if row.Ring or quality==2 then self.Ring(pos,quality==2 and Color3.fromRGB(255,214,80)or row.Color,quality==2 and 7 or 5)end
+  if crit then self.Ring(pos,Color3.fromRGB(255,90,60),12,.55)end
+  if remote then return end
   if crit then
-   self.Ring(pos,Color3.fromRGB(255,90,60),12,.55)
    self.Flash(Color3.fromRGB(255,220,150),.18)
    self.Shake(.5)
   else

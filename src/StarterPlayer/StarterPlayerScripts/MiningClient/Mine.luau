@@ -232,13 +232,17 @@ function Mine.new(ctx)
   local c=item.Circle
   local pos=c.Point and c.Point.WorldPosition or(view and view.Core and view.Core.Position)
   if not ok then
+   if result=='Stand at your Mining Corner'then Hud.Toast(message,U.Colors.red);self.Exit('distance');return end
    local key=type(result)=='string'and Text.Key(result)
-   if key=='SESSION_OVER'or key=='TARGET_GONE'then resync()
-   elseif key=='TOO_EARLY'or key=='TOO_LATE'or key=='NOT_READY'then if pos then FX.Popup(pos,message,U.Colors.red)end
-   else Hud.Toast(message,U.Colors.red);if result=='Stand at your Mining Corner'then self.Exit('distance')end end
+   if pos and(key=='TOO_EARLY'or key=='NOT_READY')then FX.Popup(pos,message,U.Colors.red)
+   elseif key~='SESSION_OVER'and key~='TARGET_GONE'then Hud.Toast(message,U.Colors.red)end
+   -- The server may still hold this circle (or a newer one): ask for the live list.
+   resync()
    return
   end
-  if item.Miss then refreshPanel();return end
+  local key=Text.Key(type(result)=='table'and result.Message or nil)
+  if item.Miss or key=='MISS'or key=='STALE'then refreshPanel();return end
+  if key=='TOO_LATE'then if pos then FX.Popup(pos,message,U.Colors.red)end;refreshPanel();return end
   -- Responses can overtake each other; the server's hit counter orders them.
   local patch=type(result)=='table'and result.StatePatch
   local s=type(patch)=='table'and patch.Mining or(type(result)=='table'and result.MiningState)
@@ -313,16 +317,7 @@ function Mine.new(ctx)
  end
 
  -- MOVEMENT -----------------------------------------------------------------------------------
- local controls=nil
- local function setControls(enabled)
-  if not controls then
-   local ok,module=pcall(function()
-    return require(player:WaitForChild('PlayerScripts'):WaitForChild('PlayerModule')):GetControls()
-   end)
-   controls=ok and module or false
-  end
-  if controls then pcall(function()if enabled then controls:Enable()else controls:Disable()end end)end
- end
+ local setControls=ctx.SetControls
  local function walkToStand()
   local character=player.Character;local hum=character and character:FindFirstChildOfClass('Humanoid')
   local root=character and character:FindFirstChild('HumanoidRootPart')

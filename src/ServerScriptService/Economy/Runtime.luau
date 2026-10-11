@@ -377,9 +377,22 @@ function Runtime.Request(player,action,a,requestId)
    if yards then for _,candidate in ipairs(yards:GetChildren())do if candidate:GetAttribute('OwnerUserId')==player.UserId and candidate:GetAttribute('YardId')==player:GetAttribute('YardId')then yard=candidate;break end end end
    local corner=yard and yard:FindFirstChild('MiningCorner');local anchor=corner and(corner:FindFirstChild('MiningPad')or corner:FindFirstChildWhichIsA('BasePart'))
    local hrp=player.Character and player.Character:FindFirstChild('HumanoidRootPart')
-   Rules.Check(yard and anchor and hrp and(hrp.Position-anchor.Position).Magnitude<=32,'Stand at your Mining Corner')
+   -- Ending a session must always work (respawn, teleport), so it skips the distance check.
+   if action~='MiningEnd'and action~='MiningTrainEnd'then
+    Rules.Check(yard and anchor and hrp and(hrp.Position-anchor.Position).Magnitude<=32,'Stand at your Mining Corner')
+   end
+   local session=require(script.Parent.MiningSessions).Get(player.UserId)
+   if action=='MiningHit'then
+    -- Cheap RAM pre-check: unknown or unopened circles never pay for a profile transaction.
+    local id=tonumber(a.Target);local target
+    for _,t in pairs(session.Targets or{})do if t.Id==id then target=t end end
+    if not target and not(session.Stale and id and session.Stale[id])then return false,'M:TARGET_GONE'end
+    if target and workspace:GetServerTimeNow()<target.SpawnAt-Config.Mining.Timing.ServerSlack then return false,'M:TOO_EARLY'end
+   end
    local ping=0;pcall(function()ping=player:GetNetworkPing()end)
-   return Runtime.Engine:MiningAction(player.UserId,action,a,receiptId,require(script.Parent.MiningSessions).Get(player.UserId),ping)
+   -- Hits and reps are single-use by design (circle ids / rest timer): no receipt slots needed.
+   local receipt=if action=='MiningHit'or action=='MiningTrain'then nil else receiptId
+   return Runtime.Engine:MiningAction(player.UserId,action,a,receipt,session,ping)
   end
   local engine,id=Runtime.Engine,player.UserId
   local commerce=require(script.Parent.YardCommerce)

@@ -14,7 +14,7 @@ end
 local modules=main:WaitForChild('Modules')
 local mining=RS:WaitForChild('Mining')
 
-local ctx={Player=player,PlayerGui=playerGui,Main=main}
+local ctx:any={Player=player,PlayerGui=playerGui,Main=main}
 ctx.N=require(modules:WaitForChild('GUIIntegration'))
 ctx.U=require(modules:WaitForChild('UITheme'))
 ctx.Config=require(RS:WaitForChild('DogEconomy'):WaitForChild('Config'))
@@ -31,6 +31,30 @@ gui.Name='MiningGui';gui.ResetOnSpawn=false;gui.DisplayOrder=40;gui.ZIndexBehavi
 gui:SetAttribute('NoTranslate',true);gui:SetAttribute('KeepFont',true)
 gui.Parent=playerGui
 ctx.Gui=gui
+
+-- Movement lock shared by the mining session and training. Re-enabling waits until no menu is
+-- open: GUIIntegration skips its own lock while ours is on, so enabling under a menu would let
+-- the player walk around behind it.
+local controls=nil
+local releasing=false
+function ctx.SetControls(enabled)
+ if controls==nil then
+  local ok,module=pcall(function()
+   return require(ctx.Player:WaitForChild('PlayerScripts'):WaitForChild('PlayerModule')):GetControls()
+  end)
+  controls=ok and module or false
+ end
+ if not controls then return end
+ if not enabled then pcall(function()controls:Disable()end);return end
+ if releasing then return end
+ releasing=true
+ task.spawn(function()
+  while main.Parent and main:GetAttribute('OpenMenu')~=nil do task.wait(.1)end
+  releasing=false
+  local busy=(ctx.Mine and ctx.Mine.Active)or(ctx.Gym and ctx.Gym.Active)
+  if not busy then pcall(function()controls:Enable()end)end
+ end)
+end
 
 local function start(name)
  local ok,err=pcall(function()

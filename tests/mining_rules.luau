@@ -199,7 +199,7 @@ test("weights: first is free, cap and cooldown enforced", function()
 		Rules.Action(m, M, "MiningTrain", {}, ctx)
 	end, "REST")
 	for _ = 1, 500 do
-		advance(ctx, M.Weights[1].Cooldown)
+		advance(ctx, M.Weights[1].Cooldown + M.MinLiftTime)
 		local ok = pcall(Rules.Action, m, M, "MiningTrain", {}, ctx)
 		if not ok then
 			break
@@ -235,17 +235,19 @@ test("timing: too early rejected, perfect graded by server, claimed perfect down
 	errorsWith(function()
 		Rules.Action(m, M, "MiningHit", { Target = t2.Id, Quality = 2 }, ctx)
 	end, "TARGET_GONE")
-	-- far too late
+	-- far too late: counted as a miss, the slot gets a fresh circle
 	local t3 = firstTarget(ctx)
 	ctx.Clock = t3.SpawnAt + t3.Window + 2
 	ctx.Now = math.floor(ctx.Clock)
-	errorsWith(function()
-		Rules.Action(m, M, "MiningHit", { Target = t3.Id, Quality = 1 }, ctx)
-	end, "TOO_LATE")
-	-- a reported miss replaces the target and resets the combo
-	eq(Text.Key(Rules.Action(m, M, "MiningHit", { Target = t3.Id, Miss = true }, ctx)), "MISS")
+	eq(Text.Key(Rules.Action(m, M, "MiningHit", { Target = t3.Id, Quality = 1 }, ctx)), "TOO_LATE")
 	eq(m.Combo, 0)
-	truthy(firstTarget(ctx).Id ~= t3.Id)
+	local t4 = firstTarget(ctx)
+	truthy(t4.Id ~= t3.Id, "late hit respawns the slot")
+	-- a reported miss replaces the target and resets the combo
+	ctx.Clock = t4.SpawnAt + t4.Window * 1.01
+	eq(Text.Key(Rules.Action(m, M, "MiningHit", { Target = t4.Id, Miss = true }, ctx)), "MISS")
+	eq(m.Combo, 0)
+	truthy(firstTarget(ctx).Id ~= t4.Id)
 end)
 
 test("session expires", function()
@@ -366,6 +368,54 @@ test("training session toggles with mining session", function()
 	errorsWith(function()
 		Rules.Action(m, M, "MiningNope", {}, ctx)
 	end, "BAD_ACTION")
+end)
+
+test("break pause cannot be skipped (miss before open, Begin, re-equip) and stale clicks are harmless", function()
+	local m = Rules.New(M)
+	m.PickaxeOwned, m.PickaxeLevel, m.Strength = 7, 7, 1100
+	local ctx = newCtx(11)
+	Rules.Action(m, M, "MiningBegin", {}, ctx)
+	local oldIds = {}
+	for _, t in ctx.Session.Targets do
+		oldIds[#oldIds + 1] = t.Id
+	end
+	local msg = hitAt(m, ctx, 0.8, 2)
+	eq(Text.Key(msg), "BROKE", "voidbreaker one-shots limestone")
+	local pauseUntil = ctx.Session.PauseUntil
+	truthy(pauseUntil and pauseUntil > ctx.Clock, "pause stored")
+	-- a stale click for a circle of the broken ore is answered harmlessly
+	eq(Text.Key(Rules.Action(m, M, "MiningHit", { Target = oldIds[2], Quality = 2 }, ctx)), "STALE")
+	-- missing a circle that has not opened yet is refused
+	local t = firstTarget(ctx)
+	errorsWith(function()
+		Rules.Action(m, M, "MiningHit", { Target = t.Id, Miss = true }, ctx)
+	end, "TOO_EARLY")
+	-- Begin while live keeps the same circles
+	local before = t.Id
+	Rules.Action(m, M, "MiningBegin", {}, ctx)
+	eq(firstTarget(ctx).Id, before, "Begin is idempotent")
+	-- re-equipping another pickaxe re-issues, but never before the pause ends
+	Rules.Action(m, M, "MiningPickaxe", { Level = 6 }, ctx)
+	for _, x in ctx.Session.Targets do
+		truthy(x.SpawnAt >= pauseUntil - 1e-6, "no circle before the pause")
+	end
+end)
+
+test("a lift ends mining and needs rest plus a minimum lift time", function()
+	local m = Rules.New(M)
+	m.PickaxeOwned, m.PickaxeLevel, m.WeightOwned, m.WeightLevel = 1, 1, 1, 1
+	local ctx = newCtx()
+	Rules.Action(m, M, "MiningBegin", {}, ctx)
+	advance(ctx, 5)
+	Rules.Action(m, M, "MiningTrain", {}, ctx)
+	eq(m.ActiveUntil, 0, "mining ended")
+	eq(next(ctx.Session.Targets), nil, "circles cleared")
+	advance(ctx, M.Weights[1].Cooldown * M.CooldownTolerance)
+	errorsWith(function()
+		Rules.Action(m, M, "MiningTrain", {}, ctx)
+	end, "REST")
+	advance(ctx, M.MinLiftTime + 0.01)
+	eq(Text.Key(Rules.Action(m, M, "MiningTrain", {}, ctx)), "TRAINED")
 end)
 
 print(string.format("mining_rules: %d passed, %d failed", passed, failed))

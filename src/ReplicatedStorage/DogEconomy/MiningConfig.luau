@@ -22,6 +22,7 @@ local M={
  -- PerfectFrom..PerfectTo is the gold band, after 1.0 the circle is missed.
  Timing={GoodFrom=.45,PerfectFrom=.72,PerfectTo=.93,ServerSlack=.06,LateGrace=.2},
  MinHitGap=.09,
+ MinLiftTime=.4,           -- server floor for one lift of the tap minigame (on top of the weight rest)
  Client={RespawnDelay=.18,BreakPause=1.4,RepOverhead=1.0,HumanGap=.16},
  Ores={
   {Id='Limestone',Name='Limestone',RU='Известняк',Icon='🪨',Rarity='Common',RarityRU='Обычная',Weight=30,HP=16,ValueMin=40,ValueMax=55,

@@ -84,7 +84,8 @@ local function build(yard:Model):Model
  if existing and existing:GetAttribute('LayoutVersion')==LAYOUT_VERSION then return existing end
  if existing then existing:Destroy()end
  local root=Instance.new('Model');root.Name='MiningCorner'
- pcall(function()root.ModelStreamingMode=Enum.ModelStreamingMode.Atomic end)
+ -- Streams as one piece; always present for the owner once AddPersistentPlayer is called.
+ pcall(function()root.ModelStreamingMode=Enum.ModelStreamingMode.PersistentPerPlayer end)
  local cf,sx=placement(yard)
  local function at(k,h,d)return cf*CFrame.new(sx*k,h,-d)end -- k: towards kennels, d: towards walkway
  root:SetAttribute('LayoutVersion',LAYOUT_VERSION)
@@ -184,9 +185,10 @@ local MAP={OreId='MiningOreId',OreHP='MiningOreHP',OreMaxHP='MiningOreMaxHP',Ore
  HitCrit='MiningLastCrit',HitPayout='MiningLastPayout',HitDamage='MiningLastDamage',Combo='MiningCombo',BrokenId='MiningBrokenId',
  BrokenValue='MiningBrokenValue',PickaxeLevel='MiningPickaxe',Strength='MiningStrength',WeightLevel='MiningWeight',WeightOwned='MiningWeightOwned',
  TrainSerial='MiningTrainingReps',BreakSerial='MiningOresBroken',HitSerial='MiningHitSerial'}
--- Detail attributes first; serials last so a client reacting to a serial reads fresh details.
+-- Detail attributes first; serials last (BreakSerial before OreSerial) so a client reacting to a
+-- serial reads fresh details.
 local ORDER={'OreId','OreHP','OreMaxHP','HitQuality','HitCrit','HitPayout','HitDamage','Combo','BrokenId','BrokenValue','PickaxeLevel',
- 'Strength','WeightLevel','WeightOwned','OreSerial','BreakSerial','HitSerial','TrainSerial'}
+ 'Strength','WeightLevel','WeightOwned','BreakSerial','OreSerial','HitSerial','TrainSerial'}
 
 local bindings={} -- yard -> {Player, Connections}
 local function apply(root,player)

@@ -217,14 +217,7 @@ function Gym.new(ctx)
  end
 
  -- CAMERA / MOVEMENT -------------------------------------------------------------------------
- local controls=nil
- local function setControls(enabled)
-  if controls==nil then
-   local ok,module=pcall(function()return require(player:WaitForChild('PlayerScripts'):WaitForChild('PlayerModule')):GetControls()end)
-   controls=ok and module or false
-  end
-  if controls then pcall(function()if enabled then controls:Enable()else controls:Disable()end end)end
- end
+ local setControls=ctx.SetControls
  local function positionCharacter(corner)
   local character=player.Character;local hum=character and character:FindFirstChildOfClass('Humanoid')
   local root=character and character:FindFirstChild('HumanoidRootPart')

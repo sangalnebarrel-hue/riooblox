@@ -9,6 +9,7 @@ local T={
  ENDED={'Stopped','Остановлено'},
  TRAIN_STARTED={'Training started','Тренировка началась'},
  MISS={'Missed!','Промах!'},
+ STALE={'','',},
  HIT={'Hit! +%1','Удар! +%1'},
  PERFECT={'Perfect! +%1','Идеально! +%1'},
  CRIT={'CRIT! +%1','КРИТ! +%1'},

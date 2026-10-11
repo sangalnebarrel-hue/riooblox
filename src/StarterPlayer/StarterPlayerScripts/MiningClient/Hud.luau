@@ -1,5 +1,6 @@
 -- Small shared HUD pieces for Active Mining: a toast line and "+coins" popups next to the
--- money counter (HUD.MoneyWidget), styled like the HUD counter.
+-- money counter (HUD.MoneyWidget), styled like the HUD counter. The toast has its own ScreenGui
+-- above the pickaxe market (DisplayOrder 70) so purchase results stay visible.
 local TweenService=game:GetService('TweenService')
 local Hud={}
 
@@ -11,7 +12,10 @@ function Hud.new(ctx)
  local toast=Instance.new('TextLabel');toast.Name='MiningToast';toast.AnchorPoint=Vector2.new(.5,0)
  toast.Position=UDim2.new(.5,0,.16,0);toast.Size=UDim2.fromOffset(560,46);toast.BackgroundColor3=Color3.fromRGB(255,251,242)
  toast.BorderSizePixel=0;toast.FontFace=font;toast.TextScaled=true;toast.TextColor3=U.Colors.text;toast.Visible=false;toast.ZIndex=150
- toast.Parent=ctx.Gui
+ local layer=Instance.new('ScreenGui');layer.Name='MiningToast';layer.DisplayOrder=80;layer.ResetOnSpawn=false;layer.IgnoreGuiInset=true
+ layer.ZIndexBehavior=Enum.ZIndexBehavior.Sibling;layer:SetAttribute('NoTranslate',true);layer:SetAttribute('KeepFont',true)
+ layer.Parent=ctx.PlayerGui
+ toast.Parent=layer
  local corner=Instance.new('UICorner');corner.CornerRadius=UDim.new(0,12);corner.Parent=toast
  local stroke=Instance.new('UIStroke');stroke.Color=U.Colors.edge;stroke.Thickness=3;stroke.ApplyStrokeMode=Enum.ApplyStrokeMode.Border;stroke.Parent=toast
  local pad=Instance.new('UIPadding');pad.PaddingLeft=UDim.new(0,14);pad.PaddingRight=UDim.new(0,14);pad.PaddingTop=UDim.new(0,6);pad.PaddingBottom=UDim.new(0,6);pad.Parent=toast
@@ -19,8 +23,10 @@ function Hud.new(ctx)
  local token=0
  function self.Toast(text,color,seconds)
   token+=1;local id=token
-  local width=math.clamp((ctx.Gui::ScreenGui).AbsoluteSize.X-32,240,620)
-  toast.Size=UDim2.fromOffset(width,46);toast.Text=text;toast.TextColor3=color or U.Colors.text;toast.Visible=true
+  local width=math.clamp(layer.AbsoluteSize.X-32,240,620)
+  toast.Size=UDim2.fromOffset(width,46)
+  -- While mining, sit under the ore panel (top 46/58 + 92 px) instead of on top of it.
+  toast.Position=(ctx.Mine and ctx.Mine.Active)and UDim2.new(.5,0,0,162)or UDim2.new(.5,0,.16,0);toast.Text=text;toast.TextColor3=color or U.Colors.text;toast.Visible=true
   stroke.Color=color or U.Colors.edge
   task.delay(seconds or 2.6,function()if token==id then toast.Visible=false end end)
  end

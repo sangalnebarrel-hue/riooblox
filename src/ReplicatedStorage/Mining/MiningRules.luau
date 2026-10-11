@@ -137,11 +137,18 @@ local function newTarget(s,slot,spawnAt,window)
  s.Targets[slot]=t
  return t
 end
+-- Re-issues every slot. Ids of the replaced targets are remembered as stale, so a click that was
+-- already in flight (e.g. right after a break) is answered harmlessly. Never opens a circle
+-- before s.PauseUntil (the break pause).
 function Rules.IssueTargets(s,M,pick,clock,delay)
+ local stale={}
+ for _,t in pairs(s.Targets or{})do stale[t.Id]=true end
+ s.Stale=stale
  s.Targets={}
  local circles=math.max(1,int(pick.Circles,1))
  local stride=(pick.Window+M.Client.RespawnDelay)/circles
- for slot=1,circles do newTarget(s,slot,clock+(delay or .35)+(slot-1)*stride,pick.Window)end
+ local base=math.max(clock+(delay or .35),tonumber(s.PauseUntil)or 0)
+ for slot=1,circles do newTarget(s,slot,base+(slot-1)*stride,pick.Window)end
  return s.Targets
 end
 function Rules.ViewTargets(s)
@@ -157,17 +164,21 @@ local function findTarget(s,id)
 end
 
 -- ACTIONS --------------------------------------------------------------------------------------
+-- Idempotent while a session is live: re-sending Begin only returns the current circles (the
+-- client uses it to resync), so it can neither reset targets nor skip the break pause.
 function Rules.Begin(m,M,ctx)
  local pick=M.Pickaxes[m.PickaxeLevel]
  check(pick~=nil,'NEED_PICKAXE')
- m.ActiveUntil=ctx.Now+M.SessionSeconds;m.TrainingUntil=0;m.LastBreak=false;m.Combo=0
- Rules.IssueTargets(ctx.Session,M,pick,ctx.Clock)
+ local s=ctx.Session
+ local live=(m.ActiveUntil or 0)>=ctx.Now and next(s.Targets or{})~=nil
+ m.ActiveUntil=ctx.Now+M.SessionSeconds;m.TrainingUntil=0;m.LastBreak=false
+ if not live then m.Combo=0;Rules.IssueTargets(s,M,pick,ctx.Clock)end
  return code('STARTED')
 end
 
 function Rules.End(m,M,ctx)
  m.ActiveUntil=0;m.Combo=0
- if ctx and ctx.Session then ctx.Session.Targets={}end
+ if ctx and ctx.Session then ctx.Session.Targets={};ctx.Session.Stale={}end
  return code('ENDED')
 end
 
@@ -176,18 +187,24 @@ function Rules.Hit(m,M,ctx,args)
  local pick=M.Pickaxes[m.PickaxeLevel];check(pick~=nil,'NEED_PICKAXE')
  check((m.ActiveUntil or 0)>=ctx.Now,'SESSION_OVER')
  local s=ctx.Session;check(type(s)=='table','SESSION_OVER')
- local target,slot=findTarget(s,args.Target);check(target~=nil,'TARGET_GONE')
+ local target,slot=findTarget(s,args.Target)
+ if not target then
+  -- A click for a circle of the previous ore (sent before the break reached the client).
+  check(s.Stale and s.Stale[int(args.Target,-1)],'TARGET_GONE')
+  return code('STALE')
+ end
  local tm=M.Timing
  local elapsed=ctx.Clock-target.SpawnAt
  local ping=math.clamp(tonumber(ctx.Ping)or 0,0,1)
- if args.Miss==true then
-  newTarget(s,slot,ctx.Clock+M.Client.RespawnDelay,pick.Window)
-  m.Combo=0;m.ActiveUntil=ctx.Now+M.SessionSeconds
-  return code('MISS')
- end
  local w=target.Window
+ -- A circle that has not opened yet can be neither missed nor hit (keeps the break pause).
+ check(elapsed>=-tm.ServerSlack,'TOO_EARLY')
+ if args.Miss==true or elapsed>w+ping+tm.LateGrace then
+  newTarget(s,slot,math.max(ctx.Clock,target.SpawnAt)+M.Client.RespawnDelay,pick.Window)
+  m.Combo=0;m.ActiveUntil=ctx.Now+M.SessionSeconds
+  return code(args.Miss==true and'MISS'or'TOO_LATE')
+ end
  check(elapsed>=tm.GoodFrom*w-tm.ServerSlack,'TOO_EARLY')
- check(elapsed<=w+ping+tm.LateGrace,'TOO_LATE')
  check(ctx.Clock-(m.LastHitAt or 0)>=M.MinHitGap,'NOT_READY')
  local claimed=int(args.Quality,1)==2 and 2 or 1
  local serverPerfect=elapsed>=tm.PerfectFrom*w-tm.ServerSlack and elapsed<=tm.PerfectTo*w+ping+tm.ServerSlack
@@ -214,6 +231,7 @@ function Rules.Hit(m,M,ctx,args)
   ctx.AddXP(M.BreakXP+M.BreakXPPerTier*(m.OreIndex-1))
   Rules.RollOre(m,M,ctx.Random,pick.Luck,ctx.Layer)
   -- Every circle pauses while the old pile crumbles and the new one rises.
+  s.PauseUntil=ctx.Clock+M.Client.BreakPause
   Rules.IssueTargets(s,M,pick,ctx.Clock,M.Client.BreakPause)
   return code('BROKE',ore.Id,m.LastBrokenValue)
  end
@@ -224,8 +242,9 @@ end
 function Rules.BuyPickaxe(m,M,ctx,level)
  level=int(level,0);check(level>=1 and level<=#M.Pickaxes,'BAD_ITEM')
  if level<=m.PickaxeOwned then
+  local changed=level~=m.PickaxeLevel
   m.PickaxeLevel=level
-  if ctx.Session and (m.ActiveUntil or 0)>=ctx.Now then Rules.IssueTargets(ctx.Session,M,M.Pickaxes[level],ctx.Clock)end
+  if changed and ctx.Session and (m.ActiveUntil or 0)>=ctx.Now then Rules.IssueTargets(ctx.Session,M,M.Pickaxes[level],ctx.Clock)end
   return code('EQUIPPED',M.Pickaxes[level].Id)
  end
  check(level==m.PickaxeOwned+1,'IN_ORDER')
@@ -266,7 +285,11 @@ end
 function Rules.Train(m,M,ctx)
  local def=M.Weights[m.WeightLevel];check(def~=nil,'NEED_WEIGHT')
  check(m.Strength<math.min(def.Cap,M.MaxStrength),'WEIGHT_CAPPED')
- check(ctx.Clock-(m.LastTrainAt or 0)>=def.Cooldown*M.CooldownTolerance,'REST')
+ -- Rest + the shortest possible lift; a rep can never be scripted faster than a fast human.
+ check(ctx.Clock-(m.LastTrainAt or 0)>=def.Cooldown*M.CooldownTolerance+M.MinLiftTime,'REST')
+ -- Lifting ends any mining session (no interleaving reps with hits).
+ m.ActiveUntil=0;m.Combo=0
+ if ctx.Session then ctx.Session.Targets={};ctx.Session.Stale={}end
  m.LastTrainAt=ctx.Clock;m.TrainingReps+=1;m.TrainingUntil=ctx.Now+M.SessionSeconds
  local before=m.Strength
  m.Strength=math.min(def.Cap,M.MaxStrength,m.Strength+def.Gain)
