@@ -105,8 +105,10 @@ function Shop.new(ctx)
    U.Stroke(card,equipped and U.Colors.blue or(owned and U.Colors.green or U.Colors.edge),equipped and 4 or 2)
    local stripe=Instance.new('Frame');stripe.Size=UDim2.new(0,8,1,-16);stripe.Position=UDim2.fromOffset(8,8);stripe.BackgroundColor3=color;stripe.BorderSizePixel=0;stripe.Parent=card
    U.Round(stripe,4)
-   preview(card,def,i,24,14,112)
-   local x=148;local w=cardW-x-12
+   -- Narrow cards (portrait phones) get a smaller preview so the text column stays readable.
+   local narrow=cardW<360
+   preview(card,def,i,narrow and 20 or 24,narrow and 18 or 14,narrow and 96 or 112)
+   local x=narrow and 126 or 148;local w=cardW-x-12
    local name=fit(U.Text(card,(def.Icon or'⛏')..' '..Text.Name(def),x,10,w,28,20,U.Colors.text,true),12)
    name.TextColor3=color:Lerp(U.Colors.text,.55)
    local trait=U.Text(card,Text.IsRussian()and(def.TraitRU or def.Trait)or def.Trait,x,38,w,40,14,U.Colors.purple)

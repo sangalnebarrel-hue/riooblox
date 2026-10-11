@@ -260,6 +260,8 @@ end
 
 function Rules.BuyWeight(m,M,ctx,level)
  level=int(level,0);check(level>=1 and level<=#M.Weights,'BAD_ITEM')
+ -- Choosing a weight at the rack counts as training activity: keep the weight in hand.
+ if (m.TrainingUntil or 0)>=ctx.Now then m.TrainingUntil=ctx.Now+M.SessionSeconds end
  if level<=m.WeightOwned then m.WeightLevel=level;return code('WEIGHT_EQUIPPED',M.Weights[level].Id)end
  check(level==m.WeightOwned+1,'IN_ORDER')
  local def=M.Weights[level]

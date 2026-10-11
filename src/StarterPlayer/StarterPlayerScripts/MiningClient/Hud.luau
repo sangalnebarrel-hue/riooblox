@@ -25,15 +25,18 @@ function Hud.new(ctx)
   token+=1;local id=token
   local width=math.clamp(layer.AbsoluteSize.X-32,240,620)
   toast.Size=UDim2.fromOffset(width,46)
-  -- While mining the ore (and its circles) fills the screen centre, so toasts dock at the
-  -- bottom, above the hint line and the Exit button.
+  -- While mining, the ore and its circles fill the screen centre (on short phone screens from
+  -- about y=130 down). Toasts then go above the ore panel (it starts at y=46 on touch) on short
+  -- screens, and right under it on tall ones.
   local mining=ctx.Mine and ctx.Mine.Active
-  if mining then
-   width=math.min(width,math.max(240,layer.AbsoluteSize.X*.6))
-   toast.Size=UDim2.fromOffset(width,40)
-   toast.AnchorPoint=Vector2.new(.5,1);toast.Position=UDim2.new(.5,0,1,-124)
+  toast.AnchorPoint=Vector2.new(.5,0)
+  if mining and layer.AbsoluteSize.Y<560 then
+   width=math.min(width,math.max(220,math.floor(layer.AbsoluteSize.X*.5)))
+   toast.Size=UDim2.fromOffset(width,36);toast.Position=UDim2.new(.5,0,0,6)
+  elseif mining then
+   toast.Position=UDim2.new(.5,0,0,162)
   else
-   toast.AnchorPoint=Vector2.new(.5,0);toast.Position=UDim2.new(.5,0,.16,0)
+   toast.Position=UDim2.new(.5,0,.16,0)
   end
   toast.Text=text;toast.TextColor3=color or U.Colors.text;toast.Visible=true
   stroke.Color=color or U.Colors.edge
