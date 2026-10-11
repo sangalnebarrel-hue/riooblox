@@ -79,13 +79,14 @@ local M={
    CritChance=.18,CritMult=2.5,PerfectMult=1.8,ComboStep=.05,ComboMax=.6,Luck=.5,CoinBonus=.55,FX=6,Color={255,103,49},
    Trait='3 circles · fiery crits x2.5 · +55% coins',TraitRU='3 круга · огненные криты x2.5 · +55% монет',
    Visual={Shaft={40,30,30},ShaftMaterial='Metal',Head={255,96,40},HeadMaterial='CrackedLava',Trim={20,16,16},Glow={255,140,40},Spikes=3,SpikeColor={255,190,60},FX='Ember'}},
-  {Id='Voidbreaker',Name='Voidbreaker',RU='Разломщик Пустоты',Icon='🌌',Price=95000000,Strength=900,Damage=125,Window=.8,Circles=3,
+  {Id='Voidbreaker',Name='Voidbreaker',RU='Разломщик Пустоты',Icon='🌌',Price=85000000,Strength=1000,Damage=125,Window=.8,Circles=3,
    CritChance=.25,CritMult=3,PerfectMult=2,ComboStep=.05,ComboMax=.6,Luck=.8,CoinBonus=1,FX=7,Color={184,75,255},
    Trait='Breaks ANY ore in 1-2 hits · x2 coins',TraitRU='Ломает ЛЮБУЮ руду за 1-2 удара · x2 монет',
    Visual={Shaft={24,16,36},ShaftMaterial='Metal',Head={150,60,255},HeadMaterial='Neon',Trim={60,30,90},Glow={200,120,255},Gem={240,200,255},Halo={190,110,255},FX='Void',Length=4.6,Span=1.8}},
  },
  -- First weight is free. Each weight trains Strength up to its Cap; the next weight needs
- -- Strength (and Coins) to unlock. Pickaxe Strength gates are each reachable with the weights.
+ -- Strength (and Coins) to unlock. Pickaxe N needs Strength reachable with weight N-1, except the
+ -- Voidbreaker (1000), which needs the last weight (Void Mass) so every weight gates something.
  Weights={
   {Id='Dumbbell',Name='Light Dumbbell',RU='Лёгкая гантель',Icon='🥉',Price=0,Strength=0,Gain=1,Cap=40,Cooldown=1.0,Color={160,170,180},
    Visual={Shape='Dumbbell'}},
@@ -99,7 +100,7 @@ local M={
    Visual={Shape='Orb',Material='Glass',Transparency=.15,Glow={150,240,255},FX='Sparkle'}},
   {Id='InfernoCore',Name='Inferno Core',RU='Инферно-ядро',Icon='🔥',Price=5000000,Strength=560,Gain=5,Cap=940,Cooldown=1.25,Color={249,91,45},
    Visual={Shape='Orb',Material='CrackedLava',Glow={255,140,40},FX='Ember',Ring={255,170,60}}},
-  {Id='VoidMass',Name='Void Mass',RU='Масса Пустоты',Icon='🌑',Price=38000000,Strength=880,Gain=6,Cap=1100,Cooldown=1.3,Color={60,24,96},
+  {Id='VoidMass',Name='Void Mass',RU='Масса Пустоты',Icon='🌑',Price=25000000,Strength=880,Gain=6,Cap=1100,Cooldown=1.3,Color={60,24,96},
    Visual={Shape='Orb',Material='Basalt',Glow={190,110,255},FX='Void',Ring={176,80,255}}},
  },
 }

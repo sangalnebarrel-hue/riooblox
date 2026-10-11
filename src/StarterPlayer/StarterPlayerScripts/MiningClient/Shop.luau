@@ -67,6 +67,12 @@ function Shop.new(ctx)
   local b=Text.Get('LUCK')..' +'..pct(def.Luck)..'  ·  '..Text.Get('COIN_BONUS')..' +'..pct(def.CoinBonus)..'  ·  '..Text.Get('WINDOW')..' '..string.format('%.2f',def.Window)..'s'
   return a,b
  end
+ -- Single-line labels shrink to fit instead of wrapping over the next line (long RU strings).
+ local function fit(label,minSize)
+  label.TextWrapped=false;label.TextScaled=true
+  local limit=Instance.new('UITextSizeConstraint');limit.MaxTextSize=label.TextSize;limit.MinTextSize=minSize or 9;limit.Parent=label
+  return label
+ end
  local busy=false
  local function buy(level)
   if busy then return end
@@ -101,18 +107,19 @@ function Shop.new(ctx)
    U.Round(stripe,4)
    preview(card,def,i,24,14,112)
    local x=148;local w=cardW-x-12
-   local name=U.Text(card,(def.Icon or'⛏')..' '..Text.Name(def),x,10,w,28,20,U.Colors.text,true)
+   local name=fit(U.Text(card,(def.Icon or'⛏')..' '..Text.Name(def),x,10,w,28,20,U.Colors.text,true),12)
    name.TextColor3=color:Lerp(U.Colors.text,.55)
    local trait=U.Text(card,Text.IsRussian()and(def.TraitRU or def.Trait)or def.Trait,x,38,w,40,14,U.Colors.purple)
-   trait.TextWrapped=true;trait.TextYAlignment=Enum.TextYAlignment.Top
+   trait.TextWrapped=true;trait.TextYAlignment=Enum.TextYAlignment.Top;trait.TextScaled=true
+   do local limit=Instance.new('UITextSizeConstraint');limit.MaxTextSize=14;limit.MinTextSize=9;limit.Parent=trait end
    local a,b=statLines(def)
-   U.Text(card,a,x,80,w,20,13,U.Colors.muted)
-   U.Text(card,b,x,100,w,20,13,U.Colors.muted)
+   fit(U.Text(card,a,x,80,w,20,13,U.Colors.muted))
+   fit(U.Text(card,b,x,100,w,20,13,U.Colors.muted))
    local m=Rules.New(M);m.Strength=math.max(s.Strength,def.Strength)
    local hits=Text.Name(easy)..' ~'..Rules.HitsToBreak(M,m,def,easy)..'  ·  '..Text.Name(hard)..' ~'..Rules.HitsToBreak(M,m,def,hard)
-   U.Text(card,'⚒ '..hits,x,120,w,20,13,U.Colors.text)
+   fit(U.Text(card,'⚒ '..hits,x,120,w,20,13,U.Colors.text))
    local needCoins=s.Cash<def.Price;local needStrength=s.Strength<def.Strength
-   local req=U.Text(card,'',16,cardH-66,cardW-180,24,15,U.Colors.text,true)
+   local req=fit(U.Text(card,'',16,cardH-66,cardW-180,24,15,U.Colors.text,true),10)
    req.Text='💰 '..(def.Price>0 and Text.Short(def.Price)or Text.Get('FREE'))..'    💪 '..def.Strength
    req.TextColor3=(owned and U.Colors.green)or((needCoins or needStrength)and U.Colors.red)or U.Colors.text
    local label,color2,fn
@@ -122,14 +129,26 @@ function Shop.new(ctx)
    elseif needStrength then label,color2,fn=Text.Get('NEED_MORE_STRENGTH'),U.Colors.muted,function()
      Audio.Play('Deny');Hud.Toast(Text.Get('NEED_STRENGTH',def.Strength),U.Colors.gold)end
    elseif needCoins then label,color2,fn=Text.Get('NEED_MORE_COINS'),U.Colors.muted,function()
-     Audio.Play('Deny');Hud.Toast(Text.Get('NEED_COINS',Text.Short(def.Price)),U.Colors.gold)end
+     Audio.Play('Deny')
+     -- The first pickaxe is bought early: point new players at the Collector.
+     Hud.Toast(Text.Get('NEED_COINS',Text.Short(def.Price))..(i==1 and(' · '..Text.Get('SELL_HINT'))or''),U.Colors.gold,i==1 and 4 or nil)
+    end
    else label,color2,fn=Text.Get('BUY'),U.Colors.green,function()buy(i)end end
    local button=U.Button(card,'Action',label,cardW-176,cardH-56,164,44,fn,color2)
    button.ZIndex=5
    if (owned or nextOne)and not needStrength and def.Strength>0 then
-    U.Text(card,'✔ '..Text.Get('STRENGTH_VALUE',def.Strength),16,cardH-40,cardW-200,22,13,U.Colors.green)
+    fit(U.Text(card,'✔ '..Text.Get('STRENGTH_VALUE',def.Strength),16,cardH-40,cardW-200,22,13,U.Colors.green))
    elseif needStrength and nextOne then
-    U.Text(card,Text.L('Lift weights to reach it','Подними гири, чтобы дорасти'),16,cardH-40,cardW-200,22,13,U.Colors.red)
+    fit(U.Text(card,Text.L('Lift weights to reach it','Подними гири, чтобы дорасти'),16,cardH-40,cardW-200,22,13,U.Colors.red))
+   end
+   -- Tutorial step 7: mark where to start.
+   if i==1 and s.PickaxeOwned==0 and player:GetAttribute('TutorialActive')==true and player:GetAttribute('TutorialStep')==7 then
+    local stroke=card:FindFirstChildOfClass('UIStroke')
+    if stroke then stroke.Color=U.Colors.gold;stroke.Thickness=5 end
+    local pill=Instance.new('TextLabel');pill.Name='StartHere';pill.Position=UDim2.fromOffset(20,8);pill.Size=UDim2.fromOffset(120,24)
+    pill.BackgroundColor3=U.Colors.gold;pill.BorderSizePixel=0;pill.FontFace=font;pill.TextColor3=U.Colors.text;pill.ZIndex=6
+    pill.Text=Text.L('START HERE','НАЧНИ ЗДЕСЬ');pill.TextScaled=true;pill.Parent=card;U.Round(pill,8)
+    local pad=Instance.new('UIPadding');pad.PaddingLeft=UDim.new(0,6);pad.PaddingRight=UDim.new(0,6);pad.PaddingTop=UDim.new(0,3);pad.PaddingBottom=UDim.new(0,3);pad.Parent=pill
    end
   end
   local rows=math.ceil(#M.Pickaxes/columns)

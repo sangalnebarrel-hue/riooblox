@@ -107,10 +107,14 @@ test("config sanity: 12 ores, 7 pickaxes, 7 weights, first weight free, wooden n
 		truthy(M.Weights[i].Price > M.Weights[i - 1].Price, "weight prices rise")
 		truthy(M.Weights[i].Strength <= M.Weights[i - 1].Cap, "weight " .. i .. " unlockable with previous cap")
 	end
-	-- Every pickaxe requirement is reachable with the weight one step below it.
-	for i = 2, #M.Pickaxes do
+	-- Pickaxes 2-6 are reachable with the weight one step below; the Voidbreaker needs the last
+	-- weight, so every weight gates something.
+	for i = 2, #M.Pickaxes - 1 do
 		truthy(M.Pickaxes[i].Strength <= M.Weights[i - 1].Cap, "pickaxe " .. i .. " reachable with weight " .. (i - 1))
 	end
+	local last = M.Pickaxes[#M.Pickaxes]
+	truthy(last.Strength > M.Weights[#M.Weights - 1].Cap, "final pickaxe needs the last weight")
+	truthy(last.Strength <= M.Weights[#M.Weights].Cap and last.Strength <= M.MaxStrength, "final pickaxe reachable")
 	for _, ore in M.Ores do
 		truthy(ore.Name and ore.RU and ore.Visual, "ore names/visual " .. ore.Id)
 	end

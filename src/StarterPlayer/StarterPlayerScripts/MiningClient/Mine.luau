@@ -8,7 +8,7 @@ local CAS=game:GetService('ContextActionService')
 local TweenService=game:GetService('TweenService')
 local Mine={}
 
-local CIRCLE=118 -- px, outer ring at the moment a circle opens
+local CIRCLE_MAX=118 -- px, outer ring at the moment a circle opens (shrinks on small screens)
 local IDLE_EXIT=22 -- seconds without a hit before the session closes itself
 
 function Mine.new(ctx)
@@ -17,6 +17,7 @@ function Mine.new(ctx)
  local M,Text,Audio,U=ctx.M,ctx.Text,ctx.Audio,ctx.U
  local Net,World,FX,Hud,Anim=ctx.Net,ctx.World,ctx.FX,ctx.Hud,ctx.Anim
  local TM=M.Timing
+ local CIRCLE=CIRCLE_MAX
  local gui=ctx.Gui::ScreenGui
  gui.IgnoreGuiInset=true
  pcall(function()gui.ScreenInsets=Enum.ScreenInsets.None end)
@@ -40,6 +41,8 @@ function Mine.new(ctx)
   l.TextTruncate=Enum.TextTruncate.AtEnd;l.ZIndex=31;l.Text='';l.Parent=parent;return l
  end
  local oreTitle=text(panel,'OreTitle',16,8,300,28,24)
+ oreTitle.TextScaled=true;oreTitle.TextTruncate=Enum.TextTruncate.None
+ do local limit=Instance.new('UITextSizeConstraint');limit.MaxTextSize=24;limit.MinTextSize=13;limit.Parent=oreTitle end
  local rarity=text(panel,'Rarity',300,10,124,24,16,U.Colors.muted,Enum.TextXAlignment.Right)
  local hpBack=Instance.new('Frame');hpBack.Name='HP';hpBack.Position=UDim2.fromOffset(16,40);hpBack.Size=UDim2.new(1,-32,0,16)
  hpBack.BackgroundColor3=Color3.fromRGB(23,43,76);hpBack.BorderSizePixel=0;hpBack.ZIndex=31;hpBack.Parent=panel
@@ -52,6 +55,8 @@ function Mine.new(ctx)
 
  local hint=text(overlay,'Hint',0,0,0,0,20,Color3.new(1,1,1),Enum.TextXAlignment.Center)
  hint.AnchorPoint=Vector2.new(.5,1);hint.Position=UDim2.new(.5,0,1,-86);hint.Size=UDim2.fromOffset(620,30);hint.TextStrokeTransparency=0
+ hint.TextScaled=true;hint.TextTruncate=Enum.TextTruncate.None
+ do local limit=Instance.new('UITextSizeConstraint');limit.MaxTextSize=20;limit.MinTextSize=11;limit.Parent=hint end
  hint.TextStrokeColor3=U.Colors.edge;hint.ZIndex=30
  local exitButton=U.Button(overlay,'Exit',Text.Get('EXIT'),0,0,150,48,function()self.Exit('button')end,U.Colors.red)
  exitButton.AnchorPoint=Vector2.new(.5,1);exitButton.Position=UDim2.new(.5,0,1,-24);exitButton.ZIndex=40
@@ -64,6 +69,7 @@ function Mine.new(ctx)
   comboLabel.Position=UDim2.fromOffset(panel.Size.X.Offset-170,60)
   local top=UIS.TouchEnabled and 46 or 58
   panel.Position=UDim2.new(.5,0,0,top)
+  CIRCLE=math.clamp(math.floor(math.min(size.X,size.Y)*.22),72,CIRCLE_MAX)
   hint.Size=UDim2.fromOffset(math.min(size.X-24,640),30)
  end
  gui:GetPropertyChangedSignal('AbsoluteSize'):Connect(layout);layout()
@@ -81,18 +87,27 @@ function Mine.new(ctx)
  local function pick()return M.Pickaxes[(state and state.PickaxeLevel)or Net.Attr('MiningPickaxe',1)]or M.Pickaxes[1]end
  local function tier()return pick().FX or 1 end
 
+ -- Short news in the panel title (break, new ore) instead of a toast over the ore and circles.
+ local bannerUntil=0
+ local function banner(text,color,seconds)
+  bannerUntil=os.clock()+(seconds or 1.5)
+  oreTitle.Text=text;oreTitle.TextColor3=color
+ end
  local function refreshPanel()
   local s=state or Net.State()
   local def=World.OreDef(s.OreId)
   local hp=s.OreHP or def.HP;local max=math.max(1,s.OreMaxHP or def.HP)
-  oreTitle.Text=(def.Icon or'')..' '..Text.Name(def)
-  oreTitle.TextColor3=World.OreColor(def):Lerp(U.Colors.text,.35)
+  if os.clock()>=bannerUntil then
+   oreTitle.Text=(def.Icon or'')..' '..Text.Name(def)
+   oreTitle.TextColor3=World.OreColor(def):Lerp(U.Colors.text,.35)
+  end
   rarity.Text=Text.IsRussian()and(def.RarityRU or def.Rarity or'')or(def.Rarity or'')
   hpFill.Size=UDim2.fromScale(math.clamp(hp/max,0,1),1)
   hpFill.BackgroundColor3=hp/max<.3 and U.Colors.red or hp/max<.6 and U.Colors.gold or U.Colors.green
   hpText.Text=Text.Get('HP',hp,max)
   local p=pick()
-  infoLeft.Text=(p.Icon or'⛏')..' '..Text.Name(p)..'  ·  '..Text.Get('ORE_VALUE',Text.Short(s.OreValue or 0))
+  local worth=math.floor((s.OreValue or 0)*(1+(p.CoinBonus or 0))+.5) -- what the server pays (MiningRules.Hit)
+  infoLeft.Text=(p.Icon or'⛏')..' '..Text.Name(p)..'  ·  '..Text.Get('ORE_VALUE',Text.Short(worth))
   local combo=(os.clock()-lastPaidHit<M.ComboTimeout)and(s.Combo or 0)or 0
   comboLabel.Text=combo>=2 and Text.Get('COMBO',combo)or''
  end
@@ -107,12 +122,35 @@ function Mine.new(ctx)
  end
  local function ringScale(f)return 1-.75*f end
  local usedPoints={}
+ -- A new circle must not cover a live one on screen (a tap would land on the wrong circle), so
+ -- hit points whose projection is within ~0.9 circle of a live circle are avoided.
+ local function screenPos(cam,att)
+  local p,on=cam:WorldToViewportPoint(att.WorldPosition)
+  return Vector2.new(p.X,p.Y),on
+ end
  local function pickPoint()
   local cam=workspace.CurrentCamera
-  local att=view and World.HitPoint(view,cam and cam.CFrame.Position,usedPoints)
+  if not view then return nil end
+  if not cam then return World.HitPoint(view,nil,usedPoints)end
+  local live={}
+  for _,c in pairs(active)do
+   if not c.Removed and c.Point and c.Point.Parent then table.insert(live,(screenPos(cam,c.Point)))end
+  end
+  local avoid={};local free=0;local fallback,fallbackGap=nil,-1
+  for _,att in ipairs(view.HitPoints or{})do
+   if att.Parent then
+    local p=screenPos(cam,att)
+    local gap=math.huge
+    for _,q in ipairs(live)do gap=math.min(gap,(p-q).Magnitude)end
+    if usedPoints[att]or gap<CIRCLE*.9 then avoid[att]=true else free+=1 end
+    if not usedPoints[att]and gap>fallbackGap then fallback,fallbackGap=att,gap end
+   end
+  end
+  local att=if free>0 then World.HitPoint(view,cam.CFrame.Position,avoid)else fallback
   if att then usedPoints[att]=true end
   return att
  end
+ local judgeAt
  local function removeCircle(c,resultColor)
   if c.Removed then return end
   c.Removed=true
@@ -172,13 +210,35 @@ function Mine.new(ctx)
   Audio.Play(perfect and'Perfect'or'Hit',nil,tier())
   sendHit(c,perfect and 2 or 1,false)
  end
+ -- Overlapping circles: one tap may reach several buttons. Resolve it once, preferring a circle
+ -- that is past "too early" and closest to its gold ring, then the circle nearest the tap.
+ local lastInput,lastInputAt=nil,0
+ function judgeAt(input,hit)
+  if input==lastInput and os.clock()-lastInputAt<.05 then return end
+  lastInput,lastInputAt=input,os.clock()
+  local tap=Vector2.new(input.Position.X,input.Position.Y)
+  local now=os.clock();local mid=(TM.PerfectFrom+TM.PerfectTo)/2
+  local best,bestScore,near,nearDist=nil,math.huge,nil,math.huge
+  for _,c in pairs(active)do
+   if not c.Judged and not c.Removed and c.Frame.Visible then
+    local center=c.Frame.AbsolutePosition+c.Frame.AbsoluteSize/2
+    local dist=(center-tap).Magnitude
+    if dist<=c.Frame.AbsoluteSize.X/2+2 then
+     local f=(now-c.LocalSpawn)/c.Window
+     if f>=TM.GoodFrom and math.abs(f-mid)<bestScore then best,bestScore=c,math.abs(f-mid)end
+     if dist<nearDist then near,nearDist=c,dist end
+    end
+   end
+  end
+  judge(best or near or hit)
+ end
  local function makeCircle(t)
   if active[t.Id]then return end
   local c={Id=t.Id,Window=t.Window,LocalSpawn=t.LocalSpawn,Slot=t.Slot}
   c.Point=pickPoint()
   local color=Color3.fromRGB(table.unpack(pick().Color or{110,220,255}))
   local frame=Instance.new('Frame');frame.Name='Circle'..t.Id;frame.AnchorPoint=Vector2.new(.5,.5);frame.Size=UDim2.fromOffset(CIRCLE,CIRCLE)
-  frame.BackgroundTransparency=1;frame.Visible=false;frame.ZIndex=21;frame.Parent=circles
+  frame.BackgroundTransparency=1;frame.Visible=false;frame.ZIndex=math.max(21,1000000-t.Id);frame.Parent=circles
   local back=Instance.new('Frame');back.Name='Back';back.AnchorPoint=Vector2.new(.5,.5);back.Position=UDim2.fromScale(.5,.5);back.Size=UDim2.fromScale(.62,.62)
   back.BackgroundColor3=Color3.fromRGB(23,43,76);back.BackgroundTransparency=.45;back.ZIndex=21;back.Parent=frame
   do local cc=Instance.new('UICorner');cc.CornerRadius=UDim.new(1,0);cc.Parent=back end
@@ -189,7 +249,7 @@ function Mine.new(ctx)
   local button=Instance.new('TextButton');button.Name='Hit';button.Text='';button.BackgroundTransparency=1;button.AutoButtonColor=false
   button.AnchorPoint=Vector2.new(.5,.5);button.Position=UDim2.fromScale(.5,.5);button.Size=UDim2.fromScale(1,1);button.ZIndex=25;button.Parent=frame
   button.InputBegan:Connect(function(input)
-   if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then judge(c)end
+   if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then judgeAt(input,c)end
   end)
   c.Frame,c.Ring,c.Gold,c.Back,c.Shrink=frame,white,gold,back,shrink
   active[t.Id]=c
@@ -273,12 +333,12 @@ function Mine.new(ctx)
    local root=player.Character and player.Character:FindFirstChild('HumanoidRootPart')
    if root then FX.Coins(center,18,root)end
    FX.Popup(center,'+'..Text.Short(s.LastBrokenValue or payout),U.Colors.gold,true)
-   Hud.Toast(message,World.OreColor(brokenDef))
+   banner(message,World.OreColor(brokenDef):Lerp(U.Colors.text,.25),M.Client.BreakPause*.6)
    task.delay(M.Client.BreakPause*.6,function()
     if not self.Active then return end
     local newDef,newIndex=World.OreDef(s.OreId)
-    if newIndex>=7 then Hud.Toast(Text.Get('RARE_ORE',Text.Name(newDef)),World.OreColor(newDef),3.5)
-    else Hud.Toast(Text.Get('NEW_ORE',Text.Name(newDef)),U.Colors.text,2)end
+    if newIndex>=7 then banner(Text.Get('RARE_ORE',Text.Name(newDef)),World.OreColor(newDef),2.5)
+    else banner(Text.Get('NEW_ORE',Text.Name(newDef)),U.Colors.text,1.2)end
    end)
   elseif view and fresh then
    World.ApplyState(view,s)
@@ -380,6 +440,7 @@ function Mine.new(ctx)
    end
   end
   if comboLabel.Text~=''and now-lastPaidHit>=M.ComboTimeout then comboLabel.Text=''end
+  if bannerUntil>0 and now>=bannerUntil then bannerUntil=0;refreshPanel()end
   if now-lastActivity>IDLE_EXIT then self.Exit('idle')end
  end
 
@@ -419,8 +480,11 @@ function Mine.new(ctx)
    return Enum.ContextActionResult.Sink
   end,false,3000,Enum.KeyCode.Space,Enum.KeyCode.ButtonA,Enum.KeyCode.ButtonR2,Enum.KeyCode.F)
   overlay.Visible=true;refreshPanel();layout()
-  local step7=player:GetAttribute('TutorialActive')==true and player:GetAttribute('TutorialStep')==7
-  hint.Text=step7 and Text.Get('TUTORIAL_HIT')or Text.Get('MINE_HINT')
+  local last=UIS:GetLastInputType()
+  local pad=UIS.GamepadEnabled and(last==Enum.UserInputType.Gamepad1 or not UIS.KeyboardEnabled and not UIS.TouchEnabled)
+  local touch=UIS.TouchEnabled and(last==Enum.UserInputType.Touch or not UIS.KeyboardEnabled)
+  local how=pad and'MINE_HINT_PAD'or touch and'MINE_HINT_TOUCH'or UIS.KeyboardEnabled and'MINE_HINT_KEYS'or'MINE_HINT'
+  hint.Text=Text.Get(how)
   Audio.Play('Whoosh')
   task.spawn(function()
    walkToStand()

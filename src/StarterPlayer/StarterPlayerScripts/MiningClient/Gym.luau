@@ -55,27 +55,53 @@ function Gym.new(ctx)
  local liftScale=Instance.new('UIScale');liftScale.Parent=liftButton
  local hintLabel=U.Text(overlay,'',0,0,0,26,17,Color3.new(1,1,1),true);hintLabel.TextXAlignment=Enum.TextXAlignment.Center
  hintLabel.TextStrokeTransparency=0;hintLabel.TextStrokeColor3=U.Colors.edge;hintLabel.ZIndex=30
+ hintLabel.TextScaled=true;hintLabel.TextWrapped=true
+ do local limit=Instance.new('UITextSizeConstraint');limit.MaxTextSize=17;limit.MinTextSize=11;limit.Parent=hintLabel end
 
+ -- Three layouts: tall narrow screens stack the panel over the meter; short landscape screens
+ -- (most phones) put the panel on the right and the meter on the left; desktops keep both
+ -- beside the character. Every size is clamped so the weight list and the lift target stay
+ -- on screen (the free weight must always be reachable).
  local compact=false
  local function layout()
   local size=gui.AbsoluteSize
-  compact=size.X<760
-  local pw=compact and math.min(size.X-16,420)or 360
-  local ph=compact and math.min(300,size.Y*.42)or math.min(560,size.Y-140)
+  local short=size.Y<560
+  compact=size.X<760 and not short
+  local pw,ph
+  if short then
+   pw=math.floor(math.min(360,size.X*.46));ph=math.max(200,size.Y-56)
+   panel.AnchorPoint=Vector2.new(1,0);panel.Position=UDim2.new(1,-8,0,44)
+  elseif compact then
+   pw=math.min(size.X-16,420);ph=math.min(300,size.Y*.42)
+   panel.AnchorPoint=Vector2.new(.5,0);panel.Position=UDim2.new(.5,0,0,44)
+  else
+   pw=360;ph=math.min(560,size.Y-140)
+   panel.AnchorPoint=Vector2.new(1,.5);panel.Position=UDim2.new(1,-16,.5,0)
+  end
   panel.Size=UDim2.fromOffset(pw,ph)
-  if compact then panel.AnchorPoint=Vector2.new(.5,0);panel.Position=UDim2.new(.5,0,0,44)
-  else panel.AnchorPoint=Vector2.new(1,.5);panel.Position=UDim2.new(1,-16,.5,0)end
   title.Size=UDim2.fromOffset(pw-36,34);strengthLabel.Size=UDim2.fromOffset(pw-36,30);goalLabel.Size=UDim2.fromOffset(pw-36,20)
   goalBar.Size=UDim2.fromOffset(pw-36,10)
-  rows.Position=UDim2.fromOffset(10,114);rows.Size=UDim2.fromOffset(pw-20,ph-114-58)
+  rows.Position=UDim2.fromOffset(10,114);rows.Size=UDim2.fromOffset(pw-20,math.max(64,ph-114-58))
   exitButton.Position=UDim2.fromOffset(pw-134,ph-50);shopButton.Position=UDim2.fromOffset(14,ph-50)
-  local mw,mh=compact and 150 or 170,compact and math.min(300,size.Y*.42)or 380
+  local mw,mh
+  if short then
+   mw,mh=150,math.clamp(size.Y-110,170,380)
+   local left=(size.X-pw-8)/2
+   meter.AnchorPoint=Vector2.new(.5,1);meter.Position=UDim2.new(0,left,1,-12)
+   hintLabel.AnchorPoint=Vector2.new(.5,0);hintLabel.Position=UDim2.new(0,left,0,44)
+   hintLabel.Size=UDim2.fromOffset(math.max(160,size.X-pw-32),math.max(26,size.Y-mh-12-44-8))
+  elseif compact then
+   mw,mh=150,math.min(300,size.Y*.42)
+   meter.AnchorPoint=Vector2.new(.5,1);meter.Position=UDim2.new(.5,0,1,-16)
+   hintLabel.AnchorPoint=Vector2.new(.5,1);hintLabel.Position=UDim2.new(.5,0,1,-mh-24)
+   hintLabel.Size=UDim2.fromOffset(math.min(size.X-20,560),26)
+  else
+   mw,mh=170,math.min(380,size.Y-200)
+   meter.AnchorPoint=Vector2.new(.5,1);meter.Position=UDim2.new(.5,-80,1,-24)
+   hintLabel.AnchorPoint=Vector2.new(.5,1);hintLabel.Position=UDim2.new(.5,-80,1,-mh-34)
+   hintLabel.Size=UDim2.fromOffset(math.min(size.X-20,560),26)
+  end
   meter.Size=UDim2.fromOffset(mw,mh)
-  if compact then meter.AnchorPoint=Vector2.new(.5,1);meter.Position=UDim2.new(.5,0,1,-16)
-  else meter.AnchorPoint=Vector2.new(.5,1);meter.Position=UDim2.new(.5,-80,1,-24)end
-  hintLabel.Size=UDim2.fromOffset(math.min(size.X-20,560),26)
-  hintLabel.AnchorPoint=Vector2.new(.5,1)
-  hintLabel.Position=compact and UDim2.new(.5,0,1,-mh-24)or UDim2.new(.5,-80,1,-mh-34)
  end
  gui:GetPropertyChangedSignal('AbsoluteSize'):Connect(function()if self.Active then layout();self.Render()end end)
 
@@ -134,6 +160,10 @@ function Gym.new(ctx)
    local dot=Instance.new('Frame');dot.Size=UDim2.fromOffset(10,40);dot.Position=UDim2.fromOffset(8,9);dot.BackgroundColor3=color;dot.BorderSizePixel=0;dot.ZIndex=33;dot.Parent=row;U.Round(dot,5)
    local nm=U.Text(row,(def.Icon or'')..' '..Text.Name(def),26,4,w-150,26,16,U.Colors.text,true);nm.ZIndex=33
    local sub=U.Text(row,Text.Get('GAIN_PER_REP',def.Gain,def.Cap)..'  ·  💪'..def.Strength,26,30,w-150,22,13,U.Colors.muted);sub.ZIndex=33
+   for _,l in ipairs({nm,sub})do
+    l.TextWrapped=false;l.TextScaled=true
+    local limit=Instance.new('UITextSizeConstraint');limit.MaxTextSize=l.TextSize;limit.MinTextSize=9;limit.Parent=l
+   end
    local label,col,fn
    local needS=s.Strength<def.Strength;local needC=cash<def.Price
    if selected then label,col=Text.Get('SELECTED'),U.Colors.blue
@@ -303,6 +333,9 @@ function Gym.new(ctx)
    return
   end
   sessionAt=os.clock()
+  -- The first weight is free: hand it over right away so lifting (and tutorial step 8) never
+  -- depends on finding the CLAIM button.
+  if Net.Attr('MiningWeightOwned',0)==0 then task.spawn(request,'MiningWeight',{Level=1},U.Colors.green)end
   ctx.Main:SetAttribute('MiningActive',true)
   setControls(false)
   CAS:BindActionAtPriority('DOGROTS_MiningLift',function(_,inputState)

@@ -207,8 +207,9 @@ def main():
     print()
     print("PICKAXES at layer 1 (strength = requirement, and +150 surplus)")
     for i, p in enumerate(M["Pickaxes"], 1):
-        cpm, opm, hpm = simulate(M, i, p["Strength"], args.skill, args.minutes, rng)
-        cpm2, _, _ = simulate(M, i, p["Strength"] + 150, args.skill, args.minutes, rng)
+        # Same seed for both runs so the +150 column shows the Strength effect, not RNG noise.
+        cpm, opm, hpm = simulate(M, i, p["Strength"], args.skill, args.minutes, random.Random(args.seed * 1000 + i))
+        cpm2, _, _ = simulate(M, i, p["Strength"] + 150, args.skill, args.minutes, random.Random(args.seed * 1000 + i))
         print("  %d %-12s price %12s  str %4d | %9s coins/min (%9s +150str)  %5.1f ores/min  %5.1f hits/ore  %5.1f hits/s" % (
             i, p["Id"], f"{int(p['Price']):,}", p["Strength"], f"{int(cpm):,}", f"{int(cpm2):,}", opm, hpm / max(opm, 1e-9), hpm / 60))
     print()

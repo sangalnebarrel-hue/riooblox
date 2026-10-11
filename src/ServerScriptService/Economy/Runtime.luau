@@ -383,11 +383,21 @@ function Runtime.Request(player,action,a,requestId)
    end
    local session=require(script.Parent.MiningSessions).Get(player.UserId)
    if action=='MiningHit'then
-    -- Cheap RAM pre-check: unknown or unopened circles never pay for a profile transaction.
+    -- Cheap RAM pre-check: only live, open circles of a live session pay for a profile
+    -- transaction (same order of checks as MiningRules.Hit).
     local id=tonumber(a.Target);local target
     for _,t in pairs(session.Targets or{})do if t.Id==id then target=t end end
-    if not target and not(session.Stale and id and session.Stale[id])then return false,'M:TARGET_GONE'end
-    if target and workspace:GetServerTimeNow()<target.SpawnAt-Config.Mining.Timing.ServerSlack then return false,'M:TOO_EARLY'end
+    local view=Runtime.Views[player.UserId];local mining=view and view.Mining
+    if type(mining)=='table'and(tonumber(mining.ActiveUntil)or 0)<os.time()then return false,'M:SESSION_OVER'end
+    if not target then
+     if session.Stale and id and session.Stale[id]then
+      -- An in-flight click on the previous ore: harmless, answered from RAM.
+      local MiningRules=require(game:GetService('ReplicatedStorage'):WaitForChild('Mining'):WaitForChild('MiningRules'))
+      return true,{Message='M:STALE',MiningTargets=MiningRules.ViewTargets(session)}
+     end
+     return false,'M:TARGET_GONE'
+    end
+    if workspace:GetServerTimeNow()<target.SpawnAt-Config.Mining.Timing.ServerSlack then return false,'M:TOO_EARLY'end
    end
    local ping=0;pcall(function()ping=player:GetNetworkPing()end)
    -- Hits and reps are single-use by design (circle ids / rest timer): no receipt slots needed.
