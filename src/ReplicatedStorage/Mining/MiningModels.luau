@@ -121,18 +121,18 @@ function Models.Ore(def,seed,rootCF,scale)
    end
   end
  elseif style=='Meteor'then
-  for i=1,9 do
-   local s=surface[(i*4)%#surface+1]
-   local len=rng:NextNumber(1.4,2.6)
-   local cf=rootCF*CFrame.new((s.Pos+s.Dir*.05)*scale)*alignY(s.Dir)*CFrame.Angles(0,rng:NextNumber(0,6),math.rad(90))
-   local p=part(model,'Vein',Vector3.new(len,.22,.32)*scale,cf,accent,Enum.Material.Neon,{CastShadow=false})
+  for i=1,16 do
+   local s=surface[(i*5)%#surface+1]
+   local len=rng:NextNumber(1.8,3.2)
+   local cf=rootCF*CFrame.new((s.Pos+s.Dir*.35)*scale)*alignY(s.Dir)*CFrame.Angles(0,rng:NextNumber(0,6),0)
+   local p=part(model,'Vein',Vector3.new(len,.34,.5)*scale,cf,accent,Enum.Material.Neon,{CastShadow=false})
    p:SetAttribute('OreAccent',true)
   end
  elseif style=='Banded'then
-  for i=1,7 do
-   local s=surface[(i*3)%#surface+1]
-   local cf=rootCF*CFrame.new((s.Pos+s.Dir*.12)*scale)*alignY(s.Dir)*CFrame.Angles(0,rng:NextNumber(0,6),0)
-   local p=part(model,'Band',Vector3.new(rng:NextNumber(1.6,2.6),.3,rng:NextNumber(.9,1.5))*scale,cf,accent,accentMat)
+  for i=1,12 do
+   local s=surface[(i*5)%#surface+1]
+   local cf=rootCF*CFrame.new((s.Pos+s.Dir*.4)*scale)*alignY(s.Dir)*CFrame.Angles(0,rng:NextNumber(0,6),0)
+   local p=part(model,'Band',Vector3.new(rng:NextNumber(1.8,2.8),.45,rng:NextNumber(1,1.6))*scale,cf,accent,accentMat,{Reflectance=v.Reflectance or .2})
    p:SetAttribute('OreAccent',true)
   end
  end
@@ -168,8 +168,23 @@ function Models.Pickaxe(def,level)
   wedge(model,'HeadTip',Vector3.new(.5,.42,.66),tipCF*CFrame.Angles(math.pi*.5,0,0),head,headMat).Massless=true
  end
  if v.Glow then
-  local core=part(model,'HeadGlow',Vector3.new(span*1.65,.14,.16),top*CFrame.new(0,.0,-.27),rgb(v.Glow),Enum.Material.Neon,{Massless=true,CastShadow=false})
-  local light=Instance.new('PointLight');light.Color=core.Color;light.Range=7;light.Brightness=1.4;light.Shadows=false;light.Parent=core
+  -- Glowing edge along the underside of each arm.
+  for side=-1,1,2 do
+   part(model,'HeadGlow',Vector3.new(span*.8,.1,.3),top*CFrame.new(side*span*.5,-.27,0)*CFrame.Angles(0,0,side*math.rad(-12)),rgb(v.Glow),Enum.Material.Neon,{Massless=true,CastShadow=false})
+  end
+  local light=Instance.new('PointLight');light.Color=rgb(v.Glow);light.Range=7;light.Brightness=1.4;light.Shadows=false;light.Parent=model:FindFirstChild('Binding')
+ end
+ if v.Gem then
+  part(model,'Gem',Vector3.new(.62,.62,.62),top*CFrame.new(0,.42,0),rgb(v.Gem),Enum.Material.Neon,{Massless=true,Shape=Enum.PartType.Ball,CastShadow=false})
+ end
+ if v.Spikes then
+  for i=1,v.Spikes do
+   local x=(i-(v.Spikes+1)/2)*.42
+   wedge(model,'Spike',Vector3.new(.22,.55,.36),top*CFrame.new(x,.48,0)*CFrame.Angles(0,math.pi*.5,0),rgb(v.SpikeColor or v.Glow,v.Head),Enum.Material.Neon).Massless=true
+  end
+ end
+ if v.Halo then
+  part(model,'Halo',Vector3.new(.12,2.2,2.2),top*CFrame.new(0,.15,0)*CFrame.Angles(0,math.rad(90),0),rgb(v.Halo),Enum.Material.Neon,{Massless=true,Shape=Enum.PartType.Cylinder,Transparency=.25,CastShadow=false})
  end
  if v.FX then
   local holder=part(model,'PickFX',Vector3.new(span*2,.6,.6),top,head,Enum.Material.SmoothPlastic,{Transparency=1,Massless=true,CastShadow=false})

@@ -261,7 +261,7 @@ function Mine.new(ctx)
    World.PlayBreak(view,true,s)
    local center=(view.Core and view.Core.Position or pos)+Vector3.new(0,4,0)
    FX.Popup(center,'+'..Text.Short(s.LastBrokenValue or payout),U.Colors.gold,true)
-   Hud.Toast(Text.Message(message,Net.Lookup),World.OreColor(brokenDef))
+   Hud.Toast(message,World.OreColor(brokenDef))
    task.delay(M.Client.BreakPause*.6,function()
     if not self.Active then return end
     local newDef,newIndex=World.OreDef(s.OreId)
