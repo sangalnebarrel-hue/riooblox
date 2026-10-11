@@ -127,6 +127,7 @@ function World.new(ctx)
   local cf=pileCF(view)
   local center=(cf and cf.Position or view.Core.Position)+Vector3.new(0,3.2,0)
   local color=oreColor(def)
+  view.Breaking=true -- the break pause: syncCore must not rebuild the pile meanwhile
   shatter(view)
   local F=fx()
   F.Burst(center,{Color=color,Count=40,Speed=NumberRange.new(14,30),Spread=Vector2.new(180,180),Lifetime=NumberRange.new(.5,1.1)})
@@ -142,6 +143,7 @@ function World.new(ctx)
   end
   view.Serial=state and state.OreSerial or view.Corner:GetAttribute('OreSerial')or 0
   task.delay(M.Client.BreakPause*.55,function()
+   view.Breaking=nil
    if not view.Corner.Parent or self.Views[view.Corner]~=view then return end
    buildPile(view,true,state)
    local _,newIndex=oreDef(state and state.OreId or view.Corner:GetAttribute('OreId'))
@@ -331,8 +333,9 @@ function World.new(ctx)
     destroyPile(view);view.Core=core
     if view.Label then view.Label.Adornee=core end
    end
-   if not view.Pile then buildPile(view,false)end
+   if not view.Pile and not view.Breaking then buildPile(view,false)end
   elseif view.Core then
+   view.Breaking=nil
    destroyPile(view);view.Core=nil
    if view.Label then view.Label.Adornee=nil end
    if ctx.Mine and ctx.Mine.Corner==view.Corner then ctx.Mine.Exit('streamed')end
@@ -374,8 +377,10 @@ function World.new(ctx)
    HitSerial=corner:GetAttribute('HitSerial')or 0,BreakSerial=corner:GetAttribute('BreakSerial')or 0}
   self.Views[corner]=view
   for _,d in ipairs(corner:GetDescendants())do register(view,d)end
-  table.insert(view.Connections,corner.DescendantAdded:Connect(function(d)register(view,d);queueRefresh(view)end))
-  table.insert(view.Connections,corner.DescendantRemoving:Connect(function(d)unregister(view,d);queueRefresh(view)end))
+  -- Cue sounds parented to the core come and go on every hit; they are not corner pieces.
+  local function piece(d)return not(d:IsA('Sound')or d:IsA('SoundEffect'))end
+  table.insert(view.Connections,corner.DescendantAdded:Connect(function(d)if piece(d)then register(view,d);queueRefresh(view)end end))
+  table.insert(view.Connections,corner.DescendantRemoving:Connect(function(d)if piece(d)then unregister(view,d);queueRefresh(view)end end))
   localizeSigns(corner);updateRack(view);applyPromptAccess(view);syncCore(view)
   -- One update changes several attributes; read them together once they have all arrived.
   local orePending=false

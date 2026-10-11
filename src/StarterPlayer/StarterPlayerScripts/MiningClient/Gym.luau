@@ -337,6 +337,7 @@ function Gym.new(ctx)
    or corner:GetAttribute('OwnerUserId')~=player.UserId then
    if current then
     self.Active=false;self.Corner=nil;self.Token=nil;World.RefreshPrompts()
+    setControls(true) -- after Active=false: an unlock that saw this entry as busy must still happen
     if not ok then Hud.Toast(msg,U.Colors.red);Audio.Play('Deny')end
    end
    if ok and not self.Active then task.spawn(Net.Invoke,'MiningTrainEnd',{})end

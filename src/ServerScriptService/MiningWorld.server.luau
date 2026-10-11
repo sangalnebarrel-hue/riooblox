@@ -18,10 +18,12 @@ end
 local function rgb(r,g,b)return Color3.fromRGB(r,g,b)end
 
 -- PLACEMENT ------------------------------------------------------------------------------------
--- Beside kennel 1 (DigSlot_1), 5 studs from its floor, at the kennel end of the cosmetic garden.
+-- Beside kennel 1 (DigSlot_1), ~9 studs from its floor (moved 5 studs away from it after the
+-- first Studio test), at the kennel end of the cosmetic garden.
 -- Checked in 3D against every PlotAppearance stage (levels 1-9) and skin (14) in all 8 yards:
 -- only the Earthquake skin's flat ground crack reaches under the pad (hidden there, see
--- coverGround). Further from the kennels the level-8 garden pavilion and the RainbowRift /
+-- coverGround). Further from the kennels the level-8 garden pavilion (all skins but UFOInvasion and
+-- RainbowRift) and the RainbowRift /
 -- UFOInvasion / TimeWarp centrepieces start; the old spot mirrored from the Lucky Pads was
 -- covered by them.
 -- Returns the corner CFrame and sx: LookVector points to the central walkway; local +X*sx points
@@ -297,8 +299,10 @@ local function coverGround(yard,d)
  local up=math.abs(cf.UpVector.Y)*size.Y/2+math.abs(cf.RightVector.Y)*size.X/2+math.abs(cf.LookVector.Y)*size.Z/2
  local padTop=pad.Position.Y+pad.Size.Y/2
  if cf.Position.Y+up>padTop+.6 or up*2>1.4 then return end -- only flat pieces near the ground
- local hx,hz=pad.Size.X/2+.6,pad.Size.Z/2+.6
- for i=-2,2 do for j=-2,2 do
+ -- Hidden when its centre or a quarter point is under the slab (a piece that only grazes the
+ -- border with its end stays visible).
+ local hx,hz=pad.Size.X/2,pad.Size.Z/2
+ for i=-1,1 do for j=-1,1 do
   local p=pad.CFrame:PointToObjectSpace(cf:PointToWorldSpace(Vector3.new(size.X*i/4,0,size.Z*j/4)))
   if math.abs(p.X)<=hx and math.abs(p.Z)<=hz then
    d.Transparency=1;d.CanCollide=false;d.CanQuery=false;d.CanTouch=false;d:SetAttribute('CoveredByMiningCorner',true)
