@@ -9,7 +9,7 @@ local Models=require(RS:WaitForChild('Mining'):WaitForChild('MiningModels'))
 local M=Config.Mining
 local yardsFolder=workspace:WaitForChild('DOGROTS_District'):WaitForChild('04_PlayerYards')
 
-local LAYOUT_VERSION=22
+local LAYOUT_VERSION=23
 local PAD_SIZE=Vector3.new(23,.5,18)
 
 local function part(parent,name,size,cf,color,mat,props)
@@ -18,9 +18,12 @@ end
 local function rgb(r,g,b)return Color3.fromRGB(r,g,b)end
 
 -- PLACEMENT ------------------------------------------------------------------------------------
--- Right next to kennel 1 (DigSlot_1), at the kennel end of the cosmetic garden. This 23x18 spot
--- stays clear of every PlotAppearance stage (levels 1-9) and skin (14) in all 8 yards, unlike
--- the old spot mirrored from the Lucky Pads, which skins and the level-8 pavilion covered.
+-- Beside kennel 1 (DigSlot_1), 5 studs from its floor, at the kennel end of the cosmetic garden.
+-- Checked in 3D against every PlotAppearance stage (levels 1-9) and skin (14) in all 8 yards:
+-- only the Earthquake skin's flat ground crack reaches under the pad (hidden there, see
+-- coverGround). Further from the kennels the level-8 garden pavilion and the RainbowRift /
+-- UFOInvasion / TimeWarp centrepieces start; the old spot mirrored from the Lucky Pads was
+-- covered by them.
 -- Returns the corner CFrame and sx: LookVector points to the central walkway; local +X*sx points
 -- towards the kennels / street (yards 5-8 are mirror images of yards 1-4).
 local function placement(yard)
@@ -38,12 +41,12 @@ local function placement(yard)
  end
  local center
  if frame then
-  center=frame:PointToWorldSpace(Vector3.new(-18*sx,0,4.5))
+  center=frame:PointToWorldSpace(Vector3.new(-18*sx,0,-.5))
  else
   -- Fallback with the same result for the standard yards.
   local x=foundation and foundation.Position.X or yard:GetPivot().Position.X
   local z=spawn and spawn.Position.Z or yard:GetPivot().Position.Z
-  center=Vector3.new((x<0 and-1 or 1)*100.5,1.13,z+18)
+  center=Vector3.new((x<0 and-1 or 1)*105.5,1.13,z+18)
   sx=x<0 and 1 or-1
   frame=CFrame.lookAt(Vector3.new(x,1.2,z),Vector3.new(x+(x<0 and-1 or 1),1.2,z))
  end
@@ -283,9 +286,39 @@ local function bind(yard,player)
  apply(root,player);setPrompts(root,true);syncHeld(player)
 end
 
+-- Flat ground decoration of yard skins (the Earthquake crack) that runs under the pad would poke
+-- through the slab; it is hidden where the pad covers it. PlotAppearance rebuilds
+-- yard.PlotDevelopment on every level/skin change, so new pieces are checked as they appear.
+local function coverGround(yard,d)
+ if not d:IsA('BasePart')or d.Transparency>=1 then return end
+ local corner=yard:FindFirstChild('MiningCorner');local pad=corner and corner:FindFirstChild('MiningPad')
+ if not(pad and pad:IsA('BasePart'))then return end
+ local cf,size=d.CFrame,d.Size
+ local up=math.abs(cf.UpVector.Y)*size.Y/2+math.abs(cf.RightVector.Y)*size.X/2+math.abs(cf.LookVector.Y)*size.Z/2
+ local padTop=pad.Position.Y+pad.Size.Y/2
+ if cf.Position.Y+up>padTop+.6 or up*2>1.4 then return end -- only flat pieces near the ground
+ local hx,hz=pad.Size.X/2+.6,pad.Size.Z/2+.6
+ for i=-2,2 do for j=-2,2 do
+  local p=pad.CFrame:PointToObjectSpace(cf:PointToWorldSpace(Vector3.new(size.X*i/4,0,size.Z*j/4)))
+  if math.abs(p.X)<=hx and math.abs(p.Z)<=hz then
+   d.Transparency=1;d.CanCollide=false;d.CanQuery=false;d.CanTouch=false;d:SetAttribute('CoveredByMiningCorner',true)
+   return
+  end
+ end end
+end
+local function watchGround(yard)
+ local function watch(dev)
+  for _,d in ipairs(dev:GetDescendants())do coverGround(yard,d)end
+  dev.DescendantAdded:Connect(function(d)task.defer(coverGround,yard,d)end)
+ end
+ local dev=yard:FindFirstChild('PlotDevelopment');if dev then watch(dev)end
+ yard.ChildAdded:Connect(function(child)if child.Name=='PlotDevelopment'then task.defer(watch,child)end end)
+end
+
 local function track(yard)
  if not yard:GetAttribute('YardId')then return end
  local corner=build(yard);apply(corner,nil);setPrompts(corner,false)
+ watchGround(yard)
  local function ownerChanged()
   local id=yard:GetAttribute('OwnerUserId')or 0
   local player=id~=0 and Players:GetPlayerByUserId(id)or nil
