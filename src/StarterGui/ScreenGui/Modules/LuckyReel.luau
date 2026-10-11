@@ -468,9 +468,11 @@ local function build(ctx,result,overlay,o,cleanups)
  local poolSize=R.PoolSize(maxWidth)
  local function release(card)
   if card.Clone then
-   card.Clone.Parent=nil
-   free[card.Id]=free[card.Id]or{};table.insert(free[card.Id],card.Clone)
-   card.Clone=nil
+   -- A clone destroyed with the stage (after the reveal) has a locked Parent: never pool it.
+   local clone=card.Clone;card.Clone=nil
+   if pcall(function()clone.Parent=nil end)then
+    free[card.Id]=free[card.Id]or{};table.insert(free[card.Id],clone)
+   end
   end
  end
  local function attach(card)
@@ -588,7 +590,7 @@ local function build(ctx,result,overlay,o,cleanups)
 
  local reveal,watch
  local function land(quiet)
-  if landed then return end
+  if landed or state=='revealed'or state=='watch'then return end
   landed=true;state='landed'
   render(L.EndS)
   setSkip(false)
@@ -700,7 +702,9 @@ local function build(ctx,result,overlay,o,cleanups)
  -- Reveal card (the classic card, upgraded): rays, rarity badge, bounce-in, confetti ------------
  reveal=function()
   if state=='revealed'then return end
-  state='revealed';nextAt=nil
+  -- The strip stops for good: no late landing, ticks or flash over the reveal card.
+  state='revealed';landed=true;nextAt=nil;nextAction=nil
+  for _,card in ipairs(cards)do card.Clone=nil end -- destroyed with the stage below
   if stage.Parent then stage:Destroy()end
   local box=U.Modal(overlay,'RewardCard','REWARD SAVED',580,480);box.ZIndex=10
   local heading=box:FindFirstChild('Label');if heading then heading.Name='RewardStatus'end
@@ -778,7 +782,7 @@ local function build(ctx,result,overlay,o,cleanups)
   if blockView and t>=.6 then blockView:Destroy();blockView=nil end
   -- strip
   if state=='intro'and t>=R.Lead then state='spin'end
-  if not landed then
+  if not landed and state~='revealed'then
    local tm=math.max(0,t-R.Lead)
    local s=R.Offset(L,tm)
    render(s)

@@ -312,6 +312,35 @@ local function clearCharge(uid:string)
   player:SetAttribute('LuckyChargeUid',nil);player:SetAttribute('LuckyChargeAt',nil)
  end
 end
+-- While a local open charges, the player's own pad prompts are out of reach: the roulette takes
+-- the screen only on the burst, and a second E in between would open another block or the pad
+-- picker underneath it. The server never writes MaxActivationDistance, so the local 0 sticks
+-- until finish() puts the old value back.
+local holders={}
+local heldPrompts={}
+local function holdPrompts(stage:any)
+ if holders[stage]then return end
+ holders[stage]=true
+ local map=workspace:FindFirstChild('DOGROTS_District');local yards=map and map:FindFirstChild('04_PlayerYards')
+ if not yards then return end
+ for _,yard in ipairs(yards:GetChildren())do
+  for _,pad in ipairs(yard:GetChildren())do
+   if pad.Name:sub(1,9)=='LuckyPad_'and pad:GetAttribute('LuckyPadOwner')==player.UserId then
+    local prompt=pad:FindFirstChild('PlaceLuckyBlock')
+    if prompt and prompt:IsA('ProximityPrompt')and heldPrompts[prompt]==nil then
+     heldPrompts[prompt]=prompt.MaxActivationDistance;prompt.MaxActivationDistance=0
+    end
+   end
+  end
+ end
+end
+local function releasePrompts(stage:any)
+ if not holders[stage]then return end
+ holders[stage]=nil
+ if next(holders)then return end
+ for prompt,distance in pairs(heldPrompts)do if prompt.Parent then prompt.MaxActivationDistance=distance end end
+ table.clear(heldPrompts)
+end
 local function readOpened(m:Model)
  local id=m:GetAttribute('RewardDogId')
  local defs=definitions()
@@ -341,6 +370,7 @@ end
 local function finish(stage:any)
  if not stage.Alive then return end
  stage.Alive=false
+ releasePrompts(stage)
  for _,c in ipairs(stage.Conns)do c:Disconnect()end
  table.clear(stage.Conns)
  -- The server deletes an opened block; anything else gets its look back.
@@ -572,9 +602,10 @@ local function popDog(info,ground:Vector3)
  local rise=emitter(riser,{Rate=low and 4 or 12,EmissionDirection=Enum.NormalId.Top,Speed=NumberRange.new(2,5),SpreadAngle=Vector2.new(12,12),
   Lifetime=NumberRange.new(1,1.6),Size=NumberSequence.new(.28,0),Color=colors(WHITE,accent,color)})
  if not low then local l=Instance.new('PointLight');l.Color=color;l.Range=12;l.Brightness=2.2;l.Shadows=false;l.Parent=riser end
- -- Nameplate (world GUI: picks its own language, AutoTranslate keeps out).
+ -- Nameplate: the rarity pill picks its own language (NoTranslate); the dog name is left to
+ -- DOGROTS_AutoTranslateUI, which holds the Russian dog names and also watches workspace.
  local tag=part({Name='NameAnchor',Size=Vector3.one*.2,Transparency=1,CFrame=CFrame.new(ground),Parent=folder})
- local bb=Instance.new('BillboardGui');bb.Name='LuckyDogNameplate';bb:SetAttribute('NoTranslate',true)
+ local bb=Instance.new('BillboardGui');bb.Name='LuckyDogNameplate'
  bb.Size=UDim2.fromOffset(280,88);bb.AlwaysOnTop=true;bb.LightInfluence=0;bb.MaxDistance=NEAR;bb.Adornee=tag;bb.Parent=folder
  local scale=Instance.new('UIScale');scale.Scale=0;scale.Parent=bb
  local rarityText,nameText=P.Label(Show.Names,rank,info.Name,info.Variant,isRussian())
@@ -585,7 +616,7 @@ local function popDog(info,ground:Vector3)
  local pad=Instance.new('UIPadding');pad.PaddingLeft=UDim.new(0,14);pad.PaddingRight=UDim.new(0,14);pad.Parent=pill
  local corner=Instance.new('UICorner');corner.CornerRadius=UDim.new(.5,0);corner.Parent=pill
  local edge=Instance.new('UIStroke');edge.Color=NAVY;edge.Thickness=2.5;edge.ApplyStrokeMode=Enum.ApplyStrokeMode.Border;edge.Parent=pill
- local label=Instance.new('TextLabel');label.Name='DogName';label:SetAttribute('NoTranslate',true)
+ local label=Instance.new('TextLabel');label.Name='DogName'
  label.BackgroundTransparency=1;label.Position=UDim2.fromOffset(0,32);label.Size=UDim2.new(1,0,0,50)
  label.Font=Enum.Font.FredokaOne;label.TextScaled=true;label.TextColor3=WHITE;label.Text=nameText;label.Parent=bb
  local stroke=Instance.new('UIStroke');stroke.Color=NAVY;stroke.Thickness=3;stroke.Parent=label
@@ -831,6 +862,7 @@ local function startStage(m:Model,uid:string,isLocal:boolean,startAt:number,leng
  Audio.Play('Charge',stage.Anchor,stage.Rank,math.max(.3,startAt+length-now()))
  if isLocal then
   publishCharge(uid,startAt)
+  holdPrompts(stage)
   cameraStart(stage)
  end
  local last=os.clock()
@@ -905,6 +937,7 @@ startLate=function(m:Model,uid:string,info)
   -- No prediction was seen here: still tell the roulette when the burst lands.
   stage.Local=true
   publishCharge(uid,P.ChargeAt((startAt or t)+length,Show.Timing.Charge))
+  holdPrompts(stage)
  end
 end
 

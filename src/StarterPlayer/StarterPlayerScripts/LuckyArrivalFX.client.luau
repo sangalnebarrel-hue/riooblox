@@ -300,8 +300,10 @@ function Scope:Bolt(a:Vector3,b:Vector3,color:Color3,width:number,seconds:number
   end
   prev=at
  end
+ -- ReducedMotion: a plain fade instead of the random strobe.
+ local calm=Show.ReducedMotion()
  self:Life(model,seconds,function(alpha)
-  local flick=alpha<.7 and(rng:NextNumber()<.25 and .5 or 0)or alpha
+  local flick=calm and alpha or(alpha<.7 and(rng:NextNumber()<.25 and .5 or 0)or alpha)
   for _,p in ipairs(model:GetChildren())do if p:IsA('BasePart')then p.Transparency=math.max(flick,alpha^2)end end
  end)
  return model
@@ -901,7 +903,8 @@ end
 local function explosion(ctx:Ctx,center:Vector3)
  local s=ctx.Scope
  local ground=Vector3.new(center.X,TONGUE_Y,center.Z)
- s:Sphere(center,WHITE,2,18,.42,{Alpha=0})
+ local calm=Show.ReducedMotion() -- no white flash, no blinking cracks
+ if not calm then s:Sphere(center,WHITE,2,18,.42,{Alpha=0})end
  s:Sphere(center,VIOLET,3,24,.7,{Material=Enum.Material.ForceField,Alpha=0})
  s:Ring(ground+Vector3.new(0,.08,0),VOID,1.5,16,1.15,{Thickness=1,Height=.35,Material=Enum.Material.SmoothPlastic,Alpha=.05})
  s:Ring(ground+Vector3.new(0,.12,0),VIOLET,2,17.5,1.15,{Thickness=.5,Height=.3})
@@ -942,7 +945,7 @@ local function explosion(ctx:Ctx,center:Vector3)
    prev=nextPoint
   end
   s:Life(crack,2.6,function(a)
-   for _,p in ipairs(crack:GetChildren())do if p:IsA('BasePart')then p.Transparency=a<.5 and(math.sin(a*30)>.6 and .3 or 0)or(a-.5)/.5 end end
+   for _,p in ipairs(crack:GetChildren())do if p:IsA('BasePart')then p.Transparency=calm and a or(a<.5 and(math.sin(a*30)>.6 and .3 or 0)or(a-.5)/.5)end end
   end)
  end
  s:Burst(center,seq(VIOLET,CYAN),90,{Size=NumberSequence.new(.7,0),Speed=NumberRange.new(10,26),Lifetime=NumberRange.new(.6,1.4),Drag=2})
