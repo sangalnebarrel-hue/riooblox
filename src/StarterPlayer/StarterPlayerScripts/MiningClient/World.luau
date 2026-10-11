@@ -446,8 +446,8 @@ function World.new(ctx)
     task.wait(1)
     local fresh=(player:GetAttribute('MiningHitSerial')or 0)==0 and player:GetAttribute('TutorialActive')~=true
      and player:GetAttribute('EconomyReady')==true
-    local corner=fresh and self.MyCorner()
-    local sign=corner and corner:FindFirstChild('MiningPickaxeShop')
+    local corner=if fresh then self.MyCorner()else nil
+    local sign=if corner then corner:FindFirstChild('MiningPickaxeShop')else nil
     hint.Adornee=sign;hint.Enabled=sign~=nil and not(ctx.Mine and ctx.Mine.Active)
     if sign and not toasted and ctx.Hud then toasted=true;task.delay(4,function()ctx.Hud.Toast(Text.Get('NEW_FEATURE_TOAST'),ctx.U.Colors.gold,6)end)end
     if (player:GetAttribute('MiningHitSerial')or 0)>0 and toasted then hint.Enabled=false end

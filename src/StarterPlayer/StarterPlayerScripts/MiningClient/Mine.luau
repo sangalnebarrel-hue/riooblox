@@ -396,7 +396,7 @@ function Mine.new(ctx)
  local function walkToStand()
   local character=player.Character;local hum=character and character:FindFirstChildOfClass('Humanoid')
   local root=character and character:FindFirstChild('HumanoidRootPart')
-  local stand=view and view.Core:FindFirstChild('MinerStand')
+  local stand=view and view.Core and view.Core:FindFirstChild('MinerStand')
   if not(hum and root and stand)then return end
   local target=stand.WorldPosition
   local flat=Vector3.new(target.X,root.Position.Y,target.Z)
