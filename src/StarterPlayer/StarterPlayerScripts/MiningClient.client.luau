@@ -1,8 +1,9 @@
 -- Active Mining client: ore piles on every yard, the timing-circle mining session, the pickaxe
 -- market and strength training. Runs in its own LocalScript so a failure here can never take
 -- down the main menus (it used to live inside OnboardingGuide).
--- Start-up order: the world (ore piles + prompt handling) comes first and does not depend on the
--- PAWPAD menu modules, so a slow or failing menu module can never hide the ore or break E.
+-- Start-up order: the world (ore piles + prompt handling) comes first and depends neither on the
+-- game's main ScreenGui nor on the PAWPAD menu modules, so a slow or failing menu can never hide
+-- the ore or break E. HUD toasts, mining, the market and training start once the main GUI exists.
 -- Every failure is reported with "DOGROTS mining:" in Output, and on screen in Studio.
 local Players=game:GetService('Players')
 local RS=game:GetService('ReplicatedStorage')
@@ -42,14 +43,9 @@ local function load(label,fn)
  return result
 end
 
-local main=playerGui:FindFirstChild('ScreenGui')
-while not main do
- local child=playerGui.ChildAdded:Wait()
- if child.Name=='ScreenGui'then main=child end
-end
 local mining=need(RS,'Mining')
 
-local ctx:any={Player=player,PlayerGui=playerGui,Main=main,Report=report}
+local ctx:any={Player=player,PlayerGui=playerGui,Main=nil,Report=report}
 function ctx.Log(message)if STUDIO then print('DOGROTS mining: '..message)end end
 ctx.Config=load('Config',function()return require(need(need(RS,'DogEconomy'),'Config'))end)
 ctx.M=ctx.Config and ctx.Config.Mining
@@ -61,10 +57,9 @@ ctx.Remote=need(RS,'DogEconomyRequest')
 if not(ctx.M and ctx.Text and ctx.Models and ctx.Rules and ctx.Audio)then
  report('shared mining modules missing; mining is disabled');return
 end
-local modules=need(main,'Modules')
-ctx.U=load('UITheme',function()return require(need(modules,'UITheme'))end)
-if not ctx.U then
- -- Fonts and colours are all the world view needs; menus report their own failure below.
+-- Fonts and colours are all the world view needs; the game's UITheme replaces this once the main
+-- GUI has loaded (World/FX read ctx.U at use time).
+do
  local C=Color3.fromRGB
  ctx.U={FontFace=Font.fromEnum(Enum.Font.FredokaOne),Colors={edge=C(23,43,76),text=C(23,43,76),muted=C(83,112,150),gold=C(249,180,35),
   blue=C(38,164,243),green=C(125,219,48),red=C(247,73,112),purple=C(161,103,242),panel=C(255,255,255),secondary=C(220,237,253)}}
@@ -85,7 +80,7 @@ ctx.Gui=gui
 function ctx.MenuOpen()
  local N=ctx.N
  if N and N.Owner~=nil and not N.Stub then return N.Owner~='HUD'end
- return main:GetAttribute('OpenMenu')~=nil
+ return ctx.Main~=nil and ctx.Main:GetAttribute('OpenMenu')~=nil
 end
 local controls=nil
 local releasing=false
@@ -101,7 +96,7 @@ function ctx.SetControls(enabled)
  if releasing then return end
  releasing=true
  task.spawn(function()
-  while main.Parent and ctx.MenuOpen()do task.wait(.1)end
+  while ctx.MenuOpen()do task.wait(.1)end
   releasing=false
   local busy=(ctx.Mine and ctx.Mine.Active)or(ctx.Gym and ctx.Gym.Active)
   if not busy then pcall(function()controls:Enable()end)end
@@ -113,9 +108,23 @@ local function start(name)
  if not module then return end
  ctx[name]=load(name,function()return module.new(ctx)end)
 end
--- World first: ore piles and prompt handling never wait for the menu modules.
-for _,name in ipairs({'Net','Anim','FX','Hud','World'})do start(name)end
+-- World first: ore piles and prompt handling never wait for the main GUI or the menu modules.
+for _,name in ipairs({'Net','Anim','FX','World'})do start(name)end
 if ctx.World and ctx.World.Start then load('World.Start',ctx.World.Start)end
+
+-- The game's main GUI (HUD money counter, PAWPAD navigation, UITheme).
+local main=playerGui:FindFirstChild('ScreenGui')
+local waitedFrom=os.clock()
+while not main do
+ task.wait(.25)
+ main=playerGui:FindFirstChild('ScreenGui')
+ if not main and waitedFrom and os.clock()-waitedFrom>15 then waitedFrom=nil;report('still waiting for PlayerGui.ScreenGui (the game HUD)')end
+end
+ctx.Main=main
+local modules=need(main,'Modules')
+local theme=load('UITheme',function()return require(need(modules,'UITheme'))end)
+if theme then ctx.U=theme end
+start('Hud')
 -- The pickaxe market borrows PAWPAD navigation; without it the market still opens on its own.
 ctx.N=load('GUIIntegration',function()return require(need(modules,'GUIIntegration'))end)
 if not ctx.N then
