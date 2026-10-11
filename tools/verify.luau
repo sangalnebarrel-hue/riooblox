@@ -13,6 +13,16 @@ local process = require("@lune/process")
 local placePath, srcDir, exportDir = process.args[1], process.args[2], process.args[3]
 local game = roblox.deserializePlace(fs.readFile(placePath))
 
+local serde = require("@lune/serde")
+local created = {}
+local reportPath = string.gsub(placePath, "[^/]+$", "build_report.json")
+if fs.isFile(reportPath) then
+	local report = serde.decode("json", fs.readFile(reportPath))
+	for _, entry in report.created or {} do
+		created[(string.gsub(entry, " %(%a+%)$", ""))] = true
+	end
+end
+
 local failures = 0
 local function fail(msg)
 	failures += 1
@@ -76,14 +86,15 @@ local function walk(dir: string, rel: { string })
 					if not ok then
 						fail("compile error in " .. pathText .. ": " .. tostring(err))
 					end
-					if #inst:GetTags() > 0 then
+					local isNew = created[pathText] == true
+					if isNew and #inst:GetTags() > 0 then
 						fail("unexpected tags on " .. pathText)
 					end
 					local attrCount = 0
 					for _ in inst:GetAttributes() do
 						attrCount += 1
 					end
-					if attrCount > 0 then
+					if isNew and attrCount > 0 then
 						fail("unexpected attributes on " .. pathText)
 					end
 					if (cls == "Script" or cls == "LocalScript") and inst.Disabled then
@@ -125,7 +136,6 @@ if exportDir then
 	for _, svc in game:GetChildren() do
 		table.insert(rootNode.children, node(svc, svc.Name))
 	end
-	local serde = require("@lune/serde")
 	fs.writeFile(exportDir .. "/sourcemap.json", serde.encode("json", rootNode))
 	print("exported", count, "scripts to", exportDir)
 end

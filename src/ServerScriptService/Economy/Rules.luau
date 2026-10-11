@@ -14,6 +14,7 @@ local SupplyRules=require(script.Parent.SupplyRules)
 local LuckRules=require(script.Parent.LuckRules)
 local Pricing=require(game.ReplicatedStorage.DogEconomy.BoostPricing)
 local Onboarding=require(script.Parent.OnboardingRules)
+local MiningRules=require(game:GetService('ReplicatedStorage'):WaitForChild('Mining'):WaitForChild('MiningRules'))
 local R={Items=I}
 function R.Copy(v) if type(v)~="table" then return v end local r={};for k,x in pairs(v) do r[k]=R.Copy(x) end;return r end
 function R.Int(n,min,max) return type(n)=="number" and n==n and n%1==0 and n>=min and n<=max end
@@ -30,51 +31,12 @@ end
 function R.Week(now) return math.floor((now-345600)/604800) end
 function R.Meta(now) return C.Weeks[R.Week(now)%#C.Weeks+1] end
 
-local function miningNormalize(p)
- local m=type(p.Mining)=='table'and p.Mining or{}
- p.Mining=m
- local pickCount=#(C.Mining and C.Mining.Pickaxes or{})
- local weightCount=#(C.Mining and C.Mining.Weights or{})
- m.Strength=math.clamp(math.floor(tonumber(m.Strength)or 0),0,700)
- m.PickaxeOwned=math.clamp(math.floor(tonumber(m.PickaxeOwned)or 0),0,pickCount)
- m.PickaxeLevel=math.clamp(math.floor(tonumber(m.PickaxeLevel)or 0),0,m.PickaxeOwned)
- m.WeightOwned=math.clamp(math.floor(tonumber(m.WeightOwned)or 0),0,weightCount)
- m.WeightLevel=math.clamp(math.floor(tonumber(m.WeightLevel)or 0),0,m.WeightOwned)
- m.Hits=math.max(0,math.floor(tonumber(m.Hits)or 0))
- m.OresBroken=math.max(0,math.floor(tonumber(m.OresBroken)or 0))
- m.CoinsEarned=math.max(0,math.floor(tonumber(m.CoinsEarned)or 0))
- m.TrainingReps=math.max(0,math.floor(tonumber(m.TrainingReps)or 0))
- m.OreSerial=math.max(1,math.floor(tonumber(m.OreSerial)or 1))
- local oreIndex=math.clamp(math.floor(tonumber(m.OreIndex)or 1),1,#C.Mining.Ores)
- local ore=C.Mining.Ores[oreIndex]
- m.OreIndex=oreIndex
- m.OreMaxHP=math.max(1,math.floor(tonumber(m.OreMaxHP)or ore.HP))
- m.OreHP=math.clamp(math.floor(tonumber(m.OreHP)or m.OreMaxHP),1,m.OreMaxHP)
- m.OreValue=math.max(1,math.floor(tonumber(m.OreValue)or math.floor((ore.ValueMin+ore.ValueMax)/2)))
- m.OreEarned=math.clamp(math.floor(tonumber(m.OreEarned)or 0),0,m.OreValue)
- m.LastHitAt=tonumber(m.LastHitAt)or 0;m.LastTrainAt=tonumber(m.LastTrainAt)or 0;m.ActiveUntil=tonumber(m.ActiveUntil)or 0
- m.LastPayout=math.max(0,math.floor(tonumber(m.LastPayout)or 0));m.LastDamage=math.max(0,math.floor(tonumber(m.LastDamage)or 0))
- m.LastQuality=math.clamp(math.floor(tonumber(m.LastQuality)or 1),1,2);m.LastBreak=m.LastBreak==true
- return m
-end
-local function miningRollOre(m,random)
- local total=0
- for _,ore in ipairs(C.Mining.Ores)do total+=ore.Weight end
- local roll=random()*total;local index=#C.Mining.Ores
- for i,ore in ipairs(C.Mining.Ores)do roll-=ore.Weight;if roll<=0 then index=i;break end end
- local ore=C.Mining.Ores[index]
- m.OreIndex=index;m.OreMaxHP=ore.HP;m.OreHP=ore.HP
- m.OreValue=math.floor(ore.ValueMin+(ore.ValueMax-ore.ValueMin)*random()+.5);m.OreEarned=0
- m.OreSerial=(m.OreSerial or 0)+1
- return ore,index
-end
-
 function R.Profile(uid,now)
  local p={Version=C.Version,MegaResetVersion=C.MegaResetVersion,UserId=uid,Cash=C.StartingCash,Bones=0,EventTokens=0,Dogs={},DogDex={},DexClaims={},
   DisplayDogs={},OwnedBlocks={},Loot={},VariantDex={},XP=0,Level=1,CurrentLayer=1,UnlockedLayers={['1']=true},Upgrades={},Supplies={},Cosmetics={},EquippedCosmetic="",
   Prestige=0,Listings={},Reservations={},Event={Week=R.Week(now),Contribution=0,Claims={}},Pity=0,LastDig=now,Created=now,
   DailyRewards={LastDay=-1,Streak=0},PlaytimeRewards={Day=math.floor(now/86400),Accumulated=0,StartedAt=now,Claims={}},
-  Mining={Strength=0,PickaxeOwned=0,PickaxeLevel=0,WeightOwned=0,WeightLevel=0,Hits=0,OresBroken=0,CoinsEarned=0,TrainingReps=0,OreIndex=1,OreMaxHP=C.Mining.Ores[1].HP,OreHP=C.Mining.Ores[1].HP,OreValue=math.floor((C.Mining.Ores[1].ValueMin+C.Mining.Ores[1].ValueMax)/2),OreEarned=0,OreSerial=1},
+  Mining=MiningRules.New(C.Mining),
   RebootGift={Version=C.MegaResetVersion,Tier=C.MegaResetGiftTier,Count=C.MegaResetGiftCount,GrantedAt=now}}
  p.LuckyCredits={}                                                           
  p.Onboarding=Onboarding.New()
@@ -111,7 +73,7 @@ function R.Normalize(p,uid,now)
  LuckRules.Normalize(p,now)
  Display.Normalize(p)
  LabState.Normalize(p)
- miningNormalize(p)
+ p.Mining=MiningRules.Normalize(p.Mining,C.Mining)
  R.UpdateLevel(p)
  return p
 end
@@ -137,6 +99,13 @@ function R.UpdateLevel(p)
 end
 function R.AddXP(p,amount)
  amount=math.max(0,math.floor(tonumber(amount)or 0));p.XP+=amount;R.UpdateLevel(p);return amount
+end
+-- Active Mining (ReplicatedStorage.Mining.MiningRules). session = RAM timing targets, ping in seconds.
+function R.MiningAction(p,action,a,now,random,session,ping)
+ p.Mining=MiningRules.Normalize(p.Mining,C.Mining)
+ local ctx={Now=now,Clock=workspace:GetServerTimeNow(),Random=random,Cash=p.Cash,Layer=R.MaxUnlockedLayer(p),Session=session,Ping=ping,
+  Pay=function(n)R.Pay(p,n)end,Credit=function(n)R.Credit(p,n)end,AddXP=function(n)R.AddXP(p,n)end}
+ return MiningRules.Action(p.Mining,C.Mining,action,a,ctx)
 end
 function R.MaxUnlockedLayer(p)
  local deepest=1
@@ -335,51 +304,7 @@ end
 function R.Action(p,action,a,now,random)
  local plotMessage=PlotRules.Action(p,action,a);if plotMessage then return plotMessage end
  if action=="DisplayDog"then return Display.Assign(p,a)end
- if action=="MiningBegin"then
-  local m=miningNormalize(p);R.Check(m.PickaxeLevel>0,"Buy the Wooden Pickaxe first")
-  m.ActiveUntil=now+30;m.LastBreak=false;return "Mining started"
- elseif action=="MiningPickaxe"then
-  local m=miningNormalize(p);local level=tonumber(a.Level);R.Check(R.Int(level or 0,1,#C.Mining.Pickaxes),"Invalid pickaxe")
-  if level<=m.PickaxeOwned then m.PickaxeLevel=level;return "Pickaxe equipped" end
-  R.Check(level==m.PickaxeOwned+1,"Buy pickaxes in order")
-  local def=C.Mining.Pickaxes[level];R.Check(m.Strength>=def.Strength,"Requires "..def.Strength.." Strength")
-  R.Pay(p,def.Price);m.PickaxeOwned=level;m.PickaxeLevel=level;R.AddXP(p,5+level*5);return "Bought "..def.Name
- elseif action=="MiningWeight"then
-  local m=miningNormalize(p);local level=tonumber(a.Level);R.Check(R.Int(level or 0,1,#C.Mining.Weights),"Invalid weight")
-  if level<=m.WeightOwned then m.WeightLevel=level;return "Weight equipped" end
-  R.Check(level==m.WeightOwned+1,"Unlock weights in order")
-  local def=C.Mining.Weights[level];R.Check(m.Strength>=def.Strength,"Requires "..def.Strength.." Strength")
-  if def.Price>0 then R.Pay(p,def.Price)end
-  m.WeightOwned=level;m.WeightLevel=level;return "Unlocked "..def.Name
- elseif action=="MiningTrain"then
-  local m=miningNormalize(p);local def=C.Mining.Weights[m.WeightLevel];R.Check(def,"Choose a training weight first")
-  R.Check(m.Strength<def.Cap,"This weight cannot train you further")
-  local clock=workspace:GetServerTimeNow();R.Check(clock-(m.LastTrainAt or 0)>=def.Cooldown*.85,"Recover before the next lift")
-  m.LastTrainAt=clock;m.TrainingReps+=1;m.Strength=math.min(def.Cap,m.Strength+def.Gain)
-  return "+"..def.Gain.." Strength"
- elseif action=="MiningHit"then
-  local m=miningNormalize(p);local pick=C.Mining.Pickaxes[m.PickaxeLevel];R.Check(pick,"Equip a pickaxe first")
-  R.Check((m.ActiveUntil or 0)>=now,"Activate the ore pile again")
-  local quality=math.floor(tonumber(a.Quality)or 0);R.Check(quality==1 or quality==2,"Invalid timing")
-  local clock=workspace:GetServerTimeNow();R.Check(clock-(m.LastHitAt or 0)>=pick.Cooldown*.82,"Swing is not ready")
-  m.LastHitAt=clock;m.ActiveUntil=now+30
-  local ore=C.Mining.Ores[m.OreIndex];local strengthBoost=1+math.min(.35,m.Strength/2000)
-  local damage=math.max(1,math.floor(pick.Damage*strengthBoost*(quality==2 and 1.45 or 1)+.5))
-  local applied=math.min(m.OreHP,damage);m.OreHP-=applied;m.Hits+=1
-  local remaining=math.max(0,m.OreValue-m.OreEarned)
-  local payout=math.min(remaining,math.max(1,math.floor(m.OreValue*.38*applied/m.OreMaxHP)))
-  local broke=m.OreHP<=0
-  if broke then payout=remaining end
-  payout=math.min(payout,C.MaxCash-p.Cash)
-  if payout>0 then R.Credit(p,payout);m.OreEarned+=payout;m.CoinsEarned+=payout end
-  R.AddXP(p,1+math.floor(m.OreIndex/2))
-  m.LastPayout=payout;m.LastDamage=applied;m.LastQuality=quality;m.LastBreak=broke
-  if broke then
-   local brokenName=ore.Name;local brokenValue=m.OreValue;m.OresBroken+=1;R.AddXP(p,10+m.OreIndex*5)
-   miningRollOre(m,random);return "Broke "..brokenName.." · +"..brokenValue.." Coins"
-  end
-  return (quality==2 and "Perfect hit"or"Hit").." · +"..payout.." Coins"
- end
+ if type(action)=="string"and action:sub(1,6)=="Mining"then return R.MiningAction(p,action,a,now,random,{Targets={}},0)end
  local itemMessage,itemCash=I.Action(p,action,a)
  if itemMessage then
   if itemCash then R.Credit(p,itemCash);R.AddXP(p,math.clamp(math.floor(math.sqrt(itemCash)*2),5,250));p.LastSaleAt=now end
@@ -476,7 +401,7 @@ function R.Action(p,action,a,now,random)
  error("Unknown action",0)
 end
 function R.Validate(p)
- miningNormalize(p)
+ p.Mining=MiningRules.Normalize(p.Mining,C.Mining)
  R.UpdateLevel(p)
  Onboarding.Observe(p,os.time())
  Tickets.Validate(p)

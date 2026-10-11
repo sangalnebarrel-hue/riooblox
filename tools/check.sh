@@ -16,6 +16,7 @@ LUAU_DEFS="${LUAU_DEFS:-globalTypes.d.luau}"
 WORK="${WORK:-$ROOT/.work}"
 
 cd "$ROOT"
+mkdir -p "$WORK/empty_src"
 "$PYTHON" -I tools/build.py
 "$LUNE" run tools/verify.luau build/DOGROTS_MINING.rbxl src "$WORK/analyze"
 
@@ -26,16 +27,8 @@ if [ -d tests ]; then
 	done
 fi
 
-# Static analysis of every script that lives in src/ (exported names are path-mangled).
-files=()
-while IFS= read -r f; do
-	rel="${f#src/}"
-	rel="${rel%.server.luau}"; rel="${rel%.client.luau}"; rel="${rel%.luau}"
-	mangled="$(printf '%s' "$rel" | sed 's/[^A-Za-z0-9._-]/_/g')"
-	match="$(cd "$WORK/analyze" && ls | grep -E "^[0-9]{5}_${mangled//./\\.}\.luau$" || true)"
-	[ -n "$match" ] && files+=("$match")
-done < <(find src -name '*.luau' | sort)
-if [ "${#files[@]}" -gt 0 ]; then
-	echo "== luau-lsp analyze (${#files[@]} files)"
-	(cd "$WORK/analyze" && "$LUAU_LSP" analyze --sourcemap=sourcemap.json --definitions="$LUAU_DEFS" "${files[@]}") || true
+# Static analysis: only diagnostics that are new compared with the base place are printed.
+if [ ! -f "$WORK/base_analyze/sourcemap.json" ]; then
+	"$LUNE" run tools/verify.luau place/DOGROTS_base.rbxl "$WORK/empty_src" "$WORK/base_analyze" >/dev/null 2>&1 || true
 fi
+"$PYTHON" -I tools/analyze_diff.py "$LUAU_LSP" "$LUAU_DEFS" "$WORK/base_analyze" "$WORK/analyze" src

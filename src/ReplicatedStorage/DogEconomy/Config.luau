@@ -1,6 +1,6 @@
 local C={}
 C.Version=4
-C.BalanceVersion="2026-10-10.MINING_POLISH_1"
+C.BalanceVersion="2026-10-11.MINING_V2"
 C.StartingCash=4200
 C.MaxCash=9000000000000000
 C.MaxDogs=250
@@ -137,38 +137,9 @@ C.PlaytimeRewards={
  {Seconds=90*60,Cash=7500,Bones=4},{Seconds=120*60,Cash=11000,Bones=5},
  {Seconds=180*60,Cash=18000,Bones=8},{Seconds=240*60,Cash=28000,Bones=12},
 }
--- Active Mining: a hands-on yard loop beside the kennels.
-C.Mining={
- Ores={
-  {Name='Limestone',RU='Известняк',Icon='🪨',Weight=34,HP=14,ValueMin=320,ValueMax=470,Color={168,165,150}},
-  {Name='Copper',RU='Медная руда',Icon='🟤',Weight=24,HP=22,ValueMin=640,ValueMax=930,Color={184,105,63}},
-  {Name='Iron',RU='Железная руда',Icon='⚙️',Weight=17,HP=34,ValueMin=1180,ValueMax=1680,Color={105,112,121}},
-  {Name='Quartz',RU='Кварц',Icon='🔹',Weight=10,HP=48,ValueMin=2200,ValueMax=3150,Color={220,222,232}},
-  {Name='Amethyst',RU='Аметистовая жила',Icon='🟣',Weight=7,HP=66,ValueMin=4300,ValueMax=6200,Color={150,82,205}},
-  {Name='Ruby',RU='Рубиновая жила',Icon='❤️',Weight=4.5,HP=82,ValueMin=8600,ValueMax=12000,Color={210,45,74}},
-  {Name='Emerald',RU='Изумрудная жила',Icon='💚',Weight=2.2,HP=105,ValueMin=18000,ValueMax=25000,Color={36,190,112}},
-  {Name='Meteorite',RU='Метеоритная руда',Icon='☄️',Weight=1,HP=130,ValueMin=42000,ValueMax=59000,Color={55,62,73}},
-  {Name='VoidCrystal',RU='Кристалл Пустоты',Icon='🌌',Weight=.3,HP=160,ValueMin=104000,ValueMax=145000,Color={110,54,190}},
- },
- Pickaxes={
-  {Name='Wooden Pickaxe',RU='Деревянная кирка',Icon='🪵',Price=600,Strength=0,Damage=1,Cooldown=.78,FX=1,Color={145,101,62}},
-  {Name='Stone Pickaxe',RU='Каменная кирка',Icon='🪨',Price=8000,Strength=15,Damage=2,Cooldown=.70,FX=2,Color={132,137,143}},
-  {Name='Iron Pickaxe',RU='Железная кирка',Icon='⚙️',Price=45000,Strength=45,Damage=4,Cooldown=.62,FX=3,Color={173,181,190}},
-  {Name='Steel Pickaxe',RU='Стальная кирка',Icon='🛡️',Price=240000,Strength=95,Damage=7,Cooldown=.54,FX=4,Color={118,154,176}},
-  {Name='Crystal Pickaxe',RU='Кристальная кирка',Icon='💎',Price=1500000,Strength=180,Damage=13,Cooldown=.46,FX=5,Color={111,221,235}},
-  {Name='Inferno Pickaxe',RU='Адская кирка',Icon='🔥',Price=11000000,Strength=320,Damage=26,Cooldown=.38,FX=6,Color={255,103,49}},
-  {Name='Voidbreaker',RU='Разломщик Пустоты',Icon='🌌',Price=90000000,Strength=520,Damage=62,Cooldown=.30,FX=7,Color={184,75,255}},
- },
- Weights={
-  {Name='Starter Dumbbell',RU='Лёгкая гиря',Icon='🥉',Price=0,Strength=0,Gain=1,Cap=25,Cooldown=1.15,Color={160,170,180}},
-  {Name='Iron Kettlebell',RU='Железная гиря',Icon='⚫',Price=3000,Strength=15,Gain=2,Cap=55,Cooldown=1.05,Color={92,100,110}},
-  {Name='Heavy Plate',RU='Тяжёлая плита',Icon='⬛',Price=18000,Strength=40,Gain=3,Cap=110,Cooldown=.95,Color={72,78,87}},
-  {Name='Steel Block',RU='Стальной блок',Icon='🧱',Price=100000,Strength=80,Gain=5,Cap=190,Cooldown=.88,Color={118,144,162}},
-  {Name='Crystal Weight',RU='Кристальная гиря',Icon='💠',Price=650000,Strength=150,Gain=8,Cap=300,Cooldown=.80,Color={95,218,232}},
-  {Name='Inferno Core',RU='Инферно-ядро',Icon='🔥',Price=4500000,Strength=260,Gain=12,Cap=450,Cooldown=.72,Color={249,91,45}},
-  {Name='Void Mass',RU='Масса Пустоты',Icon='🌑',Price=35000000,Strength=400,Gain=18,Cap=700,Cooldown=.65,Color={160,66,235}},
- },
-}
+-- Active Mining: a hands-on yard loop beside the kennels (tables in DogEconomy.MiningConfig).
+C.Mining=require(script.Parent.MiningConfig)
+C.Mining.MaxCash=C.MaxCash
 C.EventGoal=100000
 C.EventMilestones={1000,5000,20000,50000,100000}
 C.EventPersonal={25,100,300,700,1500}

@@ -46,9 +46,9 @@ function O.Observe(p,now)
  if (p.Level or 1)>=2 then seen.Levelled=true end
  local mining=type(p.Mining)=='table'and p.Mining or{}
  if positive(mining.Hits)then seen.MiningHit=true end
- if positive(mining.Strength)then seen.StrengthTrain=true end
+ if positive(mining.TrainingReps)or positive(mining.Strength)then seen.StrengthTrain=true end
  if t.Status=='Active'and t.Step>0 then
-  while t.Step<=8 and seen[milestones[t.Step]]do t.Step+=1 end
+  while milestones[t.Step]and seen[milestones[t.Step]]do t.Step+=1 end
  end
  if type(now)=='number'and t.Status=='Complete'and not t.CompletedAt and not t.Migrated then t.CompletedAt=now end
  return t

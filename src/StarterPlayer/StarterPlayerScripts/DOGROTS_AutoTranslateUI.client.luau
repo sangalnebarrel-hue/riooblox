@@ -2530,6 +2530,8 @@ local function _startDogrotsRussianUI()
 
     local function translateUI(source, context)
         if type(source) ~= "string" or source == "" or not isRussian() then return source end
+        -- Text without Latin letters (already Russian, numbers, icons) never needs translating.
+        if not source:find("[A-Za-z]") then return source end
         if extra[source] then return extra[source] end
         local whole = translatorLookup(context, source)
         if whole ~= source then return whole end
@@ -2560,6 +2562,10 @@ local function _startDogrotsRussianUI()
 
     local function watchObject(obj)
         if watching[obj] then return end
+        -- GUIs that localize themselves (e.g. Active Mining) opt out with a NoTranslate attribute.
+        if obj:GetAttribute("NoTranslate") then return end
+        local layer = obj:FindFirstAncestorWhichIsA("LayerCollector")
+        if layer and layer:GetAttribute("NoTranslate") then return end
         local property
         if obj:IsA("TextLabel") or obj:IsA("TextButton") then
             property = "Text"

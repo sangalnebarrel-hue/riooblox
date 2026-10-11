@@ -76,26 +76,30 @@ local function folder(parent,name,class)
  local f=parent:FindFirstChild(name);if not f then f=Instance.new(class or 'Folder');f.Name=name;f.Parent=parent end;return f
 end
 
+-- Mining state for the client UI and for ServerScriptService.MiningWorld (which mirrors it onto the
+-- yard's MiningCorner for every player). MiningRevision changes last, once per real change.
+local miningSignatures=setmetatable({},{__mode='k'})
 local function projectMining(player,p)
  local m=type(p.Mining)=='table'and p.Mining or{}
  local ore=(Config.Mining and Config.Mining.Ores or{})[tonumber(m.OreIndex)or 1]
- player:SetAttribute('MiningStrength',tonumber(m.Strength)or 0)
- player:SetAttribute('MiningPickaxe',tonumber(m.PickaxeLevel)or 0)
- player:SetAttribute('MiningPickaxeOwned',tonumber(m.PickaxeOwned)or 0)
- player:SetAttribute('MiningWeight',tonumber(m.WeightLevel)or 0)
- player:SetAttribute('MiningWeightOwned',tonumber(m.WeightOwned)or 0)
- player:SetAttribute('MiningOreIndex',tonumber(m.OreIndex)or 1)
- player:SetAttribute('MiningOreName',ore and(ore.RU or ore.Name)or'Руда')
- player:SetAttribute('MiningOreHP',tonumber(m.OreHP)or 0)
- player:SetAttribute('MiningOreMaxHP',tonumber(m.OreMaxHP)or 1)
- player:SetAttribute('MiningOreValue',tonumber(m.OreValue)or 0)
- player:SetAttribute('MiningHitSerial',tonumber(m.Hits)or 0)
- player:SetAttribute('MiningOresBroken',tonumber(m.OresBroken)or 0)
- player:SetAttribute('MiningCoinsEarned',tonumber(m.CoinsEarned)or 0)
- player:SetAttribute('MiningLastPayout',tonumber(m.LastPayout)or 0)
- player:SetAttribute('MiningLastDamage',tonumber(m.LastDamage)or 0)
- player:SetAttribute('MiningLastQuality',tonumber(m.LastQuality)or 1)
- player:SetAttribute('MiningLastBreak',m.LastBreak==true)
+ local values={
+  MiningStrength=tonumber(m.Strength)or 0,MiningPickaxe=tonumber(m.PickaxeLevel)or 0,MiningPickaxeOwned=tonumber(m.PickaxeOwned)or 0,
+  MiningWeight=tonumber(m.WeightLevel)or 0,MiningWeightOwned=tonumber(m.WeightOwned)or 0,MiningOreIndex=tonumber(m.OreIndex)or 1,
+  MiningOreId=ore and ore.Id or'Limestone',MiningOreName=ore and(ore.Name or ore.Id)or'Ore',MiningOreHP=tonumber(m.OreHP)or 0,
+  MiningOreMaxHP=tonumber(m.OreMaxHP)or 1,MiningOreValue=tonumber(m.OreValue)or 0,MiningOreSerial=tonumber(m.OreSerial)or 1,
+  MiningHitSerial=tonumber(m.Hits)or 0,MiningOresBroken=tonumber(m.OresBroken)or 0,MiningCoinsEarned=tonumber(m.CoinsEarned)or 0,
+  MiningLastPayout=tonumber(m.LastPayout)or 0,MiningLastDamage=tonumber(m.LastDamage)or 0,MiningLastQuality=tonumber(m.LastQuality)or 1,
+  MiningLastBreak=m.LastBreak==true,MiningLastCrit=m.LastCrit==true,MiningCombo=tonumber(m.Combo)or 0,
+  MiningBrokenId=type(m.LastBrokenId)=='string'and m.LastBrokenId or'',MiningBrokenValue=tonumber(m.LastBrokenValue)or 0,
+  MiningTrainingReps=tonumber(m.TrainingReps)or 0,MiningActiveUntil=tonumber(m.ActiveUntil)or 0,MiningTrainingUntil=tonumber(m.TrainingUntil)or 0,MiningLayer=Rules.MaxUnlockedLayer(p),
+ }
+ local parts={}
+ for key,value in pairs(values)do player:SetAttribute(key,value);table.insert(parts,key..'='..tostring(value))end
+ table.sort(parts);local signature=table.concat(parts,';')
+ if miningSignatures[player]~=signature then
+  miningSignatures[player]=signature
+  player:SetAttribute('MiningRevision',(player:GetAttribute('MiningRevision')or 0)+1)
+ end
 end
 
 function Runtime.Project(player,p)
@@ -209,6 +213,7 @@ function Runtime.RefreshMining(player,fast)
   if type(fast.XP)=='number'then p.XP=fast.XP end
   if type(fast.Level)=='number'then p.Level=fast.Level end
   if type(fast.MiningState)=='table'then p.Mining=Rules.Copy(fast.MiningState)end
+  if type(fast.Onboarding)=='table'then p.Onboarding=Rules.Copy(fast.Onboarding)end
  end
  Rules.UpdateLevel(p)
  local stats=folder(player,'leaderstats');folder(stats,'Coins','IntValue').Value=p.Cash
@@ -372,7 +377,9 @@ function Runtime.Request(player,action,a,requestId)
    if yards then for _,candidate in ipairs(yards:GetChildren())do if candidate:GetAttribute('OwnerUserId')==player.UserId and candidate:GetAttribute('YardId')==player:GetAttribute('YardId')then yard=candidate;break end end end
    local corner=yard and yard:FindFirstChild('MiningCorner');local anchor=corner and(corner:FindFirstChild('MiningPad')or corner:FindFirstChildWhichIsA('BasePart'))
    local hrp=player.Character and player.Character:FindFirstChild('HumanoidRootPart')
-   Rules.Check(yard and anchor and hrp and(hrp.Position-anchor.Position).Magnitude<=30,'Stand at your Mining Corner')
+   Rules.Check(yard and anchor and hrp and(hrp.Position-anchor.Position).Magnitude<=32,'Stand at your Mining Corner')
+   local ping=0;pcall(function()ping=player:GetNetworkPing()end)
+   return Runtime.Engine:MiningAction(player.UserId,action,a,receiptId,require(script.Parent.MiningSessions).Get(player.UserId),ping)
   end
   local engine,id=Runtime.Engine,player.UserId
   local commerce=require(script.Parent.YardCommerce)

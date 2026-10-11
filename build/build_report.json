@@ -1,0 +1,30 @@
+{
+ "modified": [
+  "ServerScriptService/MapAmbience",
+  "ReplicatedStorage/DogEconomy/Config",
+  "ServerScriptService/Economy/Engine",
+  "ServerScriptService/Economy/OnboardingRules",
+  "ServerScriptService/Economy/Rules",
+  "ServerScriptService/Economy/Runtime",
+  "StarterPlayer/StarterPlayerScripts/DOGROTS_AutoTranslateUI"
+ ],
+ "created": [
+  "ServerScriptService/MiningWorld (Script)",
+  "ReplicatedStorage/DogEconomy/MiningConfig (ModuleScript)",
+  "ReplicatedStorage/Mining (Folder)",
+  "ReplicatedStorage/Mining/MiningAudio (ModuleScript)",
+  "ReplicatedStorage/Mining/MiningModels (ModuleScript)",
+  "ReplicatedStorage/Mining/MiningRules (ModuleScript)",
+  "ReplicatedStorage/Mining/MiningText (ModuleScript)",
+  "ServerScriptService/Economy/MiningSessions (ModuleScript)",
+  "StarterPlayer/StarterPlayerScripts/MiningClient (LocalScript)",
+  "StarterPlayer/StarterPlayerScripts/MiningClient/Anim (ModuleScript)",
+  "StarterPlayer/StarterPlayerScripts/MiningClient/FX (ModuleScript)",
+  "StarterPlayer/StarterPlayerScripts/MiningClient/Gym (ModuleScript)",
+  "StarterPlayer/StarterPlayerScripts/MiningClient/Hud (ModuleScript)",
+  "StarterPlayer/StarterPlayerScripts/MiningClient/Mine (ModuleScript)",
+  "StarterPlayer/StarterPlayerScripts/MiningClient/Net (ModuleScript)",
+  "StarterPlayer/StarterPlayerScripts/MiningClient/Shop (ModuleScript)",
+  "StarterPlayer/StarterPlayerScripts/MiningClient/World (ModuleScript)"
+ ]
+}

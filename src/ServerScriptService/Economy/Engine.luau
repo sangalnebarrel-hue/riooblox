@@ -67,6 +67,20 @@ function E:Action(id,action,args,request)
   return result
  end,request)
 end
+-- Active Mining runs often (one request per timing circle), so it skips the full profile
+-- Normalize / Offline.Checkpoint / Validate pass of E:Action: TickAll normalizes every second and
+-- mining touches only Cash, XP and p.Mining. session = RAM timing targets (Economy.MiningSessions).
+function E:MiningAction(id,action,args,request,session,ping)
+ local now=self.Now()
+ return self.Tx:Run({pk(id)},function(v)
+  local p=v[pk(id)];self:Authorize(p,id)
+  local message=R.MiningAction(p,action,args,now,self.Random,session,ping)
+  R.Check(R.Int(p.Cash,0,C.MaxCash),"Invalid wallet")
+  local onboarding=require(script.Parent.OnboardingRules).Observe(p,now)
+  return {Message=message,MiningState=R.Copy(p.Mining),Cash=p.Cash,XP=p.XP,Level=p.Level,Onboarding=R.Copy(onboarding),
+   MiningTargets=require(game:GetService('ReplicatedStorage').Mining.MiningRules).ViewTargets(session)}
+ end,request)
+end
 function E:ClaimOffline(id,args,request)
  local now=self.Now()
  return self.Tx:Run({pk(id)},function(v)
