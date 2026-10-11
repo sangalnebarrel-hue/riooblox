@@ -255,11 +255,17 @@ function Mine.new(ctx)
     FX.Popup(pos,'+'..Text.Short(payout),s.LastQuality==2 and U.Colors.gold or Color3.fromRGB(150,235,255),s.LastQuality==2)
    end
   end
-  if payout>0 then Hud.Coins(payout);Audio.Play('Coin',nil,s.Combo)end
+  if payout>0 then
+   Hud.Coins(payout);Audio.Play('Coin',nil,s.Combo)
+   local root=player.Character and player.Character:FindFirstChild('HumanoidRootPart')
+   if pos and root then FX.Coins(pos,math.clamp(math.ceil(math.log10(payout+1)*1.6),1,8),root)end
+  end
   if s.LastBreak and view then
    local brokenDef=World.OreDef(s.LastBrokenId)
    World.PlayBreak(view,true,s)
    local center=(view.Core and view.Core.Position or pos)+Vector3.new(0,4,0)
+   local root=player.Character and player.Character:FindFirstChild('HumanoidRootPart')
+   if root then FX.Coins(center,18,root)end
    FX.Popup(center,'+'..Text.Short(s.LastBrokenValue or payout),U.Colors.gold,true)
    Hud.Toast(message,World.OreColor(brokenDef))
    task.delay(M.Client.BreakPause*.6,function()

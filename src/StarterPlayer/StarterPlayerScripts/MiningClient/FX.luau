@@ -119,6 +119,34 @@ function FX.new(ctx)
   self.ShakeAmount=math.min(1.2,self.ShakeAmount+(amount or .3))
  end
 
+ -- Coins pop out of the ore and fly to the player (the "money drops" of every hit).
+ local COIN=Color3.fromRGB(255,204,56)
+ function self.Coins(fromPos,count,target)
+  count=math.clamp(math.floor(count or 1),1,24)
+  if self.Low()then count=math.max(1,math.floor(count*.4))end
+  for i=1,count do
+   local coin=Instance.new('Part');coin.Name='MiningCoin';coin.Shape=Enum.PartType.Cylinder;coin.Size=Vector3.new(.14,.75,.75)
+   coin.Material=Enum.Material.Neon;coin.Color=COIN;coin.Anchored=true;coin.CanCollide=false;coin.CanQuery=false;coin.CanTouch=false;coin.CastShadow=false
+   local start=fromPos+Vector3.new((math.random()-.5)*1.5,(math.random()-.2)*1.2,(math.random()-.5)*1.5)
+   coin.CFrame=CFrame.new(start);coin.Parent=folder
+   local apex=start+Vector3.new((math.random()-.5)*4,3+math.random()*2.5,(math.random()-.5)*4)
+   local delay=(i-1)*.035;local flight=.55+math.random()*.2
+   task.delay(delay,function()
+    local t0=os.clock()
+    local conn
+    conn=game:GetService('RunService').RenderStepped:Connect(function()
+     local a=math.clamp((os.clock()-t0)/flight,0,1)
+     local goal=(typeof(target)=='Instance'and target.Parent and(target::BasePart).Position)or(typeof(target)=='Vector3'and target)or start
+     local p1=start:Lerp(apex,a);local p2=apex:Lerp(goal,a)
+     coin.CFrame=CFrame.new(p1:Lerp(p2,a))*CFrame.Angles(0,os.clock()*14,math.rad(90))
+     coin.Size=Vector3.new(.14,.75,.75)*(1-.5*a)
+     if a>=1 then conn:Disconnect();coin:Destroy()end
+    end)
+   end)
+   Debris:AddItem(coin,2)
+  end
+ end
+
  -- Pickaxe-tier hit effect. tier 1..7, quality 1/2, crit bool.
  local TIER={
   {Texture=SMOKE,Color=Color3.fromRGB(170,150,120),Count=5,Chunks=3,Speed=NumberRange.new(4,9),LightEmission=0},
