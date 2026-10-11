@@ -73,6 +73,14 @@ function Shop.new(ctx)
   local limit=Instance.new('UITextSizeConstraint');limit.MaxTextSize=label.TextSize;limit.MinTextSize=minSize or 9;limit.Parent=label
   return label
  end
+ -- Coins change often (dogs dig); the cards are rebuilt only when a price becomes (un)affordable
+ -- compared with what the cards on screen were drawn for (Render records it).
+ local function affordKey()
+  local cash=Net.Cash();local key={}
+  for i,p in ipairs(M.Pickaxes)do key[i]=cash>=p.Price and'1'or'0'end
+  return table.concat(key)
+ end
+ local lastKey=''
  local busy=false
  local function buy(level)
   if busy then return end
@@ -155,6 +163,7 @@ function Shop.new(ctx)
   end
   local rows=math.ceil(#M.Pickaxes/columns)
   list.CanvasSize=UDim2.fromOffset(0,gap+rows*(cardH+gap))
+  lastKey=affordKey()
  end
 
  function self.Open(corner)
@@ -185,16 +194,9 @@ function Shop.new(ctx)
  end
  task.spawn(function()
   local stats=player:WaitForChild('leaderstats',30);local coins=stats and stats:WaitForChild('Coins',30)
-  -- Coins change often (dogs dig); rebuild the cards only when a price becomes (un)affordable.
-  local function affordKey()
-   local cash=Net.Cash();local key={}
-   for i,p in ipairs(M.Pickaxes)do key[i]=cash>=p.Price and'1'or'0'end
-   return table.concat(key)
-  end
-  local lastKey=''
   if coins then coins.Changed:Connect(function()if self.IsOpen and not busy then
    local s=stateNow();subtitle.Text=Text.Get('YOUR_COINS',Text.Short(s.Cash))..'   ·   '..Text.Get('YOUR_STRENGTH',s.Strength)
-   local key=affordKey();if key~=lastKey then lastKey=key;self.Render()end
+   if affordKey()~=lastKey then self.Render()end
   end end)end
  end)
  UIS.InputBegan:Connect(function(input)if self.IsOpen and(input.KeyCode==Enum.KeyCode.Escape or input.KeyCode==Enum.KeyCode.ButtonB)then self.Close()end end)

@@ -82,7 +82,9 @@ function Gym.new(ctx)
   title.Size=UDim2.fromOffset(pw-36,34);strengthLabel.Size=UDim2.fromOffset(pw-36,30);goalLabel.Size=UDim2.fromOffset(pw-36,20)
   goalBar.Size=UDim2.fromOffset(pw-36,10)
   rows.Position=UDim2.fromOffset(10,114);rows.Size=UDim2.fromOffset(pw-20,math.max(64,ph-114-58))
-  exitButton.Position=UDim2.fromOffset(pw-134,ph-50);shopButton.Position=UDim2.fromOffset(14,ph-50)
+  local shopW=math.min(150,math.floor((pw-38)*.55));local exitW=math.min(120,pw-38-shopW)
+  shopButton.Size=UDim2.fromOffset(shopW,40);exitButton.Size=UDim2.fromOffset(exitW,40)
+  exitButton.Position=UDim2.fromOffset(pw-14-exitW,ph-50);shopButton.Position=UDim2.fromOffset(14,ph-50)
   local mw,mh
   if short then
    mw,mh=150,math.clamp(size.Y-110,170,380)
@@ -121,6 +123,13 @@ function Gym.new(ctx)
   return nil
  end
 
+ -- Weight prices vs Coins as drawn by the last Render (rows re-render when this flips).
+ local function affordKey()
+  local cash=Net.Cash();local key={}
+  for i,w in ipairs(M.Weights)do key[i]=cash>=w.Price and'1'or'0'end
+  return table.concat(key)
+ end
+ local lastKey=''
  local function request(action,args,okColor)
   if busy then return false end
   busy=true;lastActivity=os.clock()
@@ -177,6 +186,7 @@ function Gym.new(ctx)
    y+=64
   end
   rows.CanvasSize=UDim2.fromOffset(0,y)
+  lastKey=affordKey()
   local def=weightDef()
   meterTitle.Text=def and((def.Icon or'')..' '..Text.Name(def))or Text.Get('CHOOSE_WEIGHT')
   weightIcon.Text=def and(def.Icon or'🏋️')or'🏋️'
@@ -351,14 +361,8 @@ function Gym.new(ctx)
   end
   local stats=player:FindFirstChild('leaderstats');local coins=stats and stats:FindFirstChild('Coins')
   if coins then
-   local function affordKey()
-    local cash=Net.Cash();local key={}
-    for i,w in ipairs(M.Weights)do key[i]=cash>=w.Price and'1'or'0'end
-    return table.concat(key)
-   end
-   local lastKey=affordKey()
    table.insert(connections,coins.Changed:Connect(function()
-    local key=affordKey();if key~=lastKey and not busy then lastKey=key;self.Render()end
+    if affordKey()~=lastKey and not busy then self.Render()end
    end))
   end
   table.insert(connections,ctx.Main:GetAttributeChangedSignal('OpenMenu'):Connect(function()

@@ -82,6 +82,9 @@ function Mine.new(ctx)
  local state=nil
  local connections={}
  local resyncing=false
+ -- Ids the player already judged. A response built before the server processed that hit still
+ -- lists the target; it must not come back as a fresh circle. Server ids only increase.
+ local judged={}
 
  local lastPaidHit=0
  local function pick()return M.Pickaxes[(state and state.PickaxeLevel)or Net.Attr('MiningPickaxe',1)]or M.Pickaxes[1]end
@@ -186,7 +189,7 @@ function Mine.new(ctx)
   if c.Removed or c.Judged then return end
   local f=(os.clock()-c.LocalSpawn)/c.Window
   if f<0 then return end
-  c.Judged=true
+  c.Judged=true;judged[c.Id]=true
   lastActivity=os.clock()
   local pos=c.Point and c.Point.WorldPosition
   if f<TM.GoodFrom then
@@ -233,7 +236,7 @@ function Mine.new(ctx)
   judge(best or near or hit)
  end
  local function makeCircle(t)
-  if active[t.Id]then return end
+  if active[t.Id]or judged[t.Id]then return end
   local c={Id=t.Id,Window=t.Window,LocalSpawn=t.LocalSpawn,Slot=t.Slot}
   c.Point=pickPoint()
   local color=Color3.fromRGB(table.unpack(pick().Color or{110,220,255}))
@@ -259,6 +262,7 @@ function Mine.new(ctx)
   local live={}
   for _,t in ipairs(list)do live[t.Id]=true;makeCircle(t)end
   for id,c in pairs(active)do if not live[id]and not c.Judged then removeCircle(c,nil)end end
+  for id in pairs(judged)do if not live[id]then judged[id]=nil end end
  end
  Net.OnTargets=function(list)syncTargets(list)end
 
@@ -279,13 +283,20 @@ function Mine.new(ctx)
  end
 
  -- RESULTS ------------------------------------------------------------------------------------
- local function resync()
+ -- Ask the server for its live circles. Only a real dead end (too far away, no pickaxe) ends
+ -- the session; transient failures (rate limit, busy profile, connection) retry a second later.
+ local function resync(delay)
   if resyncing or not self.Active then return end
   resyncing=true
-  task.spawn(function()
-   local ok,msg=Net.Invoke('MiningBegin',{})
+  task.delay(delay or 0,function()
+   if not self.Active then resyncing=false;return end
+   local ok,msg,raw=Net.Invoke('MiningBegin',{})
    resyncing=false
-   if not ok and self.Active then Hud.Toast(msg,U.Colors.red);self.Exit('resync')end
+   if ok or not self.Active then return end
+   if raw=='Stand at your Mining Corner'or Text.Key(raw)=='NEED_PICKAXE'then
+    Hud.Toast(msg,U.Colors.red);self.Exit('resync');return
+   end
+   resync(1)
   end)
  end
  function self.OnResult(item,ok,message,result)
@@ -297,8 +308,10 @@ function Mine.new(ctx)
    local key=type(result)=='string'and Text.Key(result)
    if pos and(key=='TOO_EARLY'or key=='NOT_READY')then FX.Popup(pos,message,U.Colors.red)
    elseif key~='SESSION_OVER'and key~='TARGET_GONE'then Hud.Toast(message,U.Colors.red)end
-   -- The server may still hold this circle (or a newer one): ask for the live list.
-   resync()
+   -- The server may still hold this circle (or a newer one): ask for the live list. A circle
+   -- whose hit failed may come back; non-"M:" failures (rate limit) wait for the bucket first.
+   judged[c.Id]=nil
+   resync(key and 0 or 1)
    return
   end
   local key=Text.Key(type(result)=='table'and result.Message or nil)
@@ -419,7 +432,7 @@ function Mine.new(ctx)
     if f<0 then c.Frame.Visible=false
     else
      if f>1+.05 and not c.Judged then
-      c.Judged=true
+      c.Judged=true;judged[c.Id]=true
       removeCircle(c,Color3.fromRGB(150,150,160))
       sendHit(c,1,true)
      else
@@ -516,7 +529,7 @@ function Mine.new(ctx)
   for _,c in ipairs(connections)do c:Disconnect()end
   table.clear(connections)
   for _,c in pairs(active)do removeCircle(c,nil)end
-  table.clear(active);table.clear(usedPoints);table.clear(sendQueue)
+  table.clear(active);table.clear(usedPoints);table.clear(sendQueue);table.clear(judged)
   overlay.Visible=false
   restoreCamera()
   setControls(true)
