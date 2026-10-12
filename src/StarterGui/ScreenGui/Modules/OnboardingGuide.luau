@@ -17,7 +17,7 @@ local cards={
  [3]={Title='3 · WAIT FOR A REAL DIG',Icon='Discoveries',Body='A dog works in cycles. Ordinary finds fill your yard storage; rare discoveries go to BAG. Your dog can NEVER reach a depth you have not unlocked.',Button='VIEW MY DOGS',Page='Dogs'},
  [4]={Title='4 · SELL, DON\'T JUST AFK',Icon='Coins',Body='Take ordinary finds to your Collector and sell them. Cash is intentionally earned through the loop: dig → collect → sell → reinvest.',Button='SHOW COLLECTOR',Destination='Your yard'},
  [5]={Title='5 · LEVELS OPEN THE GAME',Icon='Events',Body='XP comes from digging, selling, active mining, unlocking depths and buying upgrades. Reach Level 2. Higher levels unlock deeper layers and stronger upgrades.',Button='VIEW MY DOGS',Page='Dogs'},
- [6]={Title='6 · BUY YOUR FIRST UPGRADE',Icon='Yard',Body='Use your yard upgrade terminal. Every upgrade has both a Cash price and a player-level requirement. Choose Dig, Storage, Kennel, Plot or another useful path.',Button='SHOW UPGRADES',Destination='Your yard'},
+ [6]={Title='6 · GROW YOUR UPGRADE TREE',Icon='Yard',Body='Open the UPGRADE TREE (yard workshop, MY YARD or this button). Tap a glowing node, check the bonus it gives and press BUY. Every node has a Cash price and a player-level requirement.',Button='OPEN UPGRADE TREE',Page='UpgradeTree'},
  [7]={Title='7 · ACTIVE MINING',Icon='Dig',Body='Your Mining Corner is next to your kennels. Buy the Wooden Pickaxe (600 Coins) at the pickaxe sign, then mine the ore: tap each circle when the white ring reaches the gold ring. Every hit pays Coins.',Button='SHOW MINING CORNER',Destination='Your yard'},
  [8]={Title='8 · TRAIN YOUR STRENGTH',Icon='Yard',Body='The weight rack stands beside the ore. Take the first weight for free and tap fast to push it UP: every lift adds Strength. Better pickaxes need both Coins and Strength.',Button='SHOW STRENGTH RACK',Destination='Your yard'},
  [9]={Title='9 · PICKAXES, WEIGHTS & ORES',Icon='Dig',Body='7 pickaxes, 7 weights, 12 ores. Cheap pickaxes need many hits; better ones add crits, combos, extra circles, ore luck and bonus Coins. The Voidbreaker breaks any ore in 1-2 hits.',Button='CONTINUE',Info=true},
@@ -111,7 +111,7 @@ function Guide.Start(gui,navigation)
   local yard=myYard();if not yard then return end
   if step==2 or step==3 then return part(yard:FindFirstChild('DigSlot_1',true)or yard),'YOUR DIG KENNEL'end
   if step==4 then return part(yard:FindFirstChild('SellAnchor',true)),'YOUR COLLECTOR'end
-  if step==6 then return part(yard:FindFirstChild('UpgradeAnchor',true)),'YARD UPGRADES'end
+  if step==6 then return part(yard:FindFirstChild('UpgradeAnchor',true)),'UPGRADE TREE'end
   -- Mining steps follow the player: sign -> ore, free weight -> lift.
   local corner=yard:FindFirstChild('MiningCorner')
   if step==7 and corner then

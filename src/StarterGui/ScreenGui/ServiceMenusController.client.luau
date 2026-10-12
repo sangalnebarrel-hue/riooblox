@@ -1,4 +1,3 @@
-local PlotCatalog=require(game.ReplicatedStorage.PlotCatalog)
 local Players=game:GetService('Players')
 local RS=game:GetService('ReplicatedStorage')
 local DogRenderProfile=require(RS:WaitForChild('DogRenderProfile'))
@@ -105,82 +104,11 @@ local function mutate(action,args,kind)
   end
  end)
 end
-local upgradeNames={Dig={'DIG SPEED','Shortens rest between work cycles.'},Storage={'LOOT STORAGE','More room for owned discoveries.'},Kennel={'KENNEL QUALITY','Improves the sale value of finds.'},Plot={'EXPAND YOUR YARD','Unlock kennels, paths, lights and a mega estate.'},DogStorage={'DOG CAPACITY','Store more dogs. Expand your yard to unlock kennels.'},Ability={'ABILITY POWER','Strengthens actual dog abilities.'}}
--- Estate development has its own panel in the physical shop.
-local estateScroll=U.scroll(ui.Panels.Upgrades,'EstateScroll',UDim2.new(),UDim2.fromScale(1,1))
-local hero,heroFace=U.card(estateScroll,'EstateDevelopment',UDim2.fromOffset(8,8),UDim2.new(1,-30,0,490))
-local heroView=U.viewport(heroFace,'NextStagePreview',UDim2.fromScale(.018,.15),UDim2.fromScale(.48,.65))
-local heroTitle=U.label(heroFace,'Title','EXPAND YOUR YARD',UDim2.fromScale(.025,.025),UDim2.fromScale(.95,.10),32)
-heroTitle.TextColor3=U.accent
-local heroStage=U.label(heroFace,'Stage','',UDim2.fromScale(.53,.16),UDim2.fromScale(.435,.11),22,true)
-local heroDetail=U.label(heroFace,'Benefits','',UDim2.fromScale(.53,.30),UDim2.fromScale(.435,.25),21,true)
-U.label(heroFace,'LocationHint','Estate development is available here at Paw Market. Dogs and digging: DOG TRAINING in your yard.',UDim2.fromScale(.53,.57),UDim2.fromScale(.435,.18),17,true)
-local heroBuy=U.button(heroFace,'DevelopYard','',UDim2.fromScale(.53,.82),UDim2.fromScale(.435,.13))
-U.label(heroFace,'PreviewCaption','NEXT YARD STAGE',UDim2.fromScale(.04,.85),UDim2.fromScale(.43,.08),19)
-local estateOriginal={}
-for _,obj in ipairs(heroFace:GetChildren())do if obj:IsA('GuiObject')then estateOriginal[obj]={Position=obj.Position,Size=obj.Size}end end
-local function estateLayout()
- local narrow=estateScroll.AbsoluteSize.X<620
- hero.Size=UDim2.new(1,-30,0,narrow and 700 or 490)
- if not narrow then for obj,original in pairs(estateOriginal)do obj.Position=original.Position;obj.Size=original.Size end;return end
- heroTitle.Position=UDim2.fromOffset(12,12);heroTitle.Size=UDim2.new(1,-24,0,49)
- heroView.Position=UDim2.fromOffset(12,71);heroView.Size=UDim2.new(1,-24,0,210)
- heroFace.PreviewCaption.Position=UDim2.fromOffset(12,289);heroFace.PreviewCaption.Size=UDim2.new(1,-24,0,30)
- heroStage.Position=UDim2.fromOffset(12,330);heroStage.Size=UDim2.new(1,-24,0,56)
- heroDetail.Position=UDim2.fromOffset(12,398);heroDetail.Size=UDim2.new(1,-24,0,86)
- heroFace.LocationHint.Position=UDim2.fromOffset(12,496);heroFace.LocationHint.Size=UDim2.new(1,-24,0,103)
- heroBuy.Parent.Position=UDim2.fromOffset(12,622);heroBuy.Parent.Size=UDim2.new(1,-24,0,57)
-end
-estateScroll:GetPropertyChangedSignal('AbsoluteSize'):Connect(estateLayout);estateLayout()
-local heroToken
-local trainingView=false
-heroBuy.Activated:Connect(function()if active()and mode=='Upgrades'and not trainingView then mutate('Upgrade',{Kind='Plot'})end end)
-local function renderEstate(p)
- local level=PlotCatalog.Level(p);local nextLevel=math.min(9,level+1);local nextStage=PlotCatalog.Stages[nextLevel]
- local price=PlotCatalog.Cost(level)
- heroStage.Text='YARD '..level..' / 9  >  '..nextStage.Name
- heroDetail.Text=level>=9 and 'Your estate and trophy showcase are fully developed.'or nextStage.Feature..' Trophy showcase evolves with your yard.'
- heroBuy.Text=level>=9 and 'MAXIMUM ESTATE'or 'DEVELOP YARD  /  '..format(price)..' CASH'
- heroBuy.Active=level<9 and p.Cash>=price;heroBuy.AutoButtonColor=heroBuy.Active
- local token=nextLevel..':'..tostring(p.EquippedPlotSkin)
- if heroToken~=token then
-  heroToken=token
-  for _,o in ipairs(heroView:GetChildren())do if o:IsA('Model')or o:IsA('Camera')then o:Destroy()end end
-  local yards=workspace.DOGROTS_District['04_PlayerYards'];local source
-  for _,y in ipairs(yards:GetChildren())do if y:GetAttribute('OwnerUserId')==player.UserId then source=y;break end end
-  if source then
-   local A=require(RS.PlotAppearance);local model=A.Preview(source,nextLevel,p.EquippedPlotSkin or 'Classic');model.Parent=heroView
-   local empty=heroView:FindFirstChild('Empty');if empty then empty.Visible=false end
-   local f=A.Frame(model);local camera=Instance.new('Camera');camera.FieldOfView=38
-   camera.CFrame=CFrame.lookAt(f:PointToWorldSpace(Vector3.new(72,120,145)),f:PointToWorldSpace(Vector3.new(0,5,0)))
-   camera.Parent=heroView;heroView.CurrentCamera=camera
-  end
- end
-end
-
-local upgradeCards={}
-local function effect(kind,level,current)
- local e=config.UpgradeEffects[kind]
- if kind=='Storage' then return format((player:GetAttribute('ItemCapacity')or 50)+(level-current)*e)..' item slots' end
- if kind=='DogStorage' then return format(math.min(config.MaxDogs,(player:GetAttribute('DogCapacity') or 20)+(level-current)*e))..' dogs' end
- if kind=='Plot'then local stage=PlotCatalog.Stages[math.min(level+1,9)];return stage.Name..' / '..stage.Slots..' kennels'end
- local suffix=kind=='Dig' and 'work speed' or kind=='Kennel' and 'find value' or 'ability strength'
- return '+'..string.format('%g',level*e*100)..'% '..suffix
-end
-for index,kind in ipairs({'Dig','Storage','Kennel','DogStorage','Ability'})do
- local holder,face=U.card(ui.UpgradeGrid,kind,UDim2.new(),UDim2.fromOffset(300,240));holder.LayoutOrder=index
- local name=U.label(face,'Name',upgradeNames[kind][1],UDim2.fromScale(.055,.045),UDim2.fromScale(.89,.12),27)
- name.TextColor3=U.accent
- local level=U.label(face,'Level','',UDim2.fromScale(.055,.19),UDim2.fromScale(.89,.095),20)
- U.label(face,'Description',upgradeNames[kind][2],UDim2.fromScale(.055,.30),UDim2.fromScale(.89,.18),18,true)
- local current=U.label(face,'Current','',UDim2.fromScale(.055,.50),UDim2.fromScale(.89,.09),18,true)
- local nextEffect=U.label(face,'Next','',UDim2.fromScale(.055,.605),UDim2.fromScale(.89,.09),18,true)
- local track=Instance.new('Frame');track.Name='Progress';track.BackgroundColor3=gui.MainWindow.Content.BackgroundColor3;track.BorderSizePixel=0;track.Position=UDim2.fromScale(.055,.73);track.Size=UDim2.fromScale(.89,.04);track.Parent=face
- local fill=Instance.new('Frame');fill.Name='Fill';fill.BorderSizePixel=0;fill.BackgroundColor3=gui.MainWindow.Content.PageContainer.YardPage.StatsGrid.IncomeCard.Accent.BackgroundColor3;fill.Size=UDim2.fromScale(0,1);fill.Parent=track
- local buy=U.button(face,'Purchase','',UDim2.fromScale(.055,.83),UDim2.fromScale(.89,.12))
- upgradeCards[kind]={Holder=holder,Level=level,Current=current,Next=nextEffect,Fill=fill,Buy=buy}
- buy.Activated:Connect(function()if active() and mode=='Upgrades' then mutate('Upgrade',{Kind=kind}) end end)
-end
+-- DOG TRAINING and ESTATE UPGRADES moved into the UPGRADE TREE (Modules.UpgradeTreeScreen): every
+-- old way into them (yard workshop prompt, MY YARD button, Paw Market terminal, help links) opens
+-- the tree, where purchases work anywhere and show their level gate.
+local UpgradeTree=require(gui.Modules:WaitForChild('UpgradeTreeScreen'))
+local treePages={UpgradeTree=true,DogTraining=true,Upgrades=true,Estate=true}
 local layerCards={}
 for index,def in ipairs(config.Layers)do
  local holder,face=U.card(ui.LayerList,'Layer'..index,UDim2.new(),UDim2.new(1,-22,0,110));holder.LayoutOrder=index
@@ -315,18 +243,7 @@ render=function()
  if not active() or not snapshot then return end
  local p=snapshot.Profile
  ui.Money.Text='Cash '..format(p.Cash)..'\nBones '..format(p.Bones)..' · Lv. '..p.Level
- if mode=='Upgrades' then
-  if not trainingView then renderEstate(p)end
-  for kind,card in pairs(upgradeCards)do
-   card.Holder.Visible=trainingView
-   local def=config.Upgrades[kind];local level=p.Upgrades[kind] or 0;local price=math.floor(def.Base*def.Factor^level);local req=config.UpgradeLevel(kind,level)
-   card.Level.Text='Upgrade '..level..' / '..def.Max..' · Player Lv. '..req;card.Fill.Size=UDim2.fromScale(level/def.Max,1)
-   card.Current.Text='Current: '..effect(kind,level,level)
-   card.Next.Text=level>=def.Max and 'Maximum level reached' or 'Next: '..effect(kind,level+1,level)
-   card.Buy.Text=level>=def.Max and 'MAX LEVEL' or p.Level<req and('REQUIRES LV. '..req)or('UPGRADE · '..format(price)..' CASH')
-   card.Buy.Active=level<def.Max and p.Level>=req and p.Cash>=price;card.Buy.AutoButtonColor=card.Buy.Active
-  end
- elseif mode=='Layers' then
+ if mode=='Layers' then
   for index,card in ipairs(layerCards)do
    local def=config.Layers[index];local unlocked=p.UnlockedLayers[tostring(index)]
    local ready=p.Level>=def.Level and p.Cash>=def.Cost and (p.Prestige or 0)>=(def.Prestige or 0) and (index==1 or p.UnlockedLayers[tostring(index-1)])
@@ -364,19 +281,14 @@ ui.Kennels.Action.Activated:Connect(function()
  mutate(occupied and 'Remove' or 'Assign',{Uid=selected,Slot=kennelContext.Slot,YardId=kennelContext.YardId},'Kennel')
 end)
 open=function(name,context)
+ if treePages[name] then UpgradeTree.Open(name=='Estate'and'Plot'or nil);return end
  if pending then mutate(pending.Action,pending.Args,pending.Kind);return end
  if name=='Kennels' and (not context or context.YardId~=player:GetAttribute('YardId')) then return end
- trainingView=name=='DogTraining'
- if trainingView then name='Upgrades'end
- estateScroll.Visible=name=='Upgrades'and not trainingView
- hero.Visible=estateScroll.Visible
  for _,service in ipairs({'Seller','Kennels'})do ui[service].Scroll.CanvasPosition=Vector2.zero end
- ui.UpgradeGrid.Visible=trainingView
- ui.UpgradeGrid.Position=UDim2.fromScale(.012,.015)
- ui.UpgradeGrid.Size=UDim2.fromScale(.976,.97)
+ ui.UpgradeGrid.Visible=false
  viewToken+=1;mode=name;selected=nil;quote=nil;kennelContext=context;snapshot=nil;table.clear(sellerSelection)
  clearGrid();ui.Status.Text='Loading saved data...'
- ui.Title.Text=({Upgrades=trainingView and 'DOG TRAINING'or 'ESTATE UPGRADES',Layers='DIGGING LAYERS',Seller='SELL FINDS',Kennels='ASSIGN DOG'})[name]
+ ui.Title.Text=({Layers='DIGGING LAYERS',Seller='SELL FINDS',Kennels='ASSIGN DOG'})[name]
  navigation:Fire('Service',name)
  if ui[name] and ui[name].Grid then ui[name].Empty.Visible=true;ui[name].Empty.Text='Loading...';selectRow(nil) end
  task.spawn(function()refresh(true);if active() and snapshot then status('')end end)
@@ -386,10 +298,11 @@ root:GetPropertyChangedSignal('Visible'):Connect(function()
  if not root.Visible then viewToken+=1;quote=nil;clearGrid() end
 end)
 local yard=gui.MainWindow.Content.PageContainer.YardPage
+-- MY YARD: the old DOG TRAINING button opens the UPGRADE TREE (relabelled; the frame stays, other
+-- scripts lay it out and clone its style).
+yard.ActionButtons.Upgrades.Main.Text='UPGRADE TREE'
 yard.ActionButtons.Upgrades.Main.Activated:Connect(function()
- if busy or pending then return end
- -- TARGET validates workshop proximity on purchase; it has no VisitUpgrades action.
- open('DogTraining')
+ UpgradeTree.Open()
 end)
 yard.ActionButtons.DiggingLayers.Main.Activated:Connect(function()open('Layers')end)
 Navigation.RegisterServices(open)

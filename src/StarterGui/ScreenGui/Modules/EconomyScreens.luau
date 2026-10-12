@@ -117,7 +117,7 @@ function Screens.Build(c)
   if latest then V.Item(last,latest,8,9,77,106);U.Text(last,'LATEST FOUND ITEM',96,9,sw-108,29,17,P.muted);U.Text(last,latest.DisplayName..' · '..U.Weight(latest.WeightKg),96,42,sw-108,77,19,P.text,true)
   else U.Text(last,'LATEST FOUND ITEM\nYour next discovery is waiting.',20,8,sw-40,110,21,P.muted,true)end
   y=math.max(y+ph,latestY+128)+15
-  U.Button(sc,'OpenUpgrades','DOG TRAINING',0,y,(W-20)/2,45,show('DogTraining'),P.gold);U.Button(sc,'OpenLayers','DIGGING LAYERS',(W-20)/2+12,y,(W-20)/2,45,show('Layers'),P.blue);y+=57
+  U.Button(sc,'OpenUpgrades','UPGRADE TREE',0,y,(W-20)/2,45,show('UpgradeTree'),P.gold);U.Button(sc,'OpenLayers','DIGGING LAYERS',(W-20)/2+12,y,(W-20)/2,45,show('Layers'),P.blue);y+=57
   U.Button(sc,'OfflineEarnings','OFFLINE EARNINGS',0,y,W-8,45,show('OfflineEarnings'),P.gold);y+=57
   section(sc,'WORLD FEATURES',0,y,W-8);y+=48
   local features={{'DOG LINE','03_DogLine','Factory','Meet · choose · adopt'},{'LAB','05_MutationLab','Mutation lab','Mutate · ascend · evolve'},{'GLOBAL EVENT','08_GlobalDigSite','Global event','A new adventure is on the way',true}}
@@ -180,11 +180,11 @@ function Screens.Build(c)
  elseif c.Page=='Trade'then Screens.Trade(c,dogs,section)
  elseif c.Page=='Lab'then
   Screens.Lab(c,dogs,selected)
- elseif c.Page=='Upgrades'or c.Page=='DogTraining'then
+ elseif c.Page=='Upgrades'or c.Page=='DogTraining'or c.Page=='UpgradeTree'then
+  -- Every upgrade lives in the UPGRADE TREE window (Modules.UpgradeTreeScreen), bought anywhere.
   root=U.Scroll(root,'UpgradeDirections',0,0,W,H)
-  U.Text(root,'Develop your estate at UPGRADES in Paw Market. Improve dogs, digging and storage at DOG TRAINING in your yard.',12,12,W-24,90,24,P.gold,true)
-  U.Button(root,'OpenUpgradeService',c.Page=='DogTraining'and 'OPEN DOG TRAINING'or 'VIEW ESTATE UPGRADES',12,116,W-24,50,function()require(c.Gui.Modules.GUIIntegration).OpenService(c.Page)end,P.green)
-  U.Button(root,'FindUpgradeShop','FIND UPGRADES AT PAW MARKET',12,178,W-24,46,function()require(c.Gui.Modules.GUIIntegration).Navigate('Shops')end,P.blue)
+  U.Text(root,'All upgrades now live in the UPGRADE TREE: dogs, digging, luck, storage and your estate. Buy them anywhere.',12,12,W-24,90,24,P.gold,true)
+  U.Button(root,'OpenUpgradeTree','OPEN UPGRADE TREE',12,116,W-24,50,function()require(script.Parent.UpgradeTreeScreen).Open()end,P.green)
 
  elseif c.Page=='Feedback'then require(script.Parent.FeedbackScreen).Build(c)
  elseif c.Page=='Shop'then return require(script.Parent.CommerceShopScreen).Build(c)

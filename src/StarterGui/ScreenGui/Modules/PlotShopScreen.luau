@@ -53,10 +53,17 @@ function Screen.Build(c)
   U.Text(body,C.Requirement(p,selected),8,y,bodyW-16,57,15,P.muted);y+=63
   U.Text(body,'Buy and claim at the terminal inside COSMETICS. Owned skins can be equipped anywhere.',8,y,bodyW-16,50,15,P.muted);y+=57
  end
+ -- Estate stages are bought in the UPGRADE TREE (node Plot); price, level gate and bonus come from its
+ -- definitions (DogEconomy.UpgradeTree), the same numbers the server charges and applies.
+ local Tree=require(RS.DogEconomy.UpgradeTree);local plot=Tree.Level(p,'Plot');local last=#C.Stages
  U.Text(body,'YOUR ESTATE / '..C.Stages[level].Name,8,y,bodyW-16,30,19,P.gold,true);y+=34
- U.Text(body,C.Stages[level].Feature..'\n'..C.Slots(p)..' / 5 kennels · +'..((level-1)*2.5)..'% find value',8,y,bodyW-16,58,16,P.text);y+=66
- if level<9 then U.Text(body,'NEXT: '..C.Stages[level+1].Name..' · '..U.Fmt(C.Cost(level))..' Cash\n'..C.Stages[level+1].Feature,8,y,bodyW-16,70,16,P.muted);y+=76 end
- U.Button(body,'Workshop','FIND ESTATE UPGRADES AT PAW MARKET',8,y,bodyW-16,40,function()require(c.Gui.Modules.GUIIntegration).Navigate('Shops')end,P.gold)
+ U.Text(body,C.Stages[level].Feature..'\n'..C.Slots(p)..' / '..C.Stages[last].Slots..' kennels · '..Tree.FormatValue('percent',Tree.Nodes.Plot.PerLevel*plot)..' dug value',8,y,bodyW-16,58,16,P.text);y+=66
+ if level<last then
+  local price=Tree.Cost('Plot',plot);local gate=Tree.Gate('Plot',plot)
+  U.Text(body,'NEXT · '..C.Stages[level+1].Name..' · '..U.Fmt(price)..' Cash · Lv. '..gate..'\n'..C.Stages[level+1].Feature,8,y,bodyW-16,70,16,(p.Level or 1)>=gate and P.muted or P.red);y+=76
+ end
+ U.Text(body,'Estate stages are bought in the UPGRADE TREE.',8,y,bodyW-16,26,15,P.muted);y+=30
+ U.Button(body,'Workshop','OPEN UPGRADE TREE',8,y,bodyW-16,40,function()require(c.Gui.Modules.UpgradeTreeScreen).Open('Plot')end,P.gold)
  y+=56
  local titles={};local legacy={GoldenKennel=true,CyberKennel=true,VoidAura=true}
  for id,isOwned in pairs(p.Cosmetics or {})do if isOwned and not legacy[id]then table.insert(titles,id)end end
