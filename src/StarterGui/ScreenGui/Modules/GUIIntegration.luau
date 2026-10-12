@@ -94,10 +94,13 @@ function N.Back()
  if N.DismissDialog()then return end
  N.Close()
 end
+-- The genetics lab is a kit window (Modules.LabScreen), not a Menus page (it needs no registered screens).
+local function openLab()local ok,err=pcall(function()require(script.Parent.LabScreen).Open()end);if not ok then warn('Lab window: '..tostring(err))end end
 function N.OpenPage(page,message)
  if page=='Roulette'then page='RewardMachine'end -- Pre-refactor navigation alias.
  page=aliases[page]or page
  if page=='Equipment'then local ok,screen=pcall(require,script.Parent.Equipment.EquipmentScreen);if ok then screen.Open(message)else warn('DOGROTS equipment screen: '..tostring(screen))end;return end
+ if page=='Lab'then openLab();return end
  if page=='Lab'or page=='Shop'or page=='Events'or(gui:GetAttribute('CompactMenus')and(page=='Dogs'or page=='Yard'or page=='DogDex'or page=='Trade'))then N.OpenScreen(page);return end
  if services[page]then N.OpenService(services[page]);return end
  if not staticPages[page]then N.OpenScreen(page);return end
@@ -110,6 +113,7 @@ function N.OpenPage(page,message)
 end
 function N.OpenScreen(page,state)
  if page=='Roulette'then page='RewardMachine'end -- Pre-refactor navigation alias.
+ if page=='Lab'then openLab();return end
  if page=='Feedback'then N.Close();N.Navigate(page);return end
  if page=='Collector'or page=='Seller'then N.OpenService('Seller');return end
  if page=='Equipment'then local ok,screen=pcall(require,script.Parent.Equipment.EquipmentScreen);if ok then screen.Open()end;return end

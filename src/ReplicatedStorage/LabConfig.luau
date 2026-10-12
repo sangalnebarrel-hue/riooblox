@@ -22,5 +22,9 @@ C.Genetics={Breadog={'FOOD','NORMAL'},CoffeeDog={'FOOD','NORMAL'},DJDoggo={'DIGI
 -- Common / Rare / Epic / Legendary / Mythic / Secret, matching the dog catalog.
 C.Extraction={CommonByRank={2,4,6,8,10,14},RareByRank={0,1,1,2,3,5},SamplesByRank={1,2,2,3,4,6},MasteryStep=25,AscensionBonus=1,VariantShards={Normal=0,Shiny=1,Golden=2,Corrupted=3,Glitched=4,Void=5},CoreMinimumRank=5}
 C.HighValueVariants={Golden=true,Corrupted=true,Glitched=true,Void=true}
+-- Valuable dogs (LabGenetics.ValueReasons): Epic+ (rank >= MinRank), any non-Normal variant, Ascension > 0,
+-- Mastery >= Mastery, collectible editions, lab-made dogs and dogs wearing artifacts. Consuming one (or
+-- rerolling a mutated variant) needs a held confirmation.
+C.HighValue={MinRank=3,Mastery=25}
 C.Colors={Normal=Color3.fromRGB(151,231,155),Shiny=Color3.fromRGB(168,220,255),Golden=Color3.fromRGB(255,200,63),Corrupted=Color3.fromRGB(209,64,83),Glitched=Color3.fromRGB(211,92,248),Void=Color3.fromRGB(106,49,184)}
 return C

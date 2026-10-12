@@ -1,7 +1,9 @@
 -- Server-only. All enabled outputs use existing available production assets.
+-- GOLDEN_BREAKFAST takes a Golden Scarab (2% drop, depth 3): the Golden Bone it used before drops 0.015% of the
+-- time, which made the only known recipe practically unreachable.
 return {
  {RecipeId='GOLDEN_BREAKFAST',Name='Golden Breakfast',Procedure='Fusion',DiscoveryState='Known',Secret=false,Repeatable=true,
-  RequiredDogIds={'Breadog','CoffeeDog'},RequiredDNA={FOOD=4,CommonDNA=4},RequiredItems={golden_bone=1},MinimumMastery=0,MinimumAscension=0,
+  RequiredDogIds={'Breadog','CoffeeDog'},RequiredDNA={FOOD=4,CommonDNA=4},RequiredItems={golden_scarab=1},MinimumMastery=0,MinimumAscension=0,
   StabilityModifiers=76,OutputDogId='Breadog',OutputMutation='Golden',Costs={Cash=25000,Bones=15},Hint='Two familiar breakfast companions, a golden keepsake.'},
  {RecipeId='DIGITAL_ROAST',Name='Digital Roast',Procedure='Creation',DiscoveryState='Discovered',Secret=false,Repeatable=true,
   RequiredDogIds={'CoffeeDog','DJDoggo'},RequiredDNA={FOOD=4,DIGITAL=4,RareDNA=2},RequiredItems={glitched_coin=1},MinimumMastery=5,MinimumAscension=0,
