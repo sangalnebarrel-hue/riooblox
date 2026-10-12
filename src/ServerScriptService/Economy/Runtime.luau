@@ -351,7 +351,9 @@ function Runtime.Snapshot(player)
  local online={};for _,other in ipairs(Players:GetPlayers())do if other~=player and Runtime.Ready(other) then table.insert(online,{Id=other.UserId,Name=other.DisplayName,Username=other.Name,Level=other:GetAttribute('Level')or 1,Status=Runtime.Engine.TradeByUser[other.UserId]and 'Trading'or 'Online',Trades=Runtime.Views[other.UserId].Stats.CompletedTrades,Listings=Rules.Count(Runtime.Views[other.UserId].Listings)})end end
  -- Per-dog stats and team income from the shared model (Rules.IncomeModel), the same numbers the
  -- HUD shows and offline earnings use. Luck is the real rare-loot luck (fraction, +0.25 = +25%).
- local dogStats={};local model=Rules.IncomeModel(p,os.time());local income=model.PerMinute/60
+ local okModel,model=pcall(Rules.IncomeModel,p,os.time())
+ if not okModel then warn('DOGROTS income model failed:',model);model={PerMinute=0,Dogs={}}end
+ local dogStats={};local income=model.PerMinute/60
  for uid,m in pairs(model.Dogs)do
   dogStats[uid]={Cooldown=m.Cooldown,Cycle=m.Cycle,Luck=m.LuckPct/100,LuckPct=m.LuckPct,MaxDepth=p.CurrentLayer,CoinsPerMin=m.CoinsPerMin,
    DigsPerMin=m.DigsPerMin,Efficiency=m.Efficiency,LootPerMin=m.LootPerMin,ItemsPerMin=m.ItemsPerMin,ItemFindsPerMin=m.ItemFindsPerMin,Rolls=m.Rolls,Working=m.Assigned}

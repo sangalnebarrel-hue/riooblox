@@ -34,7 +34,13 @@ function O.Estimate(p)
   if Definitions[dog.DogId]and Signatures.Active(dog)then clean.Dogs[uid]=dog end
  end
  if not Economy.Layers[p.CurrentLayer or 1]then return 0,{},0 end
- local model=R.IncomeModel(clean,41,{AssignedOnly=true,Potential=true})
+ -- Runs inside every transaction (Checkpoint): a failing estimate keeps the last rates instead.
+ local ok,model=pcall(R.IncomeModel,clean,41,{AssignedOnly=true,Potential=true})
+ if not ok then
+  warn('DOGROTS offline estimate failed: '..tostring(model))
+  local o=type(p.OfflineEarnings)=='table'and p.OfflineEarnings or{}
+  return tonumber(o.Rate)or 0,type(o.Dogs)=='table'and o.Dogs or{},tonumber(o.BaseRate)or 0
+ end
  local efficiency=C.Efficiency*math.max(0,1+Bonuses.Global(clean,41).Offline)
  local rows,baseTotal={},0
  for uid,stats in pairs(model.Dogs)do

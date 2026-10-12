@@ -11,8 +11,8 @@ C.Work={Duration=4,BaseCooldown=20,MasteryReduction=.12,MinCooldown=6,MaxCooldow
 C.UpgradeEffects={Dig=.04,Storage=25,Kennel=.015,Plot=.025,DogStorage=20,Ability=.02}
 C.Rarities={"Common","Rare","Epic","Legendary","Mythic","Secret"}
 -- Dog power by rarity: multiplies every ordinary loot roll. Tuned with a Lune simulation of the
--- real Rules.Dig (docs/ECONOMY.md): at the same depth a Secret team earns ~12x a Common team.
-C.Power={1,2,3.3,5.4,9,15.5}
+-- real Rules.Dig (docs/ECONOMY.md): at the same depth a Secret team earns 11-15x a Common team.
+C.Power={1,2,3.3,5.4,9,14.5}
 C.Prices={3500,22000,140000,900000,6500000,55000000}
 -- Per-spawn rarity odds on the tongue (sum 100), tuned to Steal a Brainrot's real-time
 -- feel at ~5.6 dogs/min: Legendary ~7 min, Mythic ~24 min, a Secret ~2 h per server.

@@ -230,6 +230,7 @@ rateButton.TextSize = 25
 rateButton.TextColor3 = Color3.fromRGB(132, 255, 57)
 rateButton.TextXAlignment = Enum.TextXAlignment.Left
 rateButton.Text = ""
+rateButton:SetAttribute("NoTranslate", true)
 stroke(rateButton, 2)
 rateButton.Parent = chip
 
@@ -244,6 +245,7 @@ fullButton.Font = Enum.Font.FredokaOne
 fullButton.TextSize = 15
 fullButton.TextColor3 = Color3.new(1, 1, 1)
 fullButton.Text = ""
+fullButton:SetAttribute("NoTranslate", true)
 fullButton.Visible = false
 local fullCorner = Instance.new("UICorner")
 fullCorner.CornerRadius = UDim.new(0, 9)
@@ -351,9 +353,15 @@ local function placeChip()
 			if y > clearTop - 2 then y = math.max(y, clearTop + clear.AbsoluteSize.Y + 4 + 32 * f) end
 		end
 	else
-		-- Desktop: same row as the XP counter, to its right; above it if the row is too narrow.
+		-- Desktop: same row as the XP counter, to its right; above it (right of the button column)
+		-- when the row would reach the boost cards (BuffHUD's ActiveSupplies) or the right column.
+		local limit = innerRight - 8
+		local buffs = hud:FindFirstChild("ActiveSupplies")
+		if buffs and buffs:IsA("GuiObject") and buffs.AbsoluteSize.X > 0 then
+			limit = math.min(limit, buffs.AbsolutePosition.X - hud.AbsolutePosition.X - 8)
+		end
 		x, y = xpX + 330 * f, xpY
-		if x + width * f > innerRight - 8 then
+		if x + width * f > limit then
 			x, y = math.max(xpX, innerLeft), xpY - 36 * f
 		end
 	end
@@ -374,6 +382,15 @@ if screen then
 	local clear = guide and guide:FindFirstChild("ClearMarker")
 	if clear then clear:GetPropertyChangedSignal("Visible"):Connect(placeChip) end
 end
+-- BuffHUD builds its card column after this script may have run.
+local function watchBuffs(child)
+	if child.Name == "ActiveSupplies" and child:IsA("GuiObject") then
+		child:GetPropertyChangedSignal("AbsolutePosition"):Connect(placeChip)
+		placeChip()
+	end
+end
+hud.ChildAdded:Connect(watchBuffs)
+for _, child in ipairs(hud:GetChildren()) do watchBuffs(child) end
 task.defer(function()
 	local s = moneyWidget:FindFirstChildWhichIsA("UIScale")
 	if s then s:GetPropertyChangedSignal("Scale"):Connect(placeChip) end
