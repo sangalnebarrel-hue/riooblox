@@ -19,6 +19,10 @@
 --   * Profiling: each call is wrapped in debug.profilebegin("Perf:" .. name) for the MicroProfiler.
 --   * Errors: a failing call is caught (pcall), counted and reported with warn once per job; the
 --     job keeps its schedule.
+--   * Jobs must not yield (task.wait, WaitForChild, InvokeServer, PreloadAsync): task.spawn the part
+--     that waits. Calls run on a reusable worker coroutine, so a call that yields anyway only stalls
+--     itself: the runner warns once, never starts that job again while the call is suspended, and the
+--     other jobs keep running. A call that finishes after its yield is settled then (errors counted).
 -- Scheduler.new(options) makes an independent runner with its own clock and no Heartbeat (tests).
 local RunService = game:GetService("RunService")
 
@@ -132,15 +136,56 @@ function Runner._compact(self: any)
 	end
 end
 
+-- Records the outcome of one call: an error is counted and warned once, true = work left.
+function Runner._settle(self: any, job: any, ok: boolean, result: any)
+	if not ok then
+		job.Errors += 1
+		job.Pending = false
+		if not job.Warned then
+			job.Warned = true
+			self.Warn(string.format("Perf.Scheduler: job %s failed: %s", job.Name, tostring(result)))
+		end
+	else
+		job.Pending = result == true
+	end
+end
+
+-- The worker coroutine: parked in runner.Idle between calls, so a call costs no new thread. A call
+-- that yields keeps its worker (job.Suspended); when it returns later the worker settles it, then
+-- parks again unless another worker took its place meanwhile.
+local function worker(runner: any)
+	local thread = coroutine.running()
+	while true do
+		local job, dt, deadline = coroutine.yield()
+		local ok, result = pcall(job.Fn, dt, deadline)
+		if job.Suspended == thread then
+			job.Suspended = nil
+			runner:_settle(job, ok, result)
+		else
+			runner.CallOk, runner.CallResult = ok, result
+		end
+		if runner.Idle ~= nil then
+			return
+		end
+		runner.Idle = thread
+	end
+end
+
 function Runner._run(self: any, job: any, now: number)
 	local dt = job.Last and (now - job.Last) or job.Interval
 	job.Last = now
 	local deadline = now + self.TaskBudget
+	local thread = self.Idle
+	if thread == nil then
+		thread = coroutine.create(worker)
+		coroutine.resume(thread, self)
+	end
+	self.Idle = nil
 	local profiling = self.Profile
 	if profiling then
 		profileBegin("Perf:" .. job.Name)
 	end
-	local ok, result = pcall(job.Fn, dt, deadline)
+	coroutine.resume(thread, job, dt, deadline)
 	if profiling then
 		profileEnd()
 	end
@@ -153,15 +198,17 @@ function Runner._run(self: any, job: any, now: number)
 	if used > self.TaskBudget then
 		job.Debt = math.min(MAX_DEBT, job.Debt + used - self.TaskBudget)
 	end
-	if not ok then
-		job.Errors += 1
-		job.Pending = false
-		if not job.Warned then
-			job.Warned = true
-			self.Warn(string.format("Perf.Scheduler: job %s failed: %s", job.Name, tostring(result)))
-		end
+	if self.Idle == thread or coroutine.status(thread) == "dead" then
+		self:_settle(job, self.CallOk, self.CallResult)
+		self.CallOk, self.CallResult = nil, nil
 	else
-		job.Pending = result == true
+		-- The call yielded: it keeps this worker and the job is skipped until it returns.
+		job.Suspended = thread
+		job.Pending = false
+		if not job.WarnedYield then
+			job.WarnedYield = true
+			self.Warn(string.format("Perf.Scheduler: job %s yielded; jobs must not yield (task.spawn the part that waits), it is skipped until that call returns", job.Name))
+		end
 	end
 	if not job.Pending then
 		-- Keep the average rate exact, but never schedule a burst after a hitch.
@@ -193,7 +240,7 @@ function Runner.Step(self: any, dt: number?)
 	for offset = 0, count - 1 do
 		local index = (start - 1 + offset) % count + 1
 		local job = jobs[index]
-		if job.Running then
+		if job.Running and job.Suspended == nil then
 			if job.Debt > 0 then
 				job.Debt = math.max(0, job.Debt - self.TaskBudget)
 			elseif job.Pending or started >= job.Next then

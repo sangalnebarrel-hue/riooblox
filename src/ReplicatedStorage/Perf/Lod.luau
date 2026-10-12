@@ -10,14 +10,22 @@
 --       OnLevel = function(level, handle) ... end, -- called on every change (and once at start)
 --   })
 --   The target is normally a Model / BasePart / Attachment. With Position it can be any key, so a
---   feature can register a slot whose model is only built when it comes near.
+--   feature can register a slot whose model is only built when it comes near. An Instance target
+--   is unregistered by itself when it is destroyed.
 --   handle.Level; handle:SetRange(near, far); handle:Destroy()
+--   OnLevel runs on its own thread (task.spawn), so a handler that waits (builds a model, preloads)
+--   never stalls the LOD pass; after a wait it checks handle.Level, which may have moved on.
 --
--- Tag path (no code): tag a Model or BasePart "DOGROTS_Lod" (Builder does it with opts.Lod).
--- Attributes LodNear / LodFar / LodCull override the defaults. On level 1 descendants with
--- LodDetail = true are hidden; on level 2 everything is hidden except LodKeep = true parts (far
--- silhouettes). Hidden = LocalTransparencyModifier 1; lights / emitters / beams are switched off
--- only when the model is FXManaged (otherwise WorldDetailQuality owns them).
+-- Tag path (no code): tag a Model or BasePart "DOGROTS_Lod" (Builder does it with opts.Lod). Only
+-- instances in Workspace are managed: a tagged template in ReplicatedStorage or a clone shown in a
+-- ViewportFrame (inventory, showcase previews) is left alone, and an instance that moves in or out
+-- is attached or released. Attributes LodNear / LodFar / LodCull override the defaults. On level 1
+-- descendants with LodDetail = true are hidden; on level 2 everything is hidden except LodKeep =
+-- true parts (far silhouettes). Hidden = LocalTransparencyModifier 1. The root gets a LodLevel
+-- attribute (0 / 1 / 2). In an FXManaged model lights / emitters / beams / GUIs are switched off
+-- when their part is hidden and back to what they were when it shows again, unless the owner
+-- changed them in between; an owner that changes FX later gates them on LodLevel itself. In other
+-- models FX are not touched (WorldDetailQuality owns them).
 --
 -- Rules: evaluated at Lod.Rate (5 Hz) through Perf.Scheduler, the pass is time sliced, distance
 -- thresholds have ±10 % hysteresis (no flicker at a boundary), at most Lod.MaxSwitches level
@@ -148,24 +156,30 @@ local function evaluate(entry: any)
 	end
 end
 
+local function callOnLevel(entry: any, level: number)
+	local ok, err = pcall(entry.OnLevel, level, entry)
+	if not ok and not entry.Warned then
+		entry.Warned = true
+		local name = typeof(entry.Target) == "Instance" and entry.Target:GetFullName() or tostring(entry.Target)
+		warn("Perf.Lod: OnLevel failed for " .. name .. ": " .. tostring(err))
+	end
+end
+
+-- Applies the nearest `limit` changes of `list` and empties it (the rest are queued again by the
+-- next pass). Each handler gets its own thread: one that yields never holds up the others.
 local function apply(list: { any }, limit: number)
 	table.sort(list, function(a, b)
 		return a.Distance < b.Distance
 	end)
-	for i = 1, math.min(limit, #list) do
-		local entry = list[i]
+	local batch = table.move(list, 1, math.min(limit, #list), 1, {})
+	table.clear(list)
+	for _, entry in ipairs(batch) do
 		if not entry.Destroyed and entry.Want ~= nil then
 			entry.Level = entry.Want
 			entry.Want = nil
-			local ok, err = pcall(entry.OnLevel, entry.Level, entry)
-			if not ok and not entry.Warned then
-				entry.Warned = true
-				local name = typeof(entry.Target) == "Instance" and entry.Target:GetFullName() or tostring(entry.Target)
-				warn("Perf.Lod: OnLevel failed for " .. name .. ": " .. tostring(err))
-			end
+			task.spawn(callOnLevel, entry, entry.Level)
 		end
 	end
-	table.clear(list)
 end
 
 local function step(_: number, deadline: number): boolean
@@ -230,6 +244,11 @@ function Lod.Register(target: any, options: any?): any
 		OnLevel = o.OnLevel,
 		Level = nil,
 	}, Handle)
+	if typeof(target) == "Instance" then
+		entry.DestroyingConnection = target.Destroying:Connect(function()
+			entry:Destroy()
+		end)
+	end
 	byTarget[target] = entry
 	table.insert(entries, entry)
 	if not job then
@@ -248,6 +267,10 @@ function Handle.Destroy(self: any)
 		return
 	end
 	self.Destroyed = true
+	if self.DestroyingConnection then
+		self.DestroyingConnection:Disconnect()
+		self.DestroyingConnection = nil
+	end
 	if byTarget[self.Target] == self then
 		byTarget[self.Target] = nil
 	end
@@ -298,20 +321,31 @@ local function shown(object: Instance, level: number): boolean
 	return true
 end
 
-local fxEnabled: { [Instance]: boolean } = setmetatable({}, { __mode = "k" }) :: any
+-- Enabled values of FX that Lod switched off, restored when their part shows again.
+local hiddenFx: { [Instance]: boolean } = setmetatable({}, { __mode = "k" }) :: any
 
-local function applyTagged(root: Instance, level: number, fx: boolean)
+-- Shows / hides a tagged model's descendants for `level` (fx: also its lights, emitters, beams).
+function Lod.ApplyTagged(root: Instance, level: number, fx: boolean)
 	local function visit(object: Instance)
 		if object:IsA("BasePart") then
-			object.LocalTransparencyModifier = shown(object, level) and 0 or 1
+			local modifier = shown(object, level) and 0 or 1
+			if object.LocalTransparencyModifier ~= modifier then
+				object.LocalTransparencyModifier = modifier
+			end
 		elseif fx and isFx(object) then
 			local item: any = object
 			local part = object:FindFirstAncestorWhichIsA("BasePart")
 			local visible = if part then shown(part, level) else level < 2
-			if fxEnabled[object] == nil then
-				fxEnabled[object] = item.Enabled
+			local saved = hiddenFx[object]
+			if not visible and saved == nil then
+				hiddenFx[object] = item.Enabled
+				item.Enabled = false
+			elseif visible and saved ~= nil then
+				hiddenFx[object] = nil
+				if item.Enabled == false then -- not switched on by its owner meanwhile
+					item.Enabled = saved
+				end
 			end
-			item.Enabled = visible and fxEnabled[object]
 		end
 	end
 	visit(root)
@@ -320,10 +354,19 @@ local function applyTagged(root: Instance, level: number, fx: boolean)
 	end
 end
 
+-- Whether a tagged instance is LOD-managed: a Model / BasePart in the 3D world, not inside a
+-- ViewportFrame or WorldModel (previews follow their own camera, not the world camera).
+function Lod.Eligible(target: Instance): boolean
+	return (target:IsA("Model") or target:IsA("BasePart"))
+		and target:IsDescendantOf(workspace)
+		and target:FindFirstAncestorWhichIsA("ViewportFrame") == nil
+		and target:FindFirstAncestorWhichIsA("WorldModel") == nil
+end
+
 local tagged: { [Instance]: any } = {}
 
 local function attachTagged(target: Instance)
-	if tagged[target] or not (target:IsA("Model") or target:IsA("BasePart")) then
+	if tagged[target] then
 		return
 	end
 	local near, far = target:GetAttribute("LodNear"), target:GetAttribute("LodFar")
@@ -334,7 +377,8 @@ local function attachTagged(target: Instance)
 		Far = type(far) == "number" and far or nil,
 		Cull = target:GetAttribute("LodCull") == true,
 		OnLevel = function(level)
-			applyTagged(target, level, fx)
+			Lod.ApplyTagged(target, level, fx)
+			target:SetAttribute("LodLevel", level)
 		end,
 	})
 	-- Parts that stream in later take the current level at once (scoped to this model only).
@@ -347,26 +391,62 @@ local function attachTagged(target: Instance)
 	tagged[target] = record
 end
 
+-- Stops managing `target`; one that still exists (moved out of Workspace, tag removed) is shown
+-- in full again.
 local function detachTagged(target: Instance)
 	local record = tagged[target]
 	if record then
 		tagged[target] = nil
+		local level = record.Handle.Level
 		record.Handle:Destroy()
 		record.Added:Disconnect()
+		if target.Parent and level and level > 0 then
+			Lod.ApplyTagged(target, 0, managed(target))
+		end
+		target:SetAttribute("LodLevel", nil)
 	end
 end
 
+-- Tagged Models / BaseParts are watched for moves into and out of Workspace.
+local watchers: { [Instance]: RBXScriptConnection } = {}
+local function refreshTagged(target: Instance)
+	if target:HasTag(Lod.Tag) and Lod.Eligible(target) then
+		attachTagged(target)
+	else
+		detachTagged(target)
+	end
+end
+local function onTagAdded(target: Instance)
+	if not (target:IsA("Model") or target:IsA("BasePart")) then
+		return
+	end
+	if not watchers[target] then
+		watchers[target] = target.AncestryChanged:Connect(function()
+			refreshTagged(target)
+		end)
+	end
+	refreshTagged(target)
+end
+local function onTagRemoved(target: Instance)
+	local watcher = watchers[target]
+	if watcher then
+		watcher:Disconnect()
+		watchers[target] = nil
+	end
+	detachTagged(target)
+end
+
 local tagStarted = false
--- Starts the tag path (StarterPlayerScripts.PerfQuality calls it once on the client).
+-- Starts the tag path (StarterPlayerScripts.PerfBootstrap calls it once on the client).
 function Lod.StartTags()
 	if tagStarted then
 		return
 	end
 	tagStarted = true
-	CollectionService:GetInstanceAddedSignal(Lod.Tag):Connect(attachTagged)
-	CollectionService:GetInstanceRemovedSignal(Lod.Tag):Connect(detachTagged)
+	CollectionService:GetInstanceAddedSignal(Lod.Tag):Connect(onTagAdded)
+	CollectionService:GetInstanceRemovedSignal(Lod.Tag):Connect(onTagRemoved)
 	for _, target in ipairs(CollectionService:GetTagged(Lod.Tag)) do
-		attachTagged(target)
+		onTagAdded(target)
 	end
 end
 

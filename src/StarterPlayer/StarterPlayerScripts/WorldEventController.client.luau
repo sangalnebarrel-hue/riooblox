@@ -31,8 +31,9 @@ gui:GetPropertyChangedSignal('AbsoluteSize'):Connect(layoutNotice);gui:GetAttrib
 local current,activeDef,endingAt,endingLength;local noticeUntil=0;local enteredAt=0;local lastRevision=-1;local lastTick=-1;local generation
 -- The tier lives in Perf.Quality (phones start on Medium, the saved setting, PAWPAD's High /
 -- Medium / Low cycle, the FPS watchdog); it keeps WorldEventFX equal to the level in use.
-require(RS:WaitForChild('Perf'):WaitForChild('Quality')).Start()
-local function quality()return Config.FX[player:GetAttribute('WorldEventFX')or 'High']or Config.FX.Medium end
+local Quality=require(RS:WaitForChild('Perf'):WaitForChild('Quality'));Quality.Start()
+local showTier -- the tier the running show was started with
+local function quality()showTier=player:GetAttribute('WorldEventFX')or 'High';return Config.FX[showTier]or Config.FX.Medium end
 local function notify(text,sub,color,duration)
  if gui:GetAttribute('OpenMenu')~=nil then return end
  noticeTitle.Text=text;noticeSub.Text=sub or '';noticeAccent.BackgroundColor3=color or colors.gold;notice.Visible=true;noticeUntil=os.clock()+(duration or 4)
@@ -116,7 +117,10 @@ local stateFolder=package:WaitForChild('State')
 local function sync()local attributes=stateFolder:GetAttributes();if attributes.Revision and attributes.Revision~=lastRevision then lastRevision=attributes.Revision;apply(attributes)end end
 stateFolder:GetAttributeChangedSignal('Revision'):Connect(sync);sync()
 if not current then task.spawn(function()local ok,state=pcall(function()return package.GetState:InvokeServer()end);if ok then apply(state)end end)end
-player:GetAttributeChangedSignal('WorldEventFX'):Connect(function()if activeDef then FX.Begin(activeDef,current,quality())end end)
+-- Only an explicit choice (PAWPAD, the settings window) restarts a running show at the new level. An
+-- FPS watchdog step does not: replaying the intro and rebuilding every effect at a moment when the
+-- frame rate is already low would cost more than it saves; the next event starts on the new tier.
+Quality.PreferenceChanged:Connect(function()if activeDef and Quality.Tier()~=showTier then FX.Begin(activeDef,current,quality())end end)
 local elapsed=0
 Run.Heartbeat:Connect(function(dt)
  elapsed+=dt;if elapsed<.08 then return end;elapsed=0

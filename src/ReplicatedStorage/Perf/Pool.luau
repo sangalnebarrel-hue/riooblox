@@ -9,14 +9,19 @@
 --       Parent = folder,   -- Instances are parented here once and stay there
 --       Hide = "Modifier", -- how a free object is hidden (see below)
 --       Steal = false,     -- at Max: true recycles the oldest active object, false returns nil
+--       OnSteal = function(arrow) end, -- with Steal: tells the previous user its object was taken
 --   })
---   local arrow = arrows:Acquire(); ...; arrows:Release(arrow)
+--   local arrow, lease = arrows:Acquire(); ...; arrows:Release(arrow, lease)
 --   arrows:Stats() -> {Active, Free, Created, Reused, Dropped, Peak, Max}; arrows:Destroy()
+--
+-- Leases: Acquire also returns a lease number. Release(object, lease) ignores a stale lease, so a
+-- user whose object was stolen (Steal) cannot free the object its new user holds. Release(object)
+-- without a lease always releases.
 --
 -- Hide modes (free objects stay where they are, no reparent churn):
 --   "Modifier"     BaseParts get LocalTransparencyModifier = 1 (client only), GUI objects
 --                  Visible = false, lights / emitters / beams / trails / GUIs Enabled = false.
---                  Showing restores exactly what hiding changed. Default for Instances with a Parent.
+--                  Showing restores exactly what hiding changed. Default for Instances.
 --   "Transparency" the same, but writes BasePart.Transparency (server-side pools).
 --   "Folder"       free objects move to a hidden folder (parented to nil) and back to Parent.
 --   "None"         nothing: Reset / the caller hides the object. Default for tables.
@@ -32,6 +37,7 @@ export type Options = {
 	Parent: Instance?,
 	Hide: any?, -- "Modifier" | "Transparency" | "Folder" | "None" | (object, hidden) -> ()
 	Steal: boolean?,
+	OnSteal: ((any) -> ())?,
 }
 
 local FX_CLASSES = { "Light", "ParticleEmitter", "Beam", "Trail", "LayerCollector", "Highlight" }
@@ -93,12 +99,8 @@ function Pool.new(options: Options): any
 	self.Counts = { Created = 0, Reused = 0, Dropped = 0, Peak = 0 }
 	self.ActiveCount = 0
 	self.Total = 0
-	local hide = options.Hide
-	if hide == nil then
-		hide = options.Parent and "Modifier" or "None"
-	end
-	self.HideMode = hide
-	if hide == "Folder" then
+	self.HideMode = options.Hide -- nil: decided per object (Instance "Modifier", table "None")
+	if options.Hide == "Folder" then
 		self.Holder = Instance.new("Folder")
 		self.Holder.Name = "PerfPoolHidden"
 	end
@@ -122,8 +124,16 @@ function Pool._create(self: any): any
 	return object
 end
 
-function Pool._hide(self: any, object: any)
+local function modeFor(self: any, object: any): any
 	local mode = self.HideMode
+	if mode == nil then
+		return if typeof(object) == "Instance" then "Modifier" else "None"
+	end
+	return mode
+end
+
+function Pool._hide(self: any, object: any)
+	local mode = modeFor(self, object)
 	if type(mode) == "function" then
 		mode(object, true)
 	elseif typeof(object) ~= "Instance" or mode == "None" then
@@ -136,7 +146,7 @@ function Pool._hide(self: any, object: any)
 end
 
 function Pool._show(self: any, object: any)
-	local mode = self.HideMode
+	local mode = modeFor(self, object)
 	if type(mode) == "function" then
 		mode(object, false)
 	elseif typeof(object) ~= "Instance" or mode == "None" then
@@ -152,18 +162,18 @@ function Pool._show(self: any, object: any)
 	end
 end
 
-local function track(self: any, object: any): any
+local function track(self: any, object: any): (any, number)
 	self.Serial += 1
 	self.Active[object] = self.Serial
 	self.ActiveCount += 1
 	if self.ActiveCount > self.Counts.Peak then
 		self.Counts.Peak = self.ActiveCount
 	end
-	return object
+	return object, self.Serial
 end
 
--- A ready object, or nil when the pool is at Max (unless Steal is on).
-function Pool.Acquire(self: any): any
+-- A ready object and its lease, or nil when the pool is at Max (unless Steal is on).
+function Pool.Acquire(self: any): (any, number?)
 	if self.Destroyed then
 		return nil
 	end
@@ -186,6 +196,9 @@ function Pool.Acquire(self: any): any
 		if oldest ~= nil then
 			self.Active[oldest] = nil
 			self.ActiveCount -= 1
+			if self.Options.OnSteal then
+				self.Options.OnSteal(oldest)
+			end
 			if self.Options.Reset then
 				self.Options.Reset(oldest)
 			end
@@ -197,9 +210,10 @@ function Pool.Acquire(self: any): any
 	return nil
 end
 
--- Returns an object to the pool. Unknown or already free objects are ignored (returns false).
-function Pool.Release(self: any, object: any): boolean
-	if object == nil or self.Active[object] == nil then
+-- Returns an object to the pool. Unknown or already free objects and stale leases are ignored
+-- (returns false).
+function Pool.Release(self: any, object: any, lease: number?): boolean
+	if object == nil or self.Active[object] == nil or (lease ~= nil and self.Active[object] ~= lease) then
 		return false
 	end
 	self.Active[object] = nil

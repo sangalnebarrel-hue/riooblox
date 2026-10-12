@@ -255,6 +255,61 @@ test("Scheduler stop inside a job, SetRate, count callback", function()
 	truthy(n >= 15, "SetRate raises the rate, got " .. n)
 end)
 
+test("Scheduler never re-enters a job that yields", function()
+	local c = clock()
+	local warnings = {}
+	local r = runner(c, { Warn = function(m) table.insert(warnings, m) end })
+	local calls, active, most = 0, 0, 0
+	r:Every(5, "yielder", function()
+		calls += 1
+		active += 1
+		most = math.max(most, active)
+		L.Task.wait(0.03) -- a mistake: e.g. WaitForChild / PreloadAsync inside a job
+		active -= 1
+	end)
+	local other = 0
+	r:Every(0, "other", function() other += 1 end)
+	for _ = 1, 6 do -- every Heartbeat is a fresh thread
+		c.T += 0.25
+		L.Task.spawn(function() r:Step(0.25) end)
+	end
+	eq(calls, 1, "a suspended call is never started again")
+	eq(most, 1)
+	eq(other, 6, "other jobs keep running")
+	eq(#warnings, 1, "warned once")
+	truthy(warnings[1]:find("yielder", 1, true) and warnings[1]:find("yield", 1, true), warnings[1])
+	eq(r.Stepping, false, "the step itself never hangs on the job")
+	L.Task.wait(0.06)
+	eq(active, 0, "the suspended call finished on its own")
+	frames(r, c, 2, 0.25)
+	eq(calls, 2, "then the job runs on its schedule again")
+	L.Task.wait(0.06)
+	-- an error after the yield is still counted
+	local late = r:Every(0, "late-error", function()
+		L.Task.wait(0.01)
+		error("after the wait")
+	end)
+	frames(r, c, 1, 1 / 60)
+	L.Task.wait(0.04)
+	eq(r:Stats().ByName["late-error"].Errors, 1)
+	truthy(warnings[#warnings]:find("after the wait", 1, true), "late errors are warned")
+	late:Stop()
+	frames(r, c, 1, 1 / 60)
+	eq(r:Count(), 2)
+end)
+
+test("Scheduler reuses one worker thread while nothing yields", function()
+	local c = clock()
+	local r = runner(c)
+	local threads = {}
+	r:Every(0, "a", function() threads[coroutine.running()] = true end)
+	r:Every(0, "b", function() threads[coroutine.running()] = true end)
+	frames(r, c, 10, 1 / 60)
+	local n = 0
+	for _ in pairs(threads) do n += 1 end
+	eq(n, 1, "20 calls on one coroutine")
+end)
+
 -- POOL ----------------------------------------------------------------------------------------------
 local Pool = L.Require("ReplicatedStorage.Perf.Pool")
 
@@ -354,6 +409,51 @@ test("Pool Folder and Transparency modes", function()
 	eq(q.Transparency, 1)
 	server:Acquire()
 	eq(q.Transparency, 0.25, "original transparency restored")
+end)
+
+test("Pool leases: a stolen object cannot be released by its previous user", function()
+	local n, stolen = 0, {}
+	local pool = Pool.new({
+		Create = function() n += 1; return { Id = n } end,
+		Max = 1,
+		Steal = true,
+		OnSteal = function(object) table.insert(stolen, object) end,
+	})
+	local a, leaseA = pool:Acquire()
+	truthy(leaseA, "Acquire returns a lease")
+	local b, leaseB = pool:Acquire()
+	eq(b, a, "the only object is stolen")
+	eq(stolen[1], a, "OnSteal tells the previous user")
+	eq(pool:Release(a, leaseA), false, "a stale lease is ignored")
+	truthy(pool:IsActive(b), "the new user keeps it")
+	eq(pool:Release(b, leaseB), true)
+	eq(pool:Release(b, leaseB), false)
+	local c, leaseC = pool:Acquire()
+	eq(c, a)
+	truthy(leaseC ~= leaseB)
+	eq(pool:Release(c), true, "Release without a lease still works")
+end)
+
+test("Pool hides released Instances by default even without Parent", function()
+	local folder = roblox.Instance.new("Folder")
+	local pool = Pool.new({
+		Create = function()
+			local p = roblox.Instance.new("Part")
+			p.LocalTransparencyModifier = 0
+			p.Parent = folder -- parented by Create itself
+			return p
+		end,
+	})
+	local part = pool:Acquire()
+	pool:Release(part)
+	eq(part.LocalTransparencyModifier, 1, "Instances default to Modifier")
+	eq(part.Parent, folder)
+	eq(pool:Acquire(), part)
+	eq(part.LocalTransparencyModifier, 0)
+	local tables = Pool.new({ Create = function() return { Visible = true } end })
+	local t = tables:Acquire()
+	tables:Release(t)
+	eq(t.Visible, true, "tables default to None")
 end)
 
 -- QUALITY (pure) --------------------------------------------------------------------------------------
@@ -533,6 +633,88 @@ test("Quality FPS watchdog steps down on Auto only", function()
 	eq(scheduler.Shared:Count(), 0, "the watchdog job stops off Auto")
 end)
 
+test("Quality watchdog steps never count as a preference change", function()
+	local quality, player, scheduler, c = freshClient()
+	local explicit = {}
+	quality.PreferenceChanged:Connect(function(preference, tier) table.insert(explicit, preference .. ":" .. tier) end)
+	quality.Start() -- PerfBootstrap at join
+	for _ = 1, 30 * 20 do -- 30 s at 20 FPS: one watchdog step during, say, a running event
+		c.T += 0.05
+		scheduler.Shared:Step(0.05)
+	end
+	eq(quality.Tier(), "Medium")
+	eq(#explicit, 0, "the running world-event show is not restarted")
+	player:SetAttribute("WorldEventFX", "Low") -- PAWPAD
+	eq(explicit[1], "Low:Low", "an explicit choice is announced")
+	quality.SetPreference("Low")
+	eq(#explicit, 1, "the same preference again is not a change")
+	player:SetAttribute("Setting_Quality", "High")
+	eq(explicit[2], "High:High")
+	-- WorldEventController restarts the show from PreferenceChanged only, not from WorldEventFX.
+	local controller = require("@lune/fs").readFile("src/StarterPlayer/StarterPlayerScripts/WorldEventController.client.luau")
+	truthy(not controller:find("GetAttributeChangedSignal%('WorldEventFX'%)"), "no restart on every WorldEventFX change")
+	truthy(controller:find("Quality.PreferenceChanged:Connect", 1, true), "restart on an explicit choice")
+end)
+
+test("Quality watchdog pauses while the window is unfocused", function()
+	local w = Quality.Watchdog.new()
+	for _ = 1, 20 do
+		w:Sample(60, 1)
+	end
+	w:SetPaused(true)
+	local steps = 0
+	for _ = 1, 30 do
+		if w:Sample(5, 1) ~= 0 then steps += 1 end
+	end
+	eq(steps, 0, "throttled background frames are ignored")
+	eq(w.Steps, 0)
+	w:SetPaused(false)
+	eq(w:Sample(1, 30), 0, "a 30 s gap (resumed from the background) is dropped")
+	eq(w.BlockTime, 0)
+	for _ = 1, 10 do
+		w:Sample(20, 1)
+	end
+	eq(w.Steps, 1, "focused again: a real slowdown still steps down")
+end)
+
+test("Quality reduced motion: a PAWPAD toggle overrides the Roblox setting for the session", function()
+	local quality, player = freshClient({ SystemReduced = true })
+	eq(quality.Reduced(), true)
+	player:SetAttribute("ReducedMotion", false) -- PAWPAD "Motion" while Roblox's setting is on
+	eq(quality.Reduced(), false, "the click is not undone")
+	eq(player.Attributes.ReducedMotion, false)
+	player:SetAttribute("ReducedMotion", true)
+	eq(quality.Reduced(), true)
+	player:SetAttribute("ReducedMotion", false)
+	player:SetAttribute("Setting_ReducedMotion", false) -- a saved default never switches the Roblox setting off
+	eq(quality.Reduced(), true, "a newer saved setting replaces the toggle")
+	eq(quality.State().SystemReduced, true)
+end)
+
+test("Quality shared budgets: claims, Available, Release", function()
+	local quality = freshClient()
+	eq(quality.Tier(), "High")
+	eq(quality.Available("Lights"), 24)
+	local lab, decor = {}, "decor"
+	eq(quality.Claim("Lights", lab, 6), 6)
+	eq(quality.Claim("Lights", decor, 30), 18, "granted at most what is left")
+	eq(quality.Available("Lights"), 0, "WorldDetailQuality gets nothing more")
+	eq(quality.Claim("Lights", lab, 2), 2, "a claim replaces the owner's previous one")
+	eq(quality.Claimed("Lights"), 20)
+	eq(quality.Available("Lights"), 4)
+	eq(quality.Available("Lights", "Low"), 0, "claims count against a lower tier too")
+	eq(quality.Claim("Highlights", lab, 3), 3)
+	quality.Release(lab, "Lights")
+	eq(quality.Claimed("Lights"), 18)
+	eq(quality.Claimed("Highlights"), 3)
+	quality.Release(lab)
+	quality.Release(decor)
+	eq(quality.Claimed("Highlights"), 0)
+	eq(quality.Available("Lights"), 24)
+	eq(quality.Claim("Lights", lab, -5), 0)
+	eq(quality.Claim("NoSuchBudget", lab, 1), 0)
+end)
+
 test("Kit.Motion follows Perf.Quality reduced motion", function()
 	local _, player = freshClient()
 	local Motion = L.Require("StarterGui.ScreenGui.Modules.Kit.Motion")
@@ -637,6 +819,133 @@ test("Lod runtime: initial levels, switches per tick, cull, destroy", function()
 	tick()
 	eq(calls, 0, "destroyed handles get no calls")
 	eq(Lod.Count(), 2)
+end)
+
+test("Lod: a handler that waits never stalls or corrupts the pass", function()
+	L.Reset()
+	L.Workspace = { CurrentCamera = { CFrame = CFrame.new(0, 0, 0), ViewportSize = Vector2.new(1600, 900), FieldOfView = 70 } }
+	local scheduler = L.Require("ReplicatedStorage.Perf.Scheduler")
+	local c = clock()
+	scheduler.Shared.Clock = c.Now
+	scheduler.Shared.Profile = false
+	local Lod = L.Require("ReplicatedStorage.Perf.Lod")
+	local calls, done = {}, {}
+	local handles = {}
+	for i = 1, 3 do
+		handles[i] = Lod.Register("slot" .. i, {
+			Near = 60, Far = 150,
+			Position = function() return Vector3.new(0, 0, -10 * i) end,
+			OnLevel = function(level, handle)
+				calls[i] = (calls[i] or 0) + 1
+				L.Task.wait(0.02) -- e.g. building the slot's model
+				done[i] = handle.Level
+			end,
+		})
+	end
+	local function frame()
+		c.T += 0.2
+		L.Task.spawn(function() scheduler.Shared:Step(0.2) end)
+	end
+	frame()
+	for i = 1, 3 do
+		eq(calls[i], 1, "slot " .. i .. " handled in the first pass")
+		eq(handles[i].Level, 0, "slot " .. i .. " level applied at once")
+	end
+	for _ = 1, 8 do -- passes keep running while the handlers wait
+		frame()
+		L.Task.wait(0.005)
+	end
+	L.Task.wait(0.05)
+	for i = 1, 3 do
+		eq(calls[i], 1, "slot " .. i .. " handled once")
+		eq(done[i], 0, "slot " .. i .. " finished its wait")
+	end
+	eq(scheduler.Shared:Stats().ByName.Lod.Errors, 0, "the pass never failed")
+	for _, h in ipairs(handles) do h:Destroy() end
+end)
+
+test("Lod tag path: only models in Workspace, outside previews", function()
+	L.Reset()
+	local world = roblox.Instance.new("Workspace")
+	L.Workspace = world
+	local Lod = L.Require("ReplicatedStorage.Perf.Lod")
+	local function model(parent)
+		local m = roblox.Instance.new("Model")
+		m.Parent = parent
+		return m
+	end
+	truthy(Lod.Eligible(model(world)), "a model in Workspace")
+	local folder = roblox.Instance.new("Folder")
+	folder.Parent = world
+	truthy(Lod.Eligible(model(folder)), "nested in Workspace")
+	local part = roblox.Instance.new("Part")
+	part.Parent = world
+	truthy(Lod.Eligible(part), "a BasePart")
+	local storage = roblox.Instance.new("Folder")
+	eq(Lod.Eligible(model(storage)), false, "a template outside Workspace")
+	local viewport = roblox.Instance.new("ViewportFrame")
+	local worldModel = roblox.Instance.new("WorldModel")
+	worldModel.Parent = viewport
+	eq(Lod.Eligible(model(worldModel)), false, "a preview clone")
+	local sign = roblox.Instance.new("Part")
+	sign.Parent = world
+	local gui = roblox.Instance.new("SurfaceGui")
+	gui.Parent = sign
+	local inWorldViewport = roblox.Instance.new("ViewportFrame")
+	inWorldViewport.Parent = gui
+	eq(Lod.Eligible(model(inWorldViewport)), false, "a ViewportFrame on a sign in the world")
+	eq(Lod.Eligible(roblox.Instance.new("Folder")), false, "not a Model or BasePart")
+end)
+
+test("Lod tag path: FX hidden with their part come back, the owner's choices stay", function()
+	local Lod = L.Require("ReplicatedStorage.Perf.Lod")
+	local root = roblox.Instance.new("Model")
+	local function part(name, attributes)
+		local p = roblox.Instance.new("Part")
+		p.Name = name
+		p.LocalTransparencyModifier = 0
+		for k, v in pairs(attributes or {}) do p:SetAttribute(k, v) end
+		p.Parent = root
+		return p
+	end
+	local function light(parent, enabled)
+		local l = roblox.Instance.new("PointLight")
+		l.Enabled = enabled
+		l.Parent = parent
+		return l
+	end
+	local body = part("Body")
+	local detail = part("Detail", { LodDetail = true })
+	local keep = part("Silhouette", { LodKeep = true })
+	local detailLight, offLight, bodyLight = light(detail, true), light(detail, false), light(body, true)
+	Lod.ApplyTagged(root, 1, true)
+	eq(detail.LocalTransparencyModifier, 1, "LodDetail hidden on level 1")
+	eq(body.LocalTransparencyModifier, 0)
+	eq(detailLight.Enabled, false, "its light goes off with it")
+	eq(offLight.Enabled, false)
+	Lod.ApplyTagged(root, 0, true)
+	eq(detail.LocalTransparencyModifier, 0)
+	eq(detailLight.Enabled, true, "restored")
+	eq(offLight.Enabled, false, "a light that was off stays off")
+	bodyLight.Enabled = false -- the FXManaged owner turns a light off for its budget
+	Lod.ApplyTagged(root, 1, true)
+	Lod.ApplyTagged(root, 0, true)
+	eq(bodyLight.Enabled, false, "Lod never turns the owner's light back on")
+	offLight.Enabled = true -- the owner turns a light on
+	Lod.ApplyTagged(root, 2, true)
+	eq(keep.LocalTransparencyModifier, 0, "LodKeep stays on level 2")
+	eq(body.LocalTransparencyModifier, 1)
+	eq(offLight.Enabled, false, "hidden on level 2")
+	Lod.ApplyTagged(root, 0, true)
+	eq(offLight.Enabled, true, "the owner's later choice comes back")
+	detailLight.Enabled = true
+	Lod.ApplyTagged(root, 2, true)
+	detailLight.Enabled = true -- the owner switches it on while hidden (it gates on LodLevel itself)
+	Lod.ApplyTagged(root, 0, true)
+	eq(detailLight.Enabled, true)
+	bodyLight.Enabled = true
+	Lod.ApplyTagged(root, 2, false)
+	eq(bodyLight.Enabled, true, "FX of a model that is not FXManaged are never touched")
 end)
 
 print(string.format("perf: %d passed, %d failed", passed, failed))

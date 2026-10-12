@@ -6,25 +6,35 @@
 --   Quality.Reduced()       -> boolean (reduced motion)
 --   Quality.Budget("Lights")            -> number for the current tier (Quality.Budgets has every key)
 --   Quality.Budget("Lights", "Low")     -> number for a given tier
---   Quality.Changed:Connect(function(tier, reduced) end)
+--   Quality.Changed:Connect(function(tier, reduced) end)          -- the tier or reduced motion changed
+--   Quality.PreferenceChanged:Connect(function(preference, tier) end) -- an explicit choice (not the watchdog)
 --   Quality.SetPreference("Low")        -- session choice; the settings window also saves it on the server
+--   Quality.Claim("Highlights", owner, 3) -> granted; Quality.Release(owner); Quality.Available("Lights")
 --
 -- Where the tier comes from (the most recent explicit choice wins):
 --   * Setting_Quality player attribute (the saved setting published by the server),
 --   * WorldEventFX player attribute written by someone else (PAWPAD's "World Event FX" button),
 --   * otherwise "Auto": UserGameSettings().SavedQualityLevel (1-3 Low, 4-6 Medium, 7-10 / Automatic
 --     High), a touch device without a keyboard is capped at Medium, and an FPS watchdog steps down
---     one tier after a 10 s average below 40 FPS and steps back up after a long stable stretch.
--- Reduced motion: Roblox's accessibility setting (GuiService.ReducedMotionEnabled) OR the in-game
--- choice (Setting_ReducedMotion, or the ReducedMotion attribute written by PAWPAD).
+--     one tier after a 10 s average below 40 FPS and steps back up after a long stable stretch
+--     (paused while the game window is not focused).
+-- Watchdog steps change Tier() and fire Changed but not PreferenceChanged: a running world-event
+-- show keeps the budget it started with (WorldEventController restarts it only for a choice).
+-- Reduced motion: Roblox's accessibility setting (GuiService.ReducedMotionEnabled) OR the saved
+-- in-game setting (Setting_ReducedMotion). A toggle in this session (PAWPAD's Motion button writes
+-- the ReducedMotion attribute) overrides both until the saved setting changes again.
 --
 -- Compatibility: about a dozen older scripts read player attributes directly. Quality keeps them
 -- in step by writing WorldEventFX = tier, LowFX = (tier == "Low") and ReducedMotion = Reduced()
 -- (only when a value changes). Every script requiring this module shares one state; the first
--- call starts it (StarterPlayerScripts.PerfQuality starts it at join).
+-- call starts it (StarterPlayerScripts.PerfBootstrap starts it at join).
 --
--- tests/perf.luau covers the pure helpers (AutoTier, Resolve, NormalizePreference, Watchdog) and
--- the attribute sync in Lune.
+-- Shared budgets: Lights, Particles, Highlights and Viewports are spent by several systems at once.
+-- A system that turns on its own (FXManaged lights, emitters, Highlights, ViewportFrames) claims
+-- first and gets at most what is left; WorldDetailQuality spends Available() of Lights / Particles.
+--
+-- tests/perf.luau covers the pure helpers (AutoTier, Resolve, NormalizePreference, Watchdog), the
+-- claims and the attribute sync in Lune.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local GuiService = game:GetService("GuiService")
@@ -162,6 +172,8 @@ function Watchdog.new(options: any?): any
 		RecoverMax = o.RecoverMax or 600,
 		Warmup = o.Warmup or 15,
 		MaxSteps = o.MaxSteps or 2,
+		MaxGap = o.MaxGap or 5, -- a single sample longer than this (a suspended client) is dropped
+		Paused = false,
 		Steps = 0,
 		Elapsed = 0,
 		BlockFrames = 0,
@@ -177,13 +189,24 @@ function Watchdog.Reset(self: any)
 	self.LastUp = nil
 end
 
--- Drops the partial block (window unfocused, a teleport, a loading screen).
+-- Drops the partial block (window refocused, a teleport, a loading screen).
 function Watchdog.Pause(self: any)
 	self.BlockFrames, self.BlockTime = 0, 0
 end
 
+-- While paused (the game window is not focused, so Roblox throttles the frame rate) samples are
+-- ignored; resuming drops the partial block.
+function Watchdog.SetPaused(self: any, paused: boolean)
+	self.Paused = paused == true
+	self:Pause()
+end
+
 function Watchdog.Sample(self: any, frames: number, seconds: number): number
-	if seconds <= 0 then
+	if seconds <= 0 or self.Paused then
+		return 0
+	end
+	if seconds > self.MaxGap then
+		self:Pause()
 		return 0
 	end
 	self.Elapsed += seconds
@@ -228,11 +251,13 @@ end
 ------------------------------------------------------------------------------------------------
 
 Quality.Changed = Signal.new()
+Quality.PreferenceChanged = Signal.new()
 
 local state = {
 	Started = false,
 	Preference = "Auto",
-	ReducedChoice = nil :: boolean?, -- the in-game choice; nil = none made
+	ReducedChoice = nil :: boolean?, -- the saved in-game setting (Setting_ReducedMotion); nil = none
+	ReducedOverride = nil :: boolean?, -- a toggle in this session (ReducedMotion written by PAWPAD)
 	SystemReduced = false,
 	SavedLevel = 0,
 	TouchOnly = false,
@@ -276,6 +301,9 @@ local function recompute()
 	local autoTier = Quality.AutoTier(state.SavedLevel, state.TouchOnly)
 	local tier = Quality.Resolve(state.Preference, autoTier, state.Watchdog.Steps)
 	local reduced = state.SystemReduced or state.ReducedChoice == true
+	if state.ReducedOverride ~= nil then
+		reduced = state.ReducedOverride
+	end
 	local changed = tier ~= state.Tier or reduced ~= state.Reduced
 	state.Tier, state.Reduced = tier, reduced
 	write("WorldEventFX", tier)
@@ -319,12 +347,16 @@ end
 
 local function setPreference(value: any)
 	local pref = Quality.NormalizePreference(value)
-	if pref ~= state.Preference then
+	local changed = pref ~= state.Preference
+	if changed then
 		state.Preference = pref
 		state.Watchdog:Reset()
 		updateWatchdog()
 	end
 	recompute()
+	if changed then
+		Quality.PreferenceChanged:Fire(pref, state.Tier)
+	end
 end
 
 function Quality.Start()
@@ -345,7 +377,7 @@ function Quality.Start()
 		if type(savedReduced) == "boolean" then
 			state.ReducedChoice = savedReduced
 		elseif type(legacyReduced) == "boolean" then
-			state.ReducedChoice = legacyReduced
+			state.ReducedOverride = legacyReduced
 		end
 		p:GetAttributeChangedSignal("Setting_Quality"):Connect(function()
 			setPreference(p:GetAttribute("Setting_Quality"))
@@ -359,12 +391,13 @@ function Quality.Start()
 		p:GetAttributeChangedSignal("Setting_ReducedMotion"):Connect(function()
 			local value = p:GetAttribute("Setting_ReducedMotion")
 			state.ReducedChoice = if type(value) == "boolean" then value else nil
+			state.ReducedOverride = nil -- the newest choice wins
 			recompute()
 		end)
 		p:GetAttributeChangedSignal("ReducedMotion"):Connect(function()
 			local isExternal, value = external(p, "ReducedMotion")
 			if isExternal then
-				state.ReducedChoice = value == true
+				state.ReducedOverride = value == true
 				recompute()
 			end
 		end)
@@ -382,10 +415,10 @@ function Quality.Start()
 			end)
 		end)
 		UserInputService.WindowFocusReleased:Connect(function()
-			state.Watchdog:Pause()
+			state.Watchdog:SetPaused(true)
 		end)
 		UserInputService.WindowFocused:Connect(function()
-			state.Watchdog:Pause()
+			state.Watchdog:SetPaused(false)
 			lastFrames, lastTime = Scheduler.FrameCounter()
 		end)
 		updateWatchdog()
@@ -432,6 +465,56 @@ function Quality.Budget(key: string, tier: string?): number?
 	return budget[tier or Quality.Tier()] or budget.High
 end
 
+------------------------------------------------------------------------------------------------
+-- Shared budgets: claims
+------------------------------------------------------------------------------------------------
+-- A claim reserves part of a budget for one owner (any key: a module table, an Instance, a name).
+-- Claim replaces the owner's previous claim for that key and grants at most what the other owners
+-- left (0 when nothing is left). Claims are not cut when the tier drops: owners re-claim on
+-- Quality.Changed and turn off what they were not granted. Owners release when they stop (a Maid).
+local claims: { [string]: { [any]: number } } = {}
+
+-- The amount claimed for `key` by every owner (except `except`, when given).
+function Quality.Claimed(key: string, except: any?): number
+	local total = 0
+	for owner, amount in pairs(claims[key] or {}) do
+		if owner ~= except then
+			total += amount
+		end
+	end
+	return total
+end
+
+-- What is left of the budget for systems that do not claim (WorldDetailQuality), at `tier`.
+function Quality.Available(key: string, tier: string?): number
+	return math.max(0, (Quality.Budget(key, tier) or 0) - Quality.Claimed(key))
+end
+
+function Quality.Claim(key: string, owner: any, amount: number): number
+	assert(owner ~= nil, "Quality.Claim: owner is required")
+	local budget = Quality.Budget(key)
+	if budget == nil then
+		return 0
+	end
+	local granted = math.clamp(tonumber(amount) or 0, 0, math.max(0, budget - Quality.Claimed(key, owner)))
+	local byOwner = claims[key]
+	if not byOwner then
+		byOwner = {}
+		claims[key] = byOwner
+	end
+	byOwner[owner] = if granted > 0 then granted else nil
+	return granted
+end
+
+-- Releases the owner's claim on `key`, or on every key when key is nil.
+function Quality.Release(owner: any, key: string?)
+	for k, byOwner in pairs(claims) do
+		if key == nil or k == key then
+			byOwner[owner] = nil
+		end
+	end
+end
+
 -- Debug view of the inputs and the result.
 function Quality.State(): any
 	Quality.Start()
@@ -445,7 +528,9 @@ function Quality.State(): any
 		ReducedChoice = state.ReducedChoice,
 		SavedLevel = state.SavedLevel,
 		TouchOnly = state.TouchOnly,
+		ReducedOverride = state.ReducedOverride,
 		Fps = state.Fps,
+		WatchdogPaused = state.Watchdog.Paused,
 	}
 end
 
