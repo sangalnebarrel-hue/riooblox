@@ -1,6 +1,8 @@
 -- Authoritative entry policy for the three existing service-shop UI routes.
+-- The UPGRADES building (Model name kept: scripts index it) is the EQUIPMENT shop now.
 local Players=game:GetService('Players')
-local A={Distance=7,Routes={UPGRADES='Upgrades',COSMETICS='Cosmetics',SUPPLIES='Supplies'}}
+local A={Distance=7,Routes={UPGRADES='Equipment',COSMETICS='Cosmetics',SUPPLIES='Supplies'},
+ Labels={UPGRADES='EQUIPMENT'}}
 function A.Contains(zone,position)
  if not zone or not zone:IsA('BasePart')then return false end
  local q=zone.CFrame:PointToObjectSpace(position);local h=zone.Size*.5

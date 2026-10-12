@@ -80,6 +80,15 @@ Service.RegisterCatalog({Kind='Cosmetic',Source='ShopDefinitions',
    return {Message=tostring(product.Name or reward.Cosmetic)..' unlocked'}
   end,
   After=function(_,player,_,result)present(player,{Cue='Reward',Message=type(result)=='table'and result.Message or nil})end})
+-- Feature catalogs: an Economy.Features module that sells developer products exports
+-- Catalogs(register) and is registered here, at load, before Start builds the index
+-- (Features.Equipment: Robux case keys).
+for _,feature in ipairs(R.Features and R.Features.Modules or {})do
+ if type(feature.Catalogs)=='function'then
+  local ok,err=pcall(feature.Catalogs,Service.RegisterCatalog)
+  if not ok then warn('[DOGROTS commerce] catalog of feature '..tostring(feature.Name)..' failed: '..tostring(err))end
+ end
+end
 -- Game passes (none configured today: every Kind='Pass' row has Id=0).
 table.insert(Service.PassCatalogs,{Source='ShopDefinitions',Rows=function()return Definitions end,Filter=function(r)return r.Kind=='Pass'end})
 
