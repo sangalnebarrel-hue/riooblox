@@ -11,10 +11,64 @@ local Runtime=require(script.Parent.Economy.Runtime)
 local Http=game:GetService("HttpService")
 local Definitions=require(Replicated.DogEconomy.DogDefinitions)
 local Rig=require(Replicated.DogRig)
-local Animation=require(Replicated.DogAnimationPlayer)
 local Service = {}
 local cooldown = {}
 local connections = {}
+-- Kennel dogs replicate a role and the work timing; every client plays the dig chain and
+-- counts the label down itself (DogAnimations). Attributes are written only on change:
+--   AnimationName "Work" while producing, "Idle" otherwise (WorkState DIGGING/RESTING)
+--   Producing     false when storage is full (Rules.Storage) or the work tick has stalled
+--   StorageFull   why it is not producing
+--   NextWorkAt, WorkSequence, WorkCycle (seconds between finds), AssignedAt (model created)
+local STALL_GRACE=3
+local advancedAt=setmetatable({},{__mode="k"})
+local function put(model,key,value)
+    if model:GetAttribute(key)~=value then model:SetAttribute(key,value) end
+end
+local function economy(name)
+    return require(script.Parent.Economy:FindFirstChild(name))
+end
+-- Rules.Storage (economy) -> {LootUnits,LootCapacity,ItemCount,ItemCapacity,LootFull,ItemFull}.
+-- Until it exists (or if it fails) storage never blocks the animation.
+local function storageFull(profile,now)
+    if type(profile)~="table" then return false end
+    local ok,result=pcall(function()
+        local Rules=economy("Rules")
+        return type(Rules.Storage)=="function" and Rules.Storage(profile,now) or nil
+    end)
+    if not ok or type(result)~="table" then return false end
+    return result.ItemFull==true or result.LootFull==true
+end
+local function workCycles(profile)
+    local cycles={}
+    pcall(function()
+        local Rules=economy("Rules")
+        local duration=economy("Config").Work.Duration
+        local team=Rules.Team(profile,os.time())
+        for uid,d in pairs(profile.Dogs) do
+            if d.AssignedSlot~="" then
+                local ok,seconds=pcall(Rules.Cooldown,profile,d,team)
+                if ok and type(seconds)=="number" and seconds==seconds then cycles[uid]=seconds+duration end
+            end
+        end
+    end)
+    return cycles
+end
+local function applyWorkState(model,now,full)
+    local deadline=model:GetAttribute("NextWorkAt")
+    -- A deadline that has not moved for a few seconds after it passed means the economy tick
+    -- is not running for this player (session lock, failed transaction): show it resting.
+    local stalled=type(deadline)=="number" and deadline>0 and now>deadline+STALL_GRACE and now>(advancedAt[model] or 0)+STALL_GRACE
+    local producing=not stalled and not full
+    put(model,"Producing",producing)
+    put(model,"StorageFull",full==true)
+    put(model,"WorkState",producing and "DIGGING" or "RESTING")
+    local role=producing and "Work" or "Idle"
+    if model:GetAttribute("AnimationName")~=role then
+        model:SetAttribute("AnimationStartedAt",workspace:GetServerTimeNow())
+        model:SetAttribute("AnimationName",role)
+    end
+end
 
 local function yardFor(player)
     for _, yard in ipairs(yards:GetChildren()) do
@@ -78,18 +132,26 @@ local function prepare(entry, slot)
     dog:SetAttribute("OwnerUserId",entry:GetAttribute("OwnerUserId"))
     dog:SetAttribute("AssignedSlot",slot.Name); dog:SetAttribute("State","Resting")
     dog:SetAttribute("GroundLocal",ground)
+    -- Clients play DigStart only for a model this fresh; later viewers join mid-work.
+    dog:SetAttribute("AssignedAt",workspace:GetServerTimeNow())
     dog:SetAttribute("AnimationStartedAt",workspace:GetServerTimeNow())
     dog:SetAttribute("AnimationLooped",true)
-    dog:SetAttribute("AnimationName",Animation.ResolveName(id,"Idle") or "")
+    dog:SetAttribute("AnimationSpeed",1)
+    dog:SetAttribute("AnimationName","Idle")
     local anchor=Instance.new("Attachment");anchor.Name="SleepLabelAnchor"
     anchor.Position=root.CFrame:PointToObjectSpace(position+Vector3.new(0,4.8,0));anchor.Parent=root
     local label=Instance.new("BillboardGui");label.Name="SleepLabel";label.Adornee=anchor
-    label.Size=UDim2.fromOffset(150,44);label.MaxDistance=55;label.AlwaysOnTop=false;label.Parent=dog
-    local text=Instance.new("TextLabel");text.Size=UDim2.fromScale(1,1);text.BackgroundTransparency=1
-    text.Font=Enum.Font.GothamBold;text.TextSize=16;text.TextColor3=Color3.fromRGB(205,230,255)
+    label.Size=UDim2.fromOffset(190,46);label.MaxDistance=55;label.AlwaysOnTop=false;label.Parent=dog
     local dogName=entry:GetAttribute("DisplayName") or entry.Value
     dog:SetAttribute("DogName",dogName)
-    text.TextStrokeTransparency=.4;text.Text=dogName.."\nDIGGING";text.Parent=label
+    local text=Instance.new("TextLabel");text.Name="NameLabel";text.Size=UDim2.fromScale(1,.56);text.BackgroundTransparency=1
+    text.Font=Enum.Font.GothamBold;text.TextSize=16;text.TextColor3=Color3.fromRGB(205,230,255)
+    text.TextStrokeTransparency=.4;text.TextTruncate=Enum.TextTruncate.AtEnd;text.Text=dogName;text.Parent=label
+    -- The status line is written (and localized) by every client: it counts down each second.
+    local status=Instance.new("TextLabel");status.Name="StatusLabel";status.Position=UDim2.fromScale(0,.56);status.Size=UDim2.fromScale(1,.44)
+    status.BackgroundTransparency=1;status.Font=Enum.Font.GothamBold;status.TextScaled=true;status.TextColor3=Color3.fromRGB(150,230,160)
+    status.TextStrokeTransparency=.4;status:SetAttribute("NoTranslate",true);status.Text="";status.Parent=label
+    local limit=Instance.new("UITextSizeConstraint");limit.MaxTextSize=13;limit.MinTextSize=8;limit.Parent=status
     return dog
 end
 
@@ -108,17 +170,28 @@ function Service.Reconcile(player,profile)
             if not dog or dog.AssignedSlot=="" or dog.AssignedSlot~=model:GetAttribute("AssignedSlot") then model:Destroy() end
         end
     end
+    local now=os.time()
+    local full=storageFull(profile,now)
+    local cycles=workCycles(profile)
     for uid,d in pairs(profile.Dogs) do if d.AssignedSlot~="" then
         local slot=yard:FindFirstChild(d.AssignedSlot);local entry=player.DogInventory:FindFirstChild(uid)
         if slot and entry then
             local model=residents:FindFirstChild(uid)
+            local fresh=false
             if not model then
                 local ok,result=pcall(prepare,entry,slot)
-                if ok and result then model=result;model.Parent=residents else warn("Kennel asset unavailable",d.DogId) end
+                if ok and result then model=result;fresh=true else warn("Kennel asset unavailable",d.DogId) end
             end
             if model then
-                model:SetAttribute("NextWorkAt",d.NextWorkAt or 0);model:SetAttribute("Variant",d.Variant);model:SetAttribute("Mastery",d.Mastery)
-                model:SetAttribute("EquippedCosmetic",profile.EquippedCosmetic)
+                -- Work timing first, then the role: a new model replicates complete.
+                local deadline=d.NextWorkAt or 0
+                if fresh or model:GetAttribute("NextWorkAt")~=deadline then advancedAt[model]=now end
+                put(model,"NextWorkAt",deadline);put(model,"WorkSequence",d.WorkSequence or 0)
+                if cycles[uid] then put(model,"WorkCycle",cycles[uid]) end
+                put(model,"Variant",d.Variant);put(model,"Mastery",d.Mastery)
+                put(model,"EquippedCosmetic",profile.EquippedCosmetic)
+                applyWorkState(model,now,full)
+                if fresh then model.Parent=residents end
                 slot:SetAttribute("AssignedDogUid",uid);slot:SetAttribute("AssignedOwnerUserId",player.UserId);slot:SetAttribute("AssignedDogName",d.DisplayName)
             end
         end
@@ -140,26 +213,17 @@ function Service.Handle(player,action,uid,slotName)
     if ok then Runtime.Refresh(player) end
     return ok,type(result)=="table" and result.Message or result
 end
+-- Every Config.TickSeconds (Runtime, before the economy tick). Reconcile only runs on a
+-- refresh, so storage and stalls are re-checked here; nothing is written unless it changed.
 function Service.UpdateWorkVisuals()
- local now=os.time();local duration=require(script.Parent.Economy.Config).Work.Duration
+ local now=os.time();local fullByOwner={}
  for _,model in ipairs(residents:GetChildren())do
-  local remaining=math.max(0,(model:GetAttribute("NextWorkAt") or now+100)-now)
-  local working=remaining<=duration and remaining>0
-  local state=working and "DIGGING" or "RESTING"
-  local id=model:GetAttribute("DogId") or ""
-  local animation=Animation.ResolveName(id,working and "Work" or "Idle") or Animation.ResolveName(id,"Idle") or ""
-  model:SetAttribute("AnimationSpeed",working and Animation.GetWorkSpeed(id,animation,duration) or 1)
-  -- The saved deadline and GetServerTimeNow both use Unix seconds. Joining or
-  -- streaming halfway through work must resume its phase, not restart the dive.
-  local started=working and ((model:GetAttribute("NextWorkAt") or now)-duration) or workspace:GetServerTimeNow()
-  if model:GetAttribute("AnimationName")~=animation or (working and model:GetAttribute("AnimationStartedAt")~=started) then
-   model:SetAttribute("AnimationStartedAt",started);model:SetAttribute("AnimationName",animation)
+  local owner=model:GetAttribute("OwnerUserId")
+  local full=owner~=nil and fullByOwner[owner]
+  if owner~=nil and full==nil then
+   full=storageFull(Runtime.Views[owner],now);fullByOwner[owner]=full
   end
-  model:SetAttribute("WorkState",state)
-  local label=model:FindFirstChild("SleepLabel");local text=label and label:FindFirstChildWhichIsA("TextLabel")
-  -- Keep the dog's name on the first line; the status used to replace it after one update.
-  local name=model:GetAttribute("DogName")
-  if text then text.Text=(name and name~="" and name.."\n" or "")..state..(working and "" or string.format(" · READY IN %ds",remaining))end
+  applyWorkState(model,now,full==true)
  end
 end
 function Service.Start()

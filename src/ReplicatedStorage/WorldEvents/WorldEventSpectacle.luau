@@ -153,7 +153,7 @@ local function menuDog(names,height,clip,speed)
     if player then
      local okRequire,Anim=pcall(require,player)
      if okRequire and Anim then
-      local okNew,a=pcall(Anim.new,m,n)
+      local okNew,a=pcall(Anim.new,m,Anim.DogIdFor and Anim.DogIdFor(n) or n)
       if okNew and a and a:Play(clip,{Looped=true,Speed=speed or 1})then anim=a end
      end
     end

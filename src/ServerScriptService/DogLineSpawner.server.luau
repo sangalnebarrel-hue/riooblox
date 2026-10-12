@@ -115,20 +115,36 @@ end
 local function linePosition(point)
     return Vector3.new(point.Position.X, beltTop + 0.05, point.Position.Z)
 end
+-- Yaw (radians) of a facing CFrame: CFrame.Angles(0, yaw, 0) looks along it.
+local function yawOf(rotation)
+    local look = rotation.LookVector
+    return math.atan2(-look.X, -look.Z)
+end
+local TURN_SECONDS = 0.3
 local function moveTo(dog, destination, speed, complete)
     if tweens[dog] then tweens[dog]:Cancel() end
     local start = groundPosition(dog)
     local direction = destination - start
     dog:SetAttribute('LocomotionSpeed',direction.Magnitude>.01 and speed or 0)
     local rotation = facing(direction, dog:GetPivot().LookVector)
-    -- Turn immediately at purchase/rebuy; keep feet fixed while turning.
-    movePivot(dog, pivotAt(dog, start, rotation))
+    -- Turn toward the yard over TURN_SECONDS while the walk starts (purchase/rebuy can be a
+    -- 180 degree turn); feet stay fixed and the yaw takes the short way round.
+    local fromYaw = yawOf(facing(dog:GetPivot().LookVector, direction))
+    local turn = (yawOf(rotation) - fromYaw + math.pi) % (2 * math.pi) - math.pi
+    local turnStarted = os.clock()
+    local function rotationAt()
+        local alpha = math.clamp((os.clock() - turnStarted) / TURN_SECONDS, 0, 1)
+        if alpha >= 1 or math.abs(turn) < 1e-3 then return rotation end
+        alpha = alpha * alpha * (3 - 2 * alpha)
+        return CFrame.Angles(0, fromYaw + turn * alpha, 0)
+    end
+    movePivot(dog, pivotAt(dog, start, rotationAt()))
     local proxy = Instance.new("Vector3Value")
     proxy.Value = start
     local tw = TweenService:Create(proxy, TweenInfo.new(math.max(direction.Magnitude / speed, 0.01), Enum.EasingStyle.Linear), {Value=destination})
     tweens[dog] = tw
     local changed = proxy.Changed:Connect(function(position)
-        if dog.Parent then movePivot(dog, pivotAt(dog, position, rotation)) end
+        if dog.Parent then movePivot(dog, pivotAt(dog, position, rotationAt())) end
     end)
     tw.Completed:Connect(function(state)
         changed:Disconnect()
@@ -136,6 +152,7 @@ local function moveTo(dog, destination, speed, complete)
         if tweens[dog] ~= tw then return end
         tweens[dog] = nil
         if state == Enum.PlaybackState.Completed and dog.Parent then
+            movePivot(dog, pivotAt(dog, destination, rotation))
             dog:SetAttribute('LocomotionSpeed',0)
             complete()
         end
@@ -173,15 +190,17 @@ local function inventory(dog,player,data)
     for attempt=1,5 do
         if not dog.Parent or dog:GetAttribute("OwnerUserId")~=player.UserId then return end
         local ok=Economy.Deliver(player,uid)
-        if ok then dog:Destroy();return end
+        -- Fade out in place (it stood idle while the delivery was saved) instead of popping.
+        if ok then dissolve(dog);return end
         task.wait(attempt)
     end
     -- Ownership was already durably saved at purchase. Rejoin restores delivery.
-    if dog.Parent then dog:Destroy() end
+    if dog.Parent then dissolve(dog) end
 end
 local function walkToYard(dog,player,data)
     local dest = getYardSpawn(player)
     if not dest or not dest:IsA("BasePart") then return end
+    dog:SetAttribute("LineIdled", nil)
     -- A rebuy changes the route but preserves the current walk cycle.
     if dog:GetAttribute("AnimationName") ~= "Walk" then
         dog:SetAttribute("AnimationStartedAt", workspace:GetServerTimeNow())
@@ -190,7 +209,10 @@ local function walkToYard(dog,player,data)
     end
     moveTo(dog, dest.Position, WALK_SPEED, function()
         dog:SetAttribute("State", "Delivered")
-        dog:SetAttribute("AnimationName", "")
+        -- Arrived: settle into Idle (clients crossfade from the walk) while it is delivered.
+        dog:SetAttribute("AnimationStartedAt", workspace:GetServerTimeNow())
+        dog:SetAttribute("AnimationLooped", true)
+        dog:SetAttribute("AnimationName", "Idle")
         inventory(dog,player,data)
     end)
 end
@@ -377,12 +399,14 @@ game:GetService('RunService').Heartbeat:Connect(function(dt)
    local held=(entity:GetAttribute('ArrivalHoldUntil')or 0)>now
    local paused=held or (entity:GetAttribute('DogId')~=nil and entity:GetAttribute('PurchaseBusy')==true)
    slowest=math.min(slowest,entity:GetAttribute('LineSpeedScale')or 1)
-   -- Dogs stopped by a frozen tongue stand idle instead of freezing mid-stride.
+   -- Dogs stopped by a frozen tongue, or paused while their purchase is processed, stand
+   -- idle instead of freezing mid-stride, then walk on.
    if entity:GetAttribute('DogId')and not held and not entity:GetAttribute('FreezeLine')then
     local idled=entity:GetAttribute('LineIdled')
-    if lineFrozen and not idled and entity:GetAttribute('AnimationName')=='Walk'then
+    local stopped=lineFrozen or entity:GetAttribute('PurchaseBusy')==true
+    if stopped and not idled and entity:GetAttribute('AnimationName')=='Walk'then
      entity:SetAttribute('LineIdled',true);playClip(entity,'Idle',true,now)
-    elseif not lineFrozen and idled then
+    elseif not stopped and idled then
      entity:SetAttribute('LineIdled',nil);playClip(entity,'Walk',true,now)
     end
    end
