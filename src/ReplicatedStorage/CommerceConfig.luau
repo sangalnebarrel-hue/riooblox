@@ -10,6 +10,12 @@
 --   ServerLuck={Multiplier=x,Seconds=s}  boosts the tongue for everyone on this server
 -- Once=true: one purchase per player (starter packs). Alias rows (older duplicates of an
 -- offer) are never shown but still fulfil their receipts.
+-- Receipts resolve through ONE index by product ID (ServerScriptService.Economy.PurchaseService):
+--  * every Id must belong to exactly one offer; an alias row that repeats its offer's Id is the
+--    same product (the receipt grants the offer, never twice);
+--  * an Id shared by two DIFFERENT offers, or a sold Id missing from every catalog, is never
+--    granted: the receipt stays pending and the server log shows "[DOGROTS commerce] ERROR";
+--  * never delete a row whose Id was ever sold: set Enabled=false so old receipts still work.
 local Machine=require(game.ReplicatedStorage.RewardMachineConfig)
 local C={}
 C.Categories={'Starter Packs','Server Luck','DOG-O-MATIC Spins','Boost Kits','Money'}
@@ -21,7 +27,9 @@ C.Products={
   Blurb='Dig deeper, faster',Rewards={Coins={MinCash=60000,IncomeMinutes=60},Bones=120,Supplies={EnergySnack=1800,GoldenBiscuit=1800},Luck={Tier=2,Seconds=1800}}},
 	{Key='StarterCaptain',Category='Starter Packs',Name='Pack Captain Kit',Icon='StarterCaptain',Id=3717453946,Enabled=true,Robux=349,Once=true,
   Blurb='Lead the whole pack',Rewards={Coins={MinCash=180000,IncomeMinutes=120},Bones=250,Supplies={EnergySnack=3600,GoldenBiscuit=3600,StorageCrate=3600},Luck={Tier=3,Seconds=1800}}},
- -- Older duplicates of the starter packs (same rewards, same one-per-player slot).
+ -- Older duplicates of the starter packs (same rewards, same one-per-player slot). They repeat
+ -- the primary Ids, so their receipts resolve to StarterScout / StarterExplorer. If older Scout
+ -- or Explorer products with OTHER Ids exist in Creator Hub, put those Ids here instead.
 	{Key='StarterScoutAlt',Alias='StarterScout',Category='Starter Packs',Name='Scout Kit',Icon='StarterScout',Id=3717327335,Enabled=true,Robux=67,Once=true,
   Rewards={Coins={MinCash=12000,IncomeMinutes=20},Bones=30,Supplies={EnergySnack=1200},Luck={Tier=1,Seconds=1200}}},
 	{Key='StarterExplorerAlt',Alias='StarterExplorer',Category='Starter Packs',Name='Explorer Kit',Icon='StarterExplorer',Id=3717453336,Enabled=true,Robux=189,Once=true,

@@ -1,19 +1,16 @@
--- Paid-ticket catalog and fulfillment (Lucky Spin packs). Only PurchaseService.ProcessReceipt grants.
+-- Paid-ticket catalog and fulfillment (Lucky Spin packs). Only PurchaseService.ProcessReceipt grants:
+-- it runs Grant inside its single receipt transaction (grant + dedupe mark + supporter total)
+-- and After once that transaction is saved.
 local RS=game:GetService('ReplicatedStorage')
-local Players=game:GetService('Players')
-local Policy=game:GetService('PolicyService')
 local C=require(RS.RewardMachineConfig)
 local R=require(script.Parent.Rules)
 local Tickets=require(script.Parent.RouletteTickets)
-local P={PolicyCache={}}
+local PaidRandom=require(script.Parent.PaidRandomPolicy)
+local P={}
+-- Paid DOG TOKENS are paid random items: Roblox policy decides who may buy or spend them.
 function P.Allowed(player)
  if C.FreeOnly then return false end
- local old=P.PolicyCache[player.UserId]
- if old and os.clock()-old.At<60 then return old.Allowed end
- local ok,result=pcall(function()return Policy:GetPolicyInfoForPlayerAsync(player)end)
- local allowed=ok and type(result)=='table'and result.ArePaidRandomItemsRestricted==false
- P.PolicyCache[player.UserId]={At=os.clock(),Allowed=allowed==true}
- return allowed==true
+ return PaidRandom.Allowed(player)
 end
 function P.Catalog(player)
  local allowed=P.Allowed(player);local rows={}
@@ -36,29 +33,20 @@ function P.Product(player,key)
  end end
  error('Unknown ticket pack',0)
 end
-function P.Receipt(runtime,player,product,receipt)
- R.Check(receipt.PlayerId==player.UserId and receipt.ProductId==product.Id,'Ticket receipt mismatch')
- R.Check(type(receipt.PurchaseId)=='string'and #receipt.PurchaseId>0 and #receipt.PurchaseId<=100,'Invalid ticket receipt')
+-- Profile mutation for one paid receipt (inside PurchaseService's durable transaction).
+-- Receipt fulfillment deliberately ignores present-day policy and sale switches:
+-- a completed purchase always credits the balance; use stays policy-gated.
+function P.Grant(p,product,context)
  R.Check(R.Int(product.Count,1,1000000),'Invalid ticket quantity')
- local key='purchase:'..receipt.PurchaseId
- -- Fresh transaction attempt IDs permit retry after a transient abort. The durable
- -- purchase key is the deduplication identity across servers, sessions and retries.
- local ok,result=runtime.Tx:Run({'p:'..player.UserId,key},function(values)
-  local old=values[key]
-  if old then
-   R.Check(old.User==player.UserId and old.Product==product.Id and old.Kind=='RouletteTickets','Receipt mismatch')
-   return old.Result
-  end
-  local p=values['p:'..player.UserId];runtime.Engine:Authorize(p,player.UserId)
-  Tickets.GrantPaid(p,product.Count,os.time());R.Validate(p)
-  local result={Message=product.Count..(product.Count==1 and ' DOG TOKEN added'or ' DOG TOKENS added')..' · spin at the DOG-O-MATIC',Count=product.Count,PaidTickets=p.PaidRouletteTickets}
-  values[key]={Kind='RouletteTickets',User=player.UserId,Product=product.Id,Count=product.Count,At=os.time(),Result=result}
-  return result
- end)
- -- Receipt fulfillment deliberately ignores present-day policy and sale switches:
- -- a completed purchase always credits the balance; use stays policy-gated.
- if ok then runtime.Refresh(player)end
- return ok,result
+ Tickets.GrantPaid(p,product.Count,context.Now)
+ return {Message=product.Count..(product.Count==1 and ' DOG TOKEN added'or ' DOG TOKENS added')..' · spin at the DOG-O-MATIC',
+  Count=product.Count,PaidTickets=p.PaidRouletteTickets}
 end
-Players.PlayerRemoving:Connect(function(player)P.PolicyCache[player.UserId]=nil end)
+-- After the grant is saved: show the player what arrived (also after a retried receipt).
+function P.After(_runtime,player,_product,result)
+ local presentation=RS:FindFirstChild('RewardPresentation')
+ if presentation and player.Parent and type(result)=='table'and result.Message then
+  presentation:FireClient(player,{Cue='Reward',Message=result.Message})
+ end
+end
 return P

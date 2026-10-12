@@ -44,8 +44,22 @@ function R.Profile(uid,now)
  Tickets.Normalize(p,now);I.Normalize(p);Lifetime.Normalize(p);LabState.Normalize(p);PlotRules.Normalize(p);return p
 end
 function R.Normalize(p,uid,now)
+ -- MEGA RESET GUARD (payments): never raise C.MegaResetVersion without the owner's explicit
+ -- decision; it rebuilds every saved profile. If a reset ever runs, everything bought with
+ -- Robux is carried into the new profile: paid DOG TOKENS, one-per-player packs, boost timers
+ -- and reserves, server-luck credits, game-pass entitlements, cosmetics, paid Lucky Blocks and
+ -- the TOP SUPPORTERS total.
  if type(p)=='table'and(tonumber(p.MegaResetVersion)or 0)<C.MegaResetVersion then
+  local old=p
   p=R.Profile(uid,now);p.RebootGift.WasReset=true;p.LuckyCredits[C.MegaResetGiftTier]=C.MegaResetGiftCount
+  for _,key in ipairs({'PaidRouletteTickets','CommercePurchases','Supplies','SupplyReserve','LuckBoosts','LuckReserve','ServerLuckCredits','Passes','Cosmetics'})do
+   if old[key]~=nil then p[key]=R.Copy(old[key])end
+  end
+  local support=type(old.Lifetime)=='table'and tonumber(old.Lifetime.SupportRobux)
+  if support and support>0 then p.Lifetime.SupportRobux=support end
+  for uid2,block in pairs(type(old.OwnedBlocks)=='table'and old.OwnedBlocks or {})do
+   if type(block)=='table'and block.PaidRandom==true then p.OwnedBlocks[uid2]=R.Copy(block)end
+  end
  end                                      
  p=p or R.Profile(uid,now)
  PlotRules.Normalize(p)
