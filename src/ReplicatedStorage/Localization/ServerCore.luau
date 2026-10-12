@@ -10,8 +10,11 @@ return {
 		["Too many settings"] = "Слишком много настроек за раз",
 		["Invalid settings"] = "Настройки повреждены",
 		["Invalid settings version"] = "Неверная версия настроек",
+		-- Economy.ItemProtection (bulk sales, trades, market listings, lab catalysts).
+		["Favorite finds are kept out of bulk sales"] = "Избранные находки не продаются оптом",
 	},
 	Patterns = {
+		{ "^This find is protected %((.+)%)$", "Эта находка защищена (%1)" },
 		{ "^Invalid setting (%w+)$", "Недопустимое значение настройки %1" },
 	},
 	Phrases = {},

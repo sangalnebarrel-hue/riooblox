@@ -6,6 +6,9 @@ local function rarityOf(d)
  for _,row in ipairs(C.Rarity)do if d.BaseDropChance<=row.MaxChance then return row.Name,row.Multiplier end end
  return 'Common',1
 end
+-- Rarity of an item definition (ItemValueConfig.Rarity: Class 'Secret', then by BaseDropChance) and
+-- its price multiplier. The one rule behind prices and ReplicatedStorage.ItemRarity.
+V.Rarity=rarityOf
 local function softCap(raw,d)
  local cap=Depth[tostring(d.Depth)].IncomeReference*3600*C.SoftCapIncomeHours
  local threshold=cap*C.SoftCapStart
