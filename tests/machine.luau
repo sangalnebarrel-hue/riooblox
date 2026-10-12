@@ -306,6 +306,19 @@ function runtime.Engine:Authorize(p, id)
 	assert(p and p.UserId == id, "Profile session unavailable")
 end
 preload[SRC .. "/ServerScriptService/Economy/Runtime"] = runtime
+-- The fake players are plain tables: answer the shared PolicyService helper directly.
+preload[SRC .. "/ServerScriptService/Economy/PaidRandomPolicy"] = {
+	Allowed = function()
+		return true
+	end,
+	TradingAllowed = function()
+		return true
+	end,
+	Info = function()
+		return { Ok = true, PaidRandom = true, Trading = true, At = 0 }
+	end,
+	Forget = function() end,
+}
 
 local C = load("ReplicatedStorage/RewardMachineConfig")
 local Odds = load("ReplicatedStorage/RewardMachineOdds")
