@@ -16,12 +16,16 @@ local function listen(signal, callback)
  return c
 end
 local function shown() return alive and main.Visible and page.Visible end
-local function number(n)
- if n >= 1e9 then return string.format("%.2fB", n / 1e9) end
- if n >= 1e6 then return string.format("%.2fM", n / 1e6) end
- if n >= 1e3 then return string.format("%.2fK", n / 1e3) end
- return string.format("%.2f", n)
+-- Income per minute from the server's income model (player attribute IncomePerMinute, kept
+-- current by Runtime.Project); the label is translated by Localization.Income.
+local IncomeText = require(Replicated:WaitForChild("DogEconomy"):WaitForChild("IncomeText"))
+grid.IncomeCard.Label.Text = "Income / min"
+local function updateIncome(perMinute)
+ perMinute = tonumber(perMinute) or player:GetAttribute("IncomePerMinute")
+ if type(perMinute) == "number" then grid.IncomeCard.Value.Text = "$" .. IncomeText.Compact(perMinute) end
 end
+updateIncome()
+listen(player:GetAttributeChangedSignal("IncomePerMinute"), function() updateIncome() end)
 local function ownedYard()
  local district = workspace:FindFirstChild("DOGROTS_District")
  local yards = district and district:FindFirstChild("04_PlayerYards")
@@ -168,7 +172,7 @@ local function refresh()
  busy = false
  if not alive then return end
  if ok and success and type(data) == "table" and type(data.Profile) == "table" then
-  if type(data.IncomeEstimate) == "number" then grid.IncomeCard.Value.Text = "~" .. number(data.IncomeEstimate) end
+  if type(data.IncomePerMinute) == "number" then updateIncome(data.IncomePerMinute) end
   renderDiscovery((data.Profile.DiscoveryFeed or {})[1])
  end
 end

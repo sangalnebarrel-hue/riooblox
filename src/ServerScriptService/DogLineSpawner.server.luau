@@ -22,6 +22,11 @@ local BlockVisuals=require(Replicated.LuckyBlockVisuals)
 local Arrivals=require(Replicated.SecretArrivalConfig)
 local Reveal=require(script.Parent.SecretReveal)
 local Format=require(Replicated.PriceFormat)
+-- Dog mutations are rolled here, on the server, when a dog spawns: everyone sees the variant on the
+-- tongue before buying, and the purchase passes this server-owned value to Rules.Mint.
+local Rules=require(script.Parent.Economy.Rules)
+local VARIANT_COLORS={Shiny=Color3.fromRGB(205,240,255),Golden=Color3.fromRGB(255,206,64),Corrupted=Color3.fromRGB(226,92,255),Glitched=Color3.fromRGB(60,245,220),Void=Color3.fromRGB(176,120,255)}
+local ANNOUNCED_VARIANTS={Glitched=true,Void=true}
 local WALK_SPEED=Stream.Speed
 -- World events speed the tongue up (DOG RUSH) or slow it down (TIME WARP), and change how
 -- many Lucky Blocks ride it (WorldEventGameplay sets these line attributes); server luck
@@ -160,13 +165,23 @@ local function updateUI(dog)
 	if state=="Walking" then pr.ObjectText=dog:GetAttribute("DisplayName").." | "..(dog:GetAttribute("OwnerName") or "").." | $"..Format.Number(price) end
 	pr.Enabled=state~="Delivered"
 end
-local function billboard(dog,data)
+local function billboard(dog,data,variant)
 	local a=adornee(dog); if not a then return end
-	local bb=Instance.new("BillboardGui"); bb.Name="DogBillboard"; bb.Adornee=dog:FindFirstChild("DogLabelAnchor",true) or a; bb.Parent=dog; bb.AlwaysOnTop=true; bb.LightInfluence=0; bb.MaxDistance=80; bb.Size=UDim2.fromOffset(180,72); bb.StudsOffsetWorldSpace=Vector3.zero
+	local mutated=VARIANT_COLORS[variant]~=nil
+	local bb=Instance.new("BillboardGui"); bb.Name="DogBillboard"; bb.Adornee=dog:FindFirstChild("DogLabelAnchor",true) or a; bb.Parent=dog; bb.AlwaysOnTop=true; bb.LightInfluence=0; bb.MaxDistance=80; bb.Size=UDim2.fromOffset(180,mutated and 96 or 72); bb.StudsOffsetWorldSpace=Vector3.zero
+	local row=mutated and .25 or .34
 	local function label(n,text,y,color,size)
-		local l=Instance.new("TextLabel"); l.Name=n; l.BackgroundTransparency=1; l.Size=UDim2.new(1,0,.32,0); l.Position=UDim2.new(0,0,y,0); l.Text=text; l.TextColor3=color; l.TextStrokeTransparency=.3; l.Font=Enum.Font.GothamBold; l.TextSize=size; l.Parent=bb
+		local l=Instance.new("TextLabel"); l.Name=n; l.BackgroundTransparency=1; l.Size=UDim2.new(1,0,mutated and .24 or .32,0); l.Position=UDim2.new(0,0,y,0); l.Text=text; l.TextColor3=color; l.TextStrokeTransparency=.3; l.Font=Enum.Font.GothamBold; l.TextSize=size; l.Parent=bb
+		return l
 	end
-	label("NameLabel",string.upper(data.DisplayName),0,Color3.new(1,1,1),20); label("RarityLabel",string.upper(data.Rarity),.34,RARITY[data.Rarity] or Color3.new(1,1,1),16); label("PriceLabel","$"..Format.Number(data.LinePrice or data.Price),.66,Color3.fromRGB(255,235,120),17)
+	local top=0
+	if mutated then
+		-- The mutation sits on its own line above the name, in its colour (translated like any world label).
+		local tag=label("VariantLabel",string.upper(variant),0,VARIANT_COLORS[variant],18)
+		tag.TextStrokeColor3=Color3.fromRGB(25,18,40); tag.TextStrokeTransparency=0
+		top=row
+	end
+	label("NameLabel",string.upper(data.DisplayName),top,Color3.new(1,1,1),20); label("RarityLabel",string.upper(data.Rarity),top+row,RARITY[data.Rarity] or Color3.new(1,1,1),16); label("PriceLabel","$"..Format.Number(data.LinePrice or data.Price),top+row*2,Color3.fromRGB(255,235,120),17)
 end
 local function inventory(dog,player,data)
     local uid=dog:GetAttribute("DogUid")
@@ -202,7 +217,7 @@ local function purchaseDog(dog,player,data)
     local character=player.Character;local root=character and character:FindFirstChild("HumanoidRootPart")
     if not destination or not root or (root.Position-dog:GetPivot().Position).Magnitude>18 then return end
     dog:SetAttribute("PurchaseBusy",true)
-    local transport,ok,result=pcall(Economy.BuyLine,player,dog:GetAttribute("DogId"),dog:GetAttribute("DogUid"))
+    local transport,ok,result=pcall(Economy.BuyLine,player,dog:GetAttribute("DogId"),dog:GetAttribute("DogUid"),dog:GetAttribute("Variant"))
     if transport and ok and dog.Parent then
         for key,value in pairs(result.Dog) do
             if type(value)=="string" or type(value)=="number" or type(value)=="boolean" then dog:SetAttribute(key,value) end
@@ -243,11 +258,12 @@ local function choose()
     return id,data
 end
 local lastAnnouncement=-60
-local function announce(data)
+local function announce(data,variant)
     local reward=Replicated:FindFirstChild("RewardPresentation")
     if not reward or os.clock()-lastAnnouncement<15 then return end
     lastAnnouncement=os.clock()
-    reward:FireAllClients({Announcement=string.upper(data.Rarity).." DOG ON THE TONGUE · "..string.upper(data.DisplayName),Tier=data.Rarity})
+    local kind=variant and string.upper(variant) or string.upper(data.Rarity)
+    reward:FireAllClients({Announcement=kind.." DOG ON THE TONGUE · "..string.upper(data.DisplayName),Tier=data.Rarity})
 end
 local function playClip(dog,name,looped,at)
     dog:SetAttribute("AnimationName",name)
@@ -315,6 +331,8 @@ local function spawnDog(forced)
 	dog:SetAttribute("OwnerUserId",0); 
 	dog:SetAttribute("OwnerName",""); 
 	dog:SetAttribute("LocomotionSpeed",eventSpeed())
+	local variant=Rules.Variant(function() return rng:NextNumber() end,nil,os.time())
+	dog:SetAttribute("Variant",variant)
 	dog:SetAttribute("State","OnLine");dog:SetAttribute("AnimationName","Walk");dog:SetAttribute("AnimationLooped",true);dog:SetAttribute("AnimationStartedAt",workspace:GetServerTimeNow()); 
 	-- A Secret's arrival cinematic is its announcement on every client. It arrives on a
 	-- stage Arrivals.Stage studs down the tongue, in the mouth opening where it is seen.
@@ -327,11 +345,12 @@ local function spawnDog(forced)
 	dog.Parent=active;
 	if arrival then Reveal.Broadcast(id,dog:GetAttribute("DogUid"),dog:GetAttribute("SecretArrivalAt"),at,"Tongue",nil) end
 	movePivot(dog,pivotAt(dog, at, facing(endPoint.Position-spawnPoint.Position, Vector3.new(0,0,-1)))); 
-	billboard(dog,data); 
+	billboard(dog,data,variant); 
 	buyPrompt(dog,data); 
 	lineTween(dog)
 	if stage>0 then entries[dog]-=stage;dog:SetAttribute('StreamOffset',entries[dog]) end
 	if arrival then holdArrival(dog,arrival)
+	elseif ANNOUNCED_VARIANTS[variant] then announce(data,variant)
 	elseif (data.Rank or 1)>=5 then announce(data) end
     return dog
 end

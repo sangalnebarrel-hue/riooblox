@@ -88,7 +88,9 @@ function Screens.Build(c)
   local st=c.Snapshot.DogStats[d.DogUid]or {};local stacked=w<400
   local imageW=stacked and width-12 or width*.46;V.Dog(sc,d,5,110,imageW-10,228)
   local y=stacked and 350 or 110;local sx=stacked and 5 or imageW+4;local sw=width-sx-15
-  for _,row in ipairs({{'VARIANT',d.Variant},{'ABILITY',U.AbilityLabel(d.Ability)},{'COOLDOWN',st.Cooldown and string.format('%.2fs + 4s',st.Cooldown)or '—'},{'LUCK',string.format('+%.1f%%',(st.Luck or 0)*100)},{'DIG LAYER',Config.Layers[p.CurrentLayer].Name},{'MASTERY',d.Mastery},{'JOB',U.DigSlotLabel(d.AssignedSlot)}})do local b=U.Panel(sc,'DogProperty',sx,y,sw,52);U.Text(b,row[1],7,1,sw-14,20,14,P.muted);U.Text(b,tostring(row[2]),7,21,sw-14,28,17,nil,true);y+=58 end
+  -- Income, speed, luck and efficiency come from the server's income model (Snapshot.DogStats).
+  local Income=require(Rep.DogEconomy.IncomeText)
+  for _,row in ipairs({{'VARIANT',d.Variant},{'ABILITY',U.AbilityLabel(d.Ability)},{'INCOME',st.CoinsPerMin and '$'..Income.Compact(st.CoinsPerMin)..' / min'or '—'},{'DIGS / MIN',st.DigsPerMin and string.format('%.1f',st.DigsPerMin)or '—'},{'COOLDOWN',st.Cooldown and string.format('%.2fs + 4s',st.Cooldown)or '—'},{'LUCK',string.format('+%.0f%%',st.LuckPct or(st.Luck or 0)*100)},{'EFFICIENCY',st.Efficiency and string.format('x%.2f',st.Efficiency)or '—'},{'DIG LAYER',Config.Layers[p.CurrentLayer].Name},{'MASTERY',d.Mastery},{'JOB',U.DigSlotLabel(d.AssignedSlot)}})do local b=U.Panel(sc,'DogProperty',sx,y,sw,52);U.Text(b,row[1],7,1,sw-14,20,14,P.muted);U.Text(b,tostring(row[2]),7,21,sw-14,28,17,nil,true);y+=58 end
   local tags={d.Variant,'Ascension '..d.AscensionLevel};if d.Edition and d.Edition~=''then table.insert(tags,d.Edition)end;if d.SerialNumber then table.insert(tags,string.format('SERIAL #%06d',d.SerialNumber))end
   U.Text(sc,table.concat(tags,' · '),8,y,width-28,46,16,P.gold);y+=50
   local definition=Definitions[d.DogId]
@@ -108,7 +110,7 @@ function Screens.Build(c)
   local y=48;local pw=sideBySide and math.floor(W*.4)or W-8;local ph=sideBySide and math.min(345,H*.47)or math.clamp(W*.48,190,245)
   local home=U.Panel(sc,'YardPreview',0,y,pw,ph,true);V.Place(home,'Yard',8,8,pw-16,ph-61);U.Icon(home,'Yard',14,ph-44,32,P.gold);U.Text(home,'YOUR YARD · HOME BASE',55,ph-45,pw-66,33,20,P.gold,true)
   local sx=sideBySide and pw+14 or 0;local sy=sideBySide and y or y+ph+12;local sw=sideBySide and W-pw-22 or W-8;local statCols=sw>=420 and 2 or 1;local cw=(sw-10*(statCols-1))/statCols;local active=0;for _,d in ipairs(dogs)do if d.AssignedSlot~=''then active+=1 end end
-  local stats={{'Coins','Income / second',string.format('~%.2f',c.Snapshot.IncomeEstimate or 0)},{'Yard','Yard level',1+(p.Upgrades.Plot or 0)},{'Storage','Dog storage',#dogs..' / '..math.min(Config.MaxDogs,20+20*(p.Upgrades.DogStorage or 0))},{'Yard','Occupied kennels',active..' / '..require(Rep.PlotCatalog).Slots(p)}}
+  local stats={{'Coins','Income / minute','$'..require(Rep.DogEconomy.IncomeText).Compact(c.Snapshot.IncomePerMinute or(c.Snapshot.IncomeEstimate or 0)*60)},{'Yard','Yard level',1+(p.Upgrades.Plot or 0)},{'Storage','Dog storage',#dogs..' / '..math.min(Config.MaxDogs,20+20*(p.Upgrades.DogStorage or 0))},{'Yard','Occupied kennels',active..' / '..require(Rep.PlotCatalog).Slots(p)}}
   for i,row in ipairs(stats)do stat(sc,row[1],row[2],row[3],sx+((i-1)%statCols)*(cw+10),sy+math.floor((i-1)/statCols)*98,cw,86)end
   local latestY=sy+math.ceil(#stats/statCols)*98
   local latest=p.DiscoveryFeed[1];local last=U.Panel(sc,'LatestFound',sx,latestY,sw,128)

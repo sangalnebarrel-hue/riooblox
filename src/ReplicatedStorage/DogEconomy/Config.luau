@@ -5,10 +5,14 @@ C.StartingCash=4200
 C.MaxCash=9000000000000000
 C.MaxDogs=250
 C.TickSeconds=1
-C.Work={Duration=4,BaseCooldown=20,MasteryReduction=.12,MinCooldown=6,MaxCooldown=30}
+-- MaxSpeed caps the speed a rest can express; speed beyond it (or past MinCooldown) turns into extra
+-- loot rolls, at most MaxOverflow times the dog's normal rolls (Rules.Cooldown), so no speed is wasted.
+C.Work={Duration=4,BaseCooldown=20,MasteryReduction=.12,MinCooldown=6,MaxCooldown=30,MaxSpeed=2,MaxOverflow=3}
 C.UpgradeEffects={Dig=.04,Storage=25,Kennel=.015,Plot=.025,DogStorage=20,Ability=.02}
 C.Rarities={"Common","Rare","Epic","Legendary","Mythic","Secret"}
-C.Power={1,1.3,1.7,2.3,3.1,4.2}
+-- Dog power by rarity: multiplies every ordinary loot roll. Tuned with a Lune simulation of the
+-- real Rules.Dig (docs/ECONOMY.md): at the same depth a Secret team earns ~12x a Common team.
+C.Power={1,2,3.3,5.4,9,15.5}
 C.Prices={3500,22000,140000,900000,6500000,55000000}
 -- Per-spawn rarity odds on the tongue (sum 100), tuned to Steal a Brainrot's real-time
 -- feel at ~5.6 dogs/min: Legendary ~7 min, Mythic ~24 min, a Secret ~2 h per server.
@@ -33,10 +37,14 @@ C.SpecialAcquisition={LongDog={MinLayer=4,Chance=1/20000},TheDog={MinLayer=5,Min
 -- a discovery already pending still resolves).
 C.SpecialDiscovery={LongDogChance=0,LongDogMinLayer=4,ArrivalInterval=900,ArrivalChance=0}
 C.Retire={1,5,20,80,300,1200}
+-- Dog mutations ("variants"). Weights are relative (Rules.Variant sums them); the table keeps a
+-- 10,000 total so Lab targeting weights (LabConfig.TargetWeights) keep their scale. 23% of new dogs
+-- are mutated: Golden 1 in 20, Void 1 in 500. Bonus = extra dog income (Rules.Bonus).
+-- Names are saved data (VariantDex, trades, market): never rename them.
 C.Variants={
- {Name="Normal",Weight=9150,Bonus=0},{Name="Shiny",Weight=550,Bonus=.03},
- {Name="Golden",Weight=200,Bonus=.06},{Name="Corrupted",Weight=70,Bonus=.10},
- {Name="Glitched",Weight=25,Bonus=.12},{Name="Void",Weight=5,Bonus=.15},
+ {Name="Normal",Weight=7700,Bonus=0},{Name="Shiny",Weight=1500,Bonus=.12},
+ {Name="Golden",Weight=500,Bonus=.30},{Name="Corrupted",Weight=200,Bonus=.50},
+ {Name="Glitched",Weight=80,Bonus=.75},{Name="Void",Weight=20,Bonus=1.10},
 }
 C.Diminishing={1,.35,.10,.03,.01}
 C.Ascension={0,.03,.06,.10}
@@ -85,9 +93,10 @@ C.Supplies={
  EnergySnack={Name="Energy Snack",Order=2,Cash=5000,Seconds=600,MaxSeconds=3600,Effect="Speed",Magnitude=.25,IncomeShare=.09,
   EffectText="+25% digging speed",
   Description="Shorter rests between digs for the whole team. Stacks with other speed bonuses up to the team speed cap."},
- StorageCrate={Name="Storage Crate",Order=3,Cash=4000,Seconds=600,MaxSeconds=3600,Effect="Storage",Magnitude=100,IncomeShare=.04,
-  EffectText="+100 ordinary-loot spaces",
-  Description="Holds more ordinary finds until you sell. Does not add dog or item slots. Existing loot stays safe when it expires."},
+ -- Ordinary loot is paid straight into the wallet now, so the crate holds discoveries (item slots).
+ StorageCrate={Name="Storage Crate",Order=3,Cash=4000,Seconds=600,MaxSeconds=3600,Effect="Storage",Magnitude=25,IncomeShare=.04,
+  EffectText="+25 discovery slots",
+  Description="Your dogs keep finding discoveries for longer before you sell. Finds already stored stay safe when it expires."},
 }
 -- Personal luck (LUCK tab): Nx LUCK = +N×100% weight on rare loot in ordinary digging and a
 -- bigger chance of rare discoveries. Every tier has its own timer; the highest active one counts.

@@ -5,6 +5,7 @@ local R=require(script.Parent.Rules)
 local Definitions=require(script.Parent.DogDefinitions)
 local Signatures=require(script.Parent.SignatureRules)
 local Pricing=require(game:GetService('ReplicatedStorage').DogEconomy.BoostPricing)
+local Bonuses=require(game:GetService('ReplicatedStorage').DogEconomy.Bonuses)
 local O={}
 local function finite(n)return type(n)=='number'and n==n and math.abs(n)<math.huge end
 local function bounded(n,limit)return finite(n)and math.clamp(math.floor(n),0,limit)or 0 end
@@ -18,41 +19,32 @@ function O.Normalize(p)
  o.Dogs=type(o.Dogs)=='table'and o.Dogs or{};o.Contributors=type(o.Contributors)=='table'and o.Contributors or{}
  p.OfflineEarnings=o;return o
 end
+-- The team's steady income in coins per second (BaseRate; it also prices boosts and Robux coin
+-- packs, BoostPricing) and the offline rate (BaseRate x Efficiency x (1+Offline bonus)).
+-- The same model as the HUD income (Rules.IncomeModel), on a quiet copy of the profile:
+-- 41 is a quiet phase for every periodic aura, and sale/pulse/map timestamps, supplies, bought luck
+-- and world events are cleared instead of freezing a temporary bonus. Discoveries count at their
+-- expected sale value even when storage is full (Potential).
 function O.Estimate(p)
- -- 41 is a quiet phase for every periodic aura. Clear sale/pulse/map timestamps,
- -- supplies and world events instead of accidentally freezing a temporary bonus.
- local clean={Dogs={},Upgrades=p.Upgrades or{},Supplies={},LastDig=41,LastSaleAt=-100000,TimePulseUntil=0,TreasureMapUntil=0}
+ local clean={}
+ for k,v in pairs(p)do clean[k]=v end
+ clean.Dogs={};clean.Upgrades=p.Upgrades or{};clean.Supplies={};clean.LuckBoosts={};clean.Loot={};clean.Items={};clean.ItemReservations={}
+ clean.LastDig=41;clean.LastSaleAt=-100000;clean.TimePulseUntil=0;clean.TreasureMapUntil=0;clean.Pity=0
  for uid,dog in pairs(p.Dogs or{})do
   if Definitions[dog.DogId]and Signatures.Active(dog)then clean.Dogs[uid]=dog end
  end
- local team=Signatures.Team(clean,41);local sets={}
- for _,dog in pairs(clean.Dogs)do
-  local def=Definitions[dog.DogId];local key=def.Set or'Explorers';sets[key]=sets[key]or{};sets[key][dog.DogId]=true
- end
- for _,members in pairs(sets)do local n=R.Count(members);team.SetBonus+=n>=4 and .02 or n>=2 and .01 or 0 end
- team.SetBonus=math.min(.06,team.SetBonus)
- local layer=Economy.Layers[p.CurrentLayer or 1];if not layer then return 0,{},0 end
+ if not Economy.Layers[p.CurrentLayer or 1]then return 0,{},0 end
+ local model=R.IncomeModel(clean,41,{AssignedOnly=true,Potential=true})
+ local efficiency=C.Efficiency*math.max(0,1+Bonuses.Global(clean,41).Offline)
  local rows,baseTotal={},0
- for uid,dog in pairs(clean.Dogs)do
-  local def=Definitions[dog.DogId]
-  local multiplier=R.Bonus(dog)*(def.PowerBudget or Economy.Power[def.Rank]or 1)
-   *(1+Economy.UpgradeEffects.Ability*(clean.Upgrades.Ability or 0))
-   *(1+team.SetBonus+.025*(clean.Upgrades.Plot or 0)+.015*(clean.Upgrades.Kennel or 0)+math.min(.5,team.SellValue or 0))
-  local value,weight=0,0
-  for _,item in ipairs(layer.Loot)do
-   local rare=item[2]=='Artifact'or item[2]=='Treasure'or item[2]=='Rare'or item[2]=='Space'
-   local w=item[3]*(rare and(1+(team.Luck or 0)+team.SetBonus)or 1)
-   local mult=multiplier
-   if item[2]=='Corrupted'then mult*=1-math.max(0,.15-(team.Cleanse or 0))end
-   value+=w*math.max(1,math.floor(item[4]*mult));weight+=w
-  end
-  local cycle=R.Cooldown(clean,dog,team)+Economy.Work.Duration
-  local base=weight>0 and C.BaseRolls*(value/weight)/cycle or 0
+ for uid,stats in pairs(model.Dogs)do
+  local def=Definitions[clean.Dogs[uid].DogId]
+  local base=stats.CoinsPerMin/60
   baseTotal+=base
-  table.insert(rows,{Uid=uid,DogId=dog.DogId,Name=def.DisplayName,BaseRate=base,Rate=base*C.Efficiency})
+  table.insert(rows,{Uid=uid,DogId=def.Id,Name=def.DisplayName,BaseRate=base,Rate=base*efficiency})
  end
  table.sort(rows,function(a,b)return a.Uid<b.Uid end)
- return baseTotal*C.Efficiency,rows,baseTotal
+ return baseTotal*efficiency,rows,baseTotal
 end
 function O.Checkpoint(p,now)
  local o=O.Normalize(p)
@@ -100,7 +92,7 @@ function O.Report(p)
  table.sort(dogs,function(a,b)if a.Coins~=b.Coins then return a.Coins>b.Coins end;return a.Uid<b.Uid end)
  return {PendingCoins=o.PendingCoins,PendingId=O.Id(p,o),CanClaim=o.PendingCoins>0,PendingSeconds=o.PendingSeconds,
   AwaySeconds=o.LastAwaySeconds or 0,CreditedSeconds=o.LastCreditedSeconds or 0,AddedCoins=o.LastAddedCoins or 0,WasCapped=o.WasCapped==true,
-  BaseRate=o.BaseRate,Rate=o.Rate,Efficiency=C.Efficiency,CapSeconds=C.MaxAwaySeconds,MinAwaySeconds=C.MinAwaySeconds,
+  BaseRate=o.BaseRate,Rate=o.Rate,Efficiency=o.BaseRate>0 and o.Rate/o.BaseRate or C.Efficiency,CapSeconds=C.MaxAwaySeconds,MinAwaySeconds=C.MinAwaySeconds,
   Eligible=#o.Dogs>0,Dogs=dogs,CurrentDogs=R.Copy(o.Dogs),Description=C.Description}
 end
 function O.Claim(p,pendingId,now)

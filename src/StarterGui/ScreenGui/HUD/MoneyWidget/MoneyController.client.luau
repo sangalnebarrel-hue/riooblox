@@ -1,5 +1,6 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 local UserInputService = game:GetService("UserInputService")
 local Price = require(ReplicatedStorage:WaitForChild("PriceFormat"))
@@ -84,10 +85,46 @@ local function queueLayout()
 	end)
 end
 
+-- Match every purchase/sale price: commas, all digits, no K/M/B suffixes.
+local shown = coins.Value
+local function render(value)
+	local text = "$" .. Price.Number(value)
+	if amountLabel.Text ~= text then
+		amountLabel.Text = text
+		queueLayout()
+	end
+end
+
+-- Income counts up smoothly (dog income arrives every few seconds); spending and big
+-- jumps from far below snap, so prices and purchases always read exactly.
+local rolling, from, target, startedAt, duration = nil, 0, 0, 0, 0
+local function stopRolling()
+	if rolling then
+		rolling:Disconnect()
+		rolling = nil
+	end
+end
 local function updateMoney()
-	-- Match every purchase/sale price: commas, all digits, no K/M/B suffixes.
-	amountLabel.Text = "$" .. Price.Number(coins.Value)
-	queueLayout()
+	local value = coins.Value
+	if value <= shown or player:GetAttribute("ReducedMotion") == true then
+		stopRolling()
+		shown = value
+		render(value)
+		return
+	end
+	from, target, startedAt = shown, value, os.clock()
+	duration = math.clamp(0.25 + 0.12 * math.log10(math.max(1, value - shown)), 0.35, 0.9)
+	if rolling then return end
+	rolling = RunService.Heartbeat:Connect(function()
+		local t = math.clamp((os.clock() - startedAt) / duration, 0, 1)
+		local eased = 1 - (1 - t) ^ 3
+		shown = math.floor(from + (target - from) * eased + 0.5)
+		if t >= 1 then
+			shown = target
+			stopRolling()
+		end
+		render(shown)
+	end)
 end
 
 coins:GetPropertyChangedSignal("Value"):Connect(updateMoney)
@@ -102,4 +139,5 @@ if screen then screen:GetPropertyChangedSignal("AbsoluteSize"):Connect(queueLayo
 for _, property in ipairs({ "Size", "Position", "TextScaled", "Font" }) do
 	amountLabel:GetPropertyChangedSignal(property):Connect(queueLayout)
 end
-updateMoney()
+shown = coins.Value
+render(shown)

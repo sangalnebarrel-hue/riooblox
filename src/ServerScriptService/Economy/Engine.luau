@@ -200,8 +200,11 @@ function E:GrantSpecial(id,dogId,operation)
   v[key]=result;R.Validate(p);return result
  end)
 end
-function E:BuyLine(id,dogId,uid,request)
+-- variant: the server-rolled variant of the conveyor dog (DogLineSpawner model attribute). It only
+-- applies to a first purchase; a rebuy keeps the dog's saved variant.
+function E:BuyLine(id,dogId,uid,request,variant)
  R.Check(self.AssetReady(dogId),"Dog asset unavailable")
+ R.Check(variant==nil or(type(variant)=="string"and R.VariantNames[variant]==true),"Invalid variant")
  local key='line:'..uid;local order=self.Tx:Read(key);local old=order and order.Owner
  local keys={pk(id),key,'supply:'..dogId};if old and old~=id then table.insert(keys,pk(old)) end
  local now=self.Now()
@@ -218,7 +221,7 @@ function E:BuyLine(id,dogId,uid,request)
    R.Pay(p,price);R.Credit(from,math.floor((dog.PricePaid or 0)*.9),false);from.Dogs[uid]=nil;R.Transfer(dog,p,now,"Rebuy")
   else
    R.Pay(p,price);local supply=v['supply:'..dogId] or {};v['supply:'..dogId]=supply
-   dog=R.Mint(p,dogId,uid,supply,now,self.Random,"DogLine")
+   dog=R.Mint(p,dogId,uid,supply,now,self.Random,"DogLine",variant)
   end
   dog.State="Walking";dog.PricePaid=price
   R.AddXP(p,15+10*(D[dogId].Rank or 1))
