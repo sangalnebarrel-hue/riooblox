@@ -1736,6 +1736,7 @@ showResult=function(result)
    head=result.FirstDiscovery and T('NEW DISCOVERY!')or T('NEW DOG CREATED!')
    headColor=Theme.Darken(G.VariantColor(d and d.Variant),.15)
    preview=d
+   if d then table.insert(body,F('Makes: %s %s',variantName(d.Variant),dogName(d.DogId)))end
   else
    head=T('UNSTABLE RESULT');headColor=Theme.InkMuted
    preview=d
