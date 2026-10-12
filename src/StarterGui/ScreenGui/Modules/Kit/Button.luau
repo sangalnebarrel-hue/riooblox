@@ -5,6 +5,7 @@ local Base = require(script.Parent.Base)
 local Motion = require(script.Parent.Motion)
 local Maid = require(script.Parent.Maid)
 local Format = require(script.Parent.Format)
+local Sound = require(script.Parent.Sound)
 
 local Button = {}
 Button.__index = Button
@@ -28,6 +29,7 @@ export type Props = {
 	LayoutOrder: number?,
 	ZIndex: number?,
 	NoTranslate: boolean?,
+	Sound: any?, -- false = silent; {Hover = cue | false, Press = cue | false} (UISound cue names)
 }
 
 -- Inputs that hold a hold-to-confirm button: mouse, touch, gamepad A, Enter / Space.
@@ -188,6 +190,12 @@ function Button.new(parent: Instance?, props: Props?): any
 	self.DotTweens = {}
 
 	Base.Press(root, nil, self.Maid)
+	-- Hover / press sounds. A hold button sounds when the hold starts and when it completes instead.
+	local sound = p.Sound
+	if sound ~= false and p.Hold and p.Hold > 0 then
+		sound = { Hover = type(sound) == "table" and sound.Hover or nil, Press = false }
+	end
+	Sound.Bind(root, self.Maid, sound)
 	self.Maid:Give(root.Activated:Connect(function()
 		if self.Props.Hold and self.Props.Hold > 0 then
 			return -- hold buttons fire from the hold timer only
@@ -242,6 +250,9 @@ function Button._wireHold(self: any)
 		end
 		local token = {}
 		holding = token
+		if self.Props.Sound ~= false then
+			Sound.Play("Press", root)
+		end
 		self.Fill.Visible = true
 		self.Fill.Size = UDim2.fromScale(0, 1)
 		-- The fill is the timer: it runs even with reduced motion (a safety delay, not decoration).
@@ -258,6 +269,9 @@ function Button._wireHold(self: any)
 			holding = nil
 			self.Fill.Visible = false
 			self.Fill.Size = UDim2.fromScale(0, 1)
+			if self.Props.Sound ~= false then
+				Sound.Play("Success", root)
+			end
 			self:_fire()
 		end)
 		tween:Play()

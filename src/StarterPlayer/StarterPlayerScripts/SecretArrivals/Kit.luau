@@ -416,7 +416,8 @@ local ducks={};local baseline=setmetatable({},{__mode='k'})
 local function musicGroups()
  local list={}
  local root=SoundService:FindFirstChild('DOGROTS_AUDIO')
- if root then for _,g in ipairs(root:GetChildren())do if g:IsA('SoundGroup')then table.insert(list,g)end end end
+ -- Music beds only: the UI and SFX buses keep their own (setting-driven) volume.
+ if root then for _,g in ipairs(root:GetChildren())do if g:IsA('SoundGroup')and g.Name~='UI'and g.Name~='SFX'then table.insert(list,g)end end end
  -- WorldAmbience's background music has no group of its own: give it a neutral one.
  local own=SoundService:FindFirstChild('DOGROTS_SecretDuckBed')
  local bed=SoundService:FindFirstChild('DOGROTS_BackgroundMusic')
