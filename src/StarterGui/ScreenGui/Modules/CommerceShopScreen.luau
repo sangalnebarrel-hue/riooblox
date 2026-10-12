@@ -1,15 +1,24 @@
 local RS=game:GetService('ReplicatedStorage')
 local Catalog=require(RS.CommerceConfig);local Price=require(RS.PriceFormat);local Pricing=require(script.Parent.ProductPricing)
 local Boosts=require(RS.DogEconomy.BoostPricing);local Config=require(RS.DogEconomy.Config)
-local V=require(script.Parent.PreviewRenderer)
+local V=require(script.Parent.PreviewRenderer);local MachineText=require(RS.RewardMachineText)
 local S={}
+-- DOG-O-MATIC odds summary from the real slot table (base odds; the event boost is named).
+local function machineOdds()
+ local dogs=0;local aurion=MachineText.AurionOdds()
+ for _,row in ipairs(MachineText.Pool())do if row.Kind=='DogTier'or row.Kind=='Dog'then dogs+=row.Chance end end
+ return MachineText.Pct(dogs),aurion
+end
 local function minutes(seconds)
  local m=math.floor(seconds/60)
  return m>=60 and(m%60==0 and(m/60)..'H'or string.format('%dH %02dM',m//60,m%60))or m..' MIN'
 end
 -- Exact contents for this player (income-scaled coins are computed from their own snapshot).
 local function contents(row,p,now)
- if row.Category=='DOG-O-MATIC Spins'then return Price.Tickets(row.Count)..'\nSpin the DOG-O-MATIC · chances at the machine'end
+ if row.Category=='DOG-O-MATIC Spins'then
+  local dogs,aurion=machineOdds()
+  return Price.Tickets(row.Count)..'\n'..MachineText.L('A dog on '..dogs..' of spins · Aurion 1 in '..aurion.OneIn,'Собака в '..dogs..' вращений · Аурион 1 из '..(aurion.OneIn:gsub(',',' ')))
+ end
  local r=row.Rewards or {};local parts={}
  local coins=(r.Cash or 0)+(r.Coins and Boosts.Coins(r.Coins,p,now)or 0)
  if coins>0 then table.insert(parts,'+'..Price.Coins(coins))end
@@ -51,8 +60,16 @@ function S.Build(c)
     local artW=math.min(220,(W-24)*.4)
     V.Dog(prize,'Aurion',6,6,artW,158)
     U.Text(prize,'JACKPOT: AURION',artW+16,8,W-artW-56,36,24,P.text,true)
-    U.Text(prize,'1 in 10,000 every spin · the island-wide arrival is yours. Free tokens are always used first; every chance is shown at the machine (CHANCES).',artW+16,46,W-artW-56,80,15,P.text)
-    U.Button(prize,'FindMachine','FIND DOG-O-MATIC',artW+16,124,math.min(240,W-artW-56),36,function()c.Go('RewardMachine')end,P.blue).Caption.TextSize=15
+    local dogs,aurion=machineOdds()
+    local en=string.format('1 in %s every spin (%s)',aurion.OneIn,aurion.ChanceText)
+    local ru=string.format('1 из %s за вращение (%s)',(aurion.OneIn:gsub(',',' ')),aurion.ChanceText)
+    if aurion.Multiplier then
+     en..=string.format(', x%g during %s',aurion.Multiplier,aurion.EventName);ru..=string.format(', x%g во время Радужного разлома',aurion.Multiplier)
+    end
+    en..='. A dog on '..dogs..' of spins. Free tokens are always used first; every chance is listed under CHANCES and DOG TOKENS.'
+    ru..='. Собака выпадает в '..dogs..' вращений. Сначала тратятся бесплатные жетоны; все шансы — в разделах ШАНСЫ и ЖЕТОНЫ.'
+    MachineText.Own(U.Text(prize,MachineText.L(en,ru),artW+16,46,W-artW-56,80,15,P.text))
+    U.Button(prize,'FindMachine','FIND DOG-O-MATIC',artW+16,124,math.min(240,W-artW-56),36,function()c.Go('DOG-O-MATIC PLAZA')end,P.blue).Caption.TextSize=15
     y+=182
    end
    local cols=short and 1 or math.min(#group,math.max(1,math.floor((W-10)/270)))

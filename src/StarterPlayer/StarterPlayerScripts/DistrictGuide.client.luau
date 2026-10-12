@@ -52,6 +52,8 @@ markerText.BackgroundColor3=colors.panel;markerText.BackgroundTransparency=0.1;m
 make("UICorner",{CornerRadius=UDim.new(0,6)},markerText)
 local clear=make("TextButton",{Name="ClearMarker",Text="CLEAR MARKER",Font=Enum.Font.GothamBold,TextSize=11,TextColor3=colors.muted,BackgroundColor3=colors.bg,BorderSizePixel=0,AnchorPoint=Vector2.new(1,1),Position=UDim2.new(1,-18,1,-70),Size=UDim2.fromOffset(124,28),Visible=false},gui)
 local function toggle() veil.Visible=not veil.Visible end
+-- Each sealed place names itself: "THE VOID — SEALED / FUTURE AREA", "GLOBAL EVENT — COMING SOON".
+local function sealedHint(loc) return tostring(loc.name or ""):upper().." — "..tostring(loc.detail or "SEALED") end
 close.Activated:Connect(toggle)
 clear.Activated:Connect(function() selected=nil;marker.Enabled=false;clear.Visible=false end)
 for i,loc in ipairs(locations) do
@@ -60,7 +62,7 @@ for i,loc in ipairs(locations) do
  text(b,loc.name,UDim2.fromOffset(13,5),UDim2.new(1,-25,0,23),Enum.Font.GothamBold).TextSize=15
  text(b,loc.detail,UDim2.fromOffset(13,28),UDim2.new(1,-25,0,18),Enum.Font.Gotham,colors.muted).TextSize=11
  local function choose()
-  if loc.sealed then hint.Text="THE VOID — SEALED / FUTURE AREA";return end
+  if loc.sealed then hint.Text=sealedHint(loc);return end
   loc.pos=Routing.Position(loc.key,player) or loc.pos
   selected=loc;markerPart.Position=loc.pos+Vector3.new(0,9,0)
   markerText.TextColor3=loc.color;markerText.Text=loc.name
@@ -141,7 +143,7 @@ local signal=hud:WaitForChild("ToggleDistrictMap",10)
  if navigate then navigate.Event:Connect(function(name)
   for _,loc in ipairs(locations) do
    if loc.name==name or (name=="Factory" and loc.key=="DogLine") or (name=="Event headquarters" and loc.key=="GlobalDigSite") or (name=="Paw square" and loc.key=="WelcomeHub") then
-    if loc.sealed then hint.Text="THE VOID — SEALED / FUTURE AREA";veil.Visible=true;return end
+    if loc.sealed then hint.Text=sealedHint(loc);veil.Visible=true;return end
     loc.pos=Routing.Position(loc.key,player) or loc.pos
     if name=="Your yard" then loc.pos=player:GetAttribute("YardSpawnPosition") or loc.pos end
     selected=loc;markerPart.Position=loc.pos+Vector3.new(0,9,0)

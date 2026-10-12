@@ -104,8 +104,10 @@ for _,name in ipairs({'Yard','Dogs','DogDex','Trade','Lab','Shop','Events'}) do
   Navigation.OpenPage(name)
  end)end
 end
--- GLOBAL DIG reuses the existing Events page, matching Economy.World's GLOBAL DIG entry.
+-- This Yard button opens the WORLD EVENTS page (Global Dig itself is sealed: COMING SOON), so it
+-- is labelled WORLD EVENTS. The instance keeps its name (GlobalDig.Main): UITheme indexes it.
 -- Keep navigation in this controller so activePage and Sidebar selection remain in sync.
+pages.YardPage.ActionButtons.GlobalDig.Main.Text='WORLD EVENTS'
 bind(pages.YardPage.ActionButtons.GlobalDig.Main, function() Navigation.OpenPage('Events') end)
 switch('Yard')
 for _,p in ipairs(pages:GetChildren()) do if p.Name~='YardPage' and p.Name~='InventoryPage' then for _,o in ipairs(p:GetDescendants()) do if o:IsA('TextButton') then animate(o) end end end end

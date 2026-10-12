@@ -20,7 +20,8 @@ local rows={
   BonesPerMinute  bones per minute for players who have actively dug during the event
   Reward       paid only to players who stayed ≥ 60 s AND actively dug during the event:
                {MinCash, IncomeMinutes (BoostPricing.Coins), Bones, Luck={Tier,Seconds}}
-  Effects      client set pieces: Flashlight, Tractor, Quakes, Trail, Glitch, Zoomies ]]
+  Effects      client set pieces: Flashlight, Tractor, Quakes, Trail, Glitch, Zoomies
+  MachineAurion × Aurion's slots on DOG-O-MATIC while ACTIVE (RewardMachineService.EventBoost) ]]
 local perks={
  BONE_RAIN={Jump=1.25,LineLuck=1.25,BonesPerMinute=1,Effects={Trail=true},
   Reward={MinCash=600,IncomeMinutes=1,Bones=2}},
@@ -42,7 +43,7 @@ local perks={
   Reward={MinCash=1400,IncomeMinutes=3,Bones=4,Luck={Tier=1,Seconds=120}}},
  UFO_INVASION={Gravity=.35,LineLuck=1.6,Effects={Tractor=true},
   Reward={MinCash=1400,IncomeMinutes=3,Bones=4,Luck={Tier=1,Seconds=120}}},
- RAINBOW_RIFT={Jump=1.4,Walk=1.15,LineLuck=1.5,Effects={Trail=true},
+ RAINBOW_RIFT={Jump=1.4,Walk=1.15,LineLuck=1.5,MachineAurion=5,Effects={Trail=true},
   Reward={MinCash=1400,IncomeMinutes=3,Bones=4,Luck={Tier=1,Seconds=120}}},
  NULL_HOUR={Gravity=.6,GravityFlicker=true,LineLuck=2,SecretLine=3,Effects={Glitch=true},
   Reward={MinCash=2000,IncomeMinutes=4,Bones=6,Luck={Tier=2,Seconds=180}}},
@@ -66,6 +67,7 @@ local modifierText={BoneBonus='bones from digging',Luck='rare finds',SellValue='
 function D.PerkLines(def)
  local lines={};local p=def.Perks or {}
  local function pct(x)return string.format('%+d%%',math.floor((x-1)*100+.5))end
+ if p.MachineAurion then table.insert(lines,string.format('x%g AURION CHANCE ON DOG-O-MATIC',p.MachineAurion))end
  if p.Gravity then table.insert(lines,(p.Gravity<.5 and 'LOW GRAVITY'or 'LIGHTER GRAVITY')..(p.GravityFlicker and ' · IT GLITCHES'or ''))end
  if p.LineLuck then table.insert(lines,string.format('x%.3g RARE DOGS ON THE TONGUE',p.LineLuck))end
  if p.SecretLine then table.insert(lines,string.format('x%.3g SECRET DOGS',(p.LineLuck or 1)*p.SecretLine))end

@@ -5,10 +5,21 @@ local RS=game:GetService('ReplicatedStorage')
 local package=RS:WaitForChild('WorldEvents')
 local Definitions=require(package.WorldEventDefinitions);local Schedule=require(package.WorldEventSchedule)
 local EventConfig=require(package.WorldEventConfig);local Price=require(RS.PriceFormat);local EconomyConfig=require(RS.DogEconomy.Config)
-local V=require(script.Parent.PreviewRenderer)
+local V=require(script.Parent.PreviewRenderer);local MachineText=require(RS.RewardMachineText)
 local S={}
 local rarityColors={Common=Color3.fromRGB(125,219,48),Uncommon=Color3.fromRGB(38,164,243),Rare=Color3.fromRGB(161,103,242),Secret=Color3.fromRGB(247,73,112)}
 local function hidden(def)return def.Rarity=='Secret'end
+-- Start of the next scheduled cycle of `eventId` from cycle `from` on (about 100 h ahead at most).
+local function nextStart(eventId,from)
+ local period=Schedule.Period()
+ for k=0,400 do
+  local index=from+k
+  if Schedule.Event(index)==eventId then return EventConfig.Epoch+index*period+EventConfig.NormalInterval+EventConfig.WarningDuration end
+ end
+ return nil
+end
+local rainbowColors=ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(255,86,140)),ColorSequenceKeypoint.new(.25,Color3.fromRGB(255,176,52)),
+ ColorSequenceKeypoint.new(.5,Color3.fromRGB(96,214,104)),ColorSequenceKeypoint.new(.75,Color3.fromRGB(66,170,255)),ColorSequenceKeypoint.new(1,Color3.fromRGB(184,104,255))})
 function S.Build(c)
  local U,W,H=c.U,c.W,c.H;local P=U.Colors
  local sc=U.Scroll(c.Parent,'WorldEventsContent',0,0,W,H)
@@ -100,17 +111,48 @@ function S.Build(c)
   end
  end
  y+=6
- -- Aurion.
- local prize=U.Panel(sc,'AurionPrize',8,y,W-24,240,true)
+ -- Aurion: the DOG-O-MATIC's secret prize, its real odds and the Rainbow Rift boost.
+ local odds=MachineText.AurionOdds()
+ local boostDef=odds.EventId and Definitions.ById[odds.EventId]
+ local boosting=phase=='ACTIVE'and current~=nil and boostDef~=nil and current.Id==boostDef.Id
+ local stacked=W<560
+ local artW=stacked and W-40 or math.min(260,(W-24)*.42)
+ local tx=stacked and 14 or artW+20;local tw=stacked and W-52 or W-artW-60;local ty=stacked and 164 or 10
+ local prizeH=stacked and ty+246 or 272
+ local prize=U.Panel(sc,'AurionPrize',8,y,W-24,prizeH,true)
  U.Gradient(prize,Color3.fromRGB(214,240,255),Color3.fromRGB(246,226,255))
- local artW=math.min(260,(W-24)*.42)
- V.Dog(prize,'Aurion',8,8,artW,224)
- U.Text(prize,'AURION',artW+20,10,W-artW-60,40,30,P.text,true)
- U.Text(prize,'The DOG-O-MATIC\'s ultra-rare prize: 1 in 10,000 per spin. Every tenth dig it echoes an extra discovery roll. When it is won, the whole island watches the light split into nine.',artW+20,52,W-artW-60,104,15,P.text)
- local bw=(W-artW-72)/2
- U.Button(prize,'FindMachine','FIND DOG-O-MATIC',artW+20,168,bw,46,function()c.Go('RewardMachine')end,P.blue).Caption.TextSize=15
- U.Button(prize,'GetSpins','GET LUCKY SPINS',artW+28+bw,168,bw,46,function()c.State.CommerceJump='DOG-O-MATIC Spins';c.Show('Shop')end,P.purple).Caption.TextSize=15
- y+=252
+ V.Dog(prize,'Aurion',8,8,artW,stacked and 150 or prizeH-16)
+ U.Text(prize,'AURION',tx,ty,tw,40,30,P.text,true)
+ -- Built from the live odds, so it localizes itself (NoTranslate).
+ local en=string.format("The DOG-O-MATIC's secret prize: %s per spin (1 in %s).",odds.ChanceText,odds.OneIn)
+ local ru=string.format('Секретный приз DOG-O-MATIC: %s за вращение (1 из %s).',odds.ChanceText,(odds.OneIn:gsub(',',' ')))
+ if odds.Multiplier then
+  en..=string.format(' During %s: x%g (1 in %s).',odds.EventName,odds.Multiplier,odds.BoostOneIn)
+  ru..=string.format(' Во время Радужного разлома: x%g (1 из %s).',odds.Multiplier,(tostring(odds.BoostOneIn):gsub(',',' ')))
+ end
+ en..=' Every tenth dig it echoes an extra discovery roll.';ru..=' Каждая десятая раскопка даёт ещё один бросок на находку.'
+ MachineText.Own(U.Text(prize,MachineText.L(en,ru),tx,ty+42,tw,98,15,P.text))
+ if boostDef then
+  local banner=U.Frame(prize,'AurionBoost',tx,ty+144,tw,36,P.blue);U.Round(banner,9);U.Stroke(banner,P.edge,2)
+  local title,clock
+  if boosting then
+   banner.BackgroundColor3=Color3.new(1,1,1);U.New('UIGradient',{Color=rainbowColors},banner)
+   title=U.Text(banner,string.format('AURION HOWLS · x%g CHANCE',odds.Multiplier),10,0,tw-120,36,16,Color3.new(1,1,1),true)
+   clock=U.Text(banner,'',tw-112,0,104,36,15,Color3.new(1,1,1),true)
+   clock:SetAttribute('Deadline',ends);clock:SetAttribute('CountdownStyle','Clock');clock:SetAttribute('CountdownPrefix','')
+  else
+   title=U.Text(banner,'NEXT '..boostDef.DisplayName:upper(),10,0,tw-120,36,15,Color3.new(1,1,1),true)
+   clock=U.Text(banner,'',tw-112,0,104,36,15,Color3.new(1,1,1),true)
+   local at2=nextStart(boostDef.Id,first)
+   if at2 then clock:SetAttribute('Deadline',at2);clock:SetAttribute('CountdownStyle','Clock');clock:SetAttribute('CountdownPrefix','')else clock.Text='—'end
+  end
+  for _,label in ipairs({title,clock})do label.TextStrokeTransparency=0;label.TextStrokeColor3=P.edge;label.TextScaled=true;U.New('UITextSizeConstraint',{MaxTextSize=16,MinTextSize=9},label)end
+  clock.TextXAlignment=Enum.TextXAlignment.Right
+ end
+ local bw=(tw-8)/2
+ U.Button(prize,'FindMachine','FIND DOG-O-MATIC',tx,ty+188,bw,46,function()c.Go('DOG-O-MATIC PLAZA')end,P.blue).Caption.TextSize=15
+ U.Button(prize,'GetSpins','GET LUCKY SPINS',tx+bw+8,ty+188,bw,46,function()c.State.CommerceJump='DOG-O-MATIC Spins';c.Show('Shop')end,boosting and P.red or P.purple).Caption.TextSize=15
+ y+=prizeH+12
  U.Text(sc,'Events run on one schedule for every server: about every '..math.floor(period/60)..' minutes, '..math.floor(EventConfig.EventDuration/60)..' minutes each.',8,y,W-24,40,15,P.muted)
 end
 return S
