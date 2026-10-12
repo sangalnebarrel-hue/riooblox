@@ -13,6 +13,15 @@
 --   local model, rebuilt = Builder.EnsureBuilt(parent, "MiningCorner", 24, function()
 --       return Builder.Build(layout(), anchor, { BuilderId = "MiningCorner" }) -- unparented
 --   end)  -- reuses a child with the same LayoutVersion, otherwise destroys it and builds again
+--   local build = Builder.Begin(specs, anchor, options)  -- the same build, time sliced:
+--   Scheduler.Every(0, "Decor.Build", function(_, deadline)
+--       local done, model = build:Step(deadline)          -- parts until the deadline
+--       return not done                                   -- the model is parented on the last step
+--   end)
+--
+-- Beams name their attachments (Spec.Beam). A name is looked up in the beam's own top-level part
+-- first, so the copies made by Spec.Array / Ring / Arc / MirrorX each link to their own attachments,
+-- then across the whole build (a warning when that name is not unique).
 --
 -- Part defaults: Anchored; CanCollide / CanQuery / CanTouch false unless the spec asks; smooth
 -- surfaces. CastShadow, when the spec leaves it nil: off for Neon / Glass / ForceField, for parts
@@ -85,7 +94,20 @@ function Builder.CastShadow(spec: any): boolean
 	return math.max(size.X, size.Y, size.Z) >= Builder.ShadowMinSize
 end
 
--- context = {Attachments = {[name] = Attachment}, Beams = {{Beam, name0, name1}}}
+-- context = {Attachments = {[name] = {Attachment}}, Beams = {{Beam, name0, name1, partAttachments}}}
+local function newContext(): any
+	return { Attachments = {}, Beams = {} }
+end
+
+local function addAttachment(attachments: any, attachment: Attachment)
+	local list = attachments[attachment.Name]
+	if list then
+		table.insert(list, attachment)
+	else
+		attachments[attachment.Name] = { attachment }
+	end
+end
+
 local function buildChild(spec: any, parent: Instance, context: any): Instance
 	local instance = Instance.new(spec.Class)
 	instance.Name = spec.Name or spec.Class
@@ -96,7 +118,7 @@ local function buildChild(spec: any, parent: Instance, context: any): Instance
 	end
 	decorate(instance, spec)
 	if instance:IsA("Attachment") then
-		context.Attachments[instance.Name] = instance
+		addAttachment(context.Attachments, instance)
 	elseif instance:IsA("Beam") then
 		table.insert(context.Beams, { instance, spec.Attachment0, spec.Attachment1 })
 	end
@@ -107,9 +129,32 @@ local function buildChild(spec: any, parent: Instance, context: any): Instance
 	return instance
 end
 
--- One part (unparented) at anchor * spec.CFrame.
+-- One end of a beam: the attachment `name` in the beam's own part, else in the whole build.
+local function resolve(name: string?, own: any, all: any?, beam: Instance): Attachment?
+	local list = name and (own[name] or (all and all[name]))
+	if not list then
+		return nil
+	end
+	if #list > 1 then
+		warn(string.format("World.Builder: beam %s: %d attachments are named %s, the first one is used", beam.Name, #list, tostring(name)))
+	end
+	return list[1]
+end
+
+local function linkBeam(row: any, own: any, all: any?)
+	local beam: any = row[1]
+	local a0, a1 = resolve(row[2], own, all, beam), resolve(row[3], own, all, beam)
+	if a0 and a1 then
+		beam.Attachment0, beam.Attachment1 = a0, a1
+	else
+		warn("World.Builder: beam " .. beam.Name .. " has a missing attachment (" .. tostring(row[2]) .. ", " .. tostring(row[3]) .. ")")
+	end
+end
+
+-- One part (unparented) at anchor * spec.CFrame. Its beams are linked here, or by the build when
+-- a `context` is given (a beam may reach an attachment of another part).
 function Builder.Part(spec: any, anchor: CFrame?, context: any?): BasePart
-	local ctx = context or { Attachments = {}, Beams = {} }
+	local ctx = newContext()
 	local part: any = Instance.new(spec.Class or "Part")
 	part.Name = spec.Name or part.ClassName
 	if part:IsA("Part") and spec.Shape then
@@ -140,18 +185,26 @@ function Builder.Part(spec: any, anchor: CFrame?, context: any?): BasePart
 	for _, child in ipairs(spec.Children or {}) do
 		buildChild(child, part, ctx)
 	end
+	for _, row in ipairs(ctx.Beams) do
+		if context then
+			table.insert(context.Beams, { row[1], row[2], row[3], ctx.Attachments })
+		else
+			linkBeam(row, ctx.Attachments, nil)
+		end
+	end
+	if context then
+		for _, list in pairs(ctx.Attachments) do
+			for _, attachment in ipairs(list) do
+				addAttachment(context.Attachments, attachment)
+			end
+		end
+	end
 	return part
 end
 
 local function linkBeams(context: any)
 	for _, row in ipairs(context.Beams) do
-		local beam: any = row[1]
-		local a0, a1 = context.Attachments[row[2]], context.Attachments[row[3]]
-		if a0 and a1 then
-			beam.Attachment0, beam.Attachment1 = a0, a1
-		else
-			warn("World.Builder: beam " .. beam.Name .. " has a missing attachment (" .. tostring(row[2]) .. ", " .. tostring(row[3]) .. ")")
-		end
+		linkBeam(row, row[4], context.Attachments)
 	end
 end
 
@@ -191,26 +244,36 @@ export type Options = {
 	Attributes: { [string]: any }?,
 }
 
--- Builds `specs` at anchorCFrame into a Model (WorldPivot = the anchor). Parents it once at the end.
-function Builder.Build(specs: { any }, anchorCFrame: CFrame?, options: Options?): Model
+-- A build in progress (Builder.Begin): Step(deadline) makes parts until os.clock() reaches the
+-- deadline (at least one per step) and finishes the model on the last one.
+local Job = {}
+Job.__index = Job
+
+function Builder.Begin(specs: { any }, anchorCFrame: CFrame?, options: Options?): any
 	local o: any = options or {}
-	local anchor = anchorCFrame or CFrame.identity
 	local model = Instance.new("Model")
 	model.Name = o.Name or o.BuilderId or "Built"
-	local context = { Attachments = {}, Beams = {} }
-	local count = 0
-	for _, spec in ipairs(specs) do
-		local part = Builder.Part(spec, anchor, context)
-		part.Parent = model
-		count += 1
-	end
-	linkBeams(context)
+	return setmetatable({
+		Specs = specs,
+		Anchor = anchorCFrame or CFrame.identity,
+		Options = o,
+		Model = model,
+		Context = newContext(),
+		Index = 0,
+		Done = false,
+	}, Job)
+end
+
+-- Sets the model's pivot, attributes, tags and streaming mode, then parents it once.
+local function finish(job: any)
+	local o, model, anchor = job.Options, job.Model, job.Anchor
+	linkBeams(job.Context)
 	model.WorldPivot = anchor
 	model:SetAttribute("BuilderId", o.BuilderId or model.Name)
 	if o.LayoutVersion ~= nil then
 		model:SetAttribute("LayoutVersion", o.LayoutVersion)
 	end
-	model:SetAttribute("PartCount", count)
+	model:SetAttribute("PartCount", job.Index)
 	if o.FXManaged then
 		model:SetAttribute("FXManaged", true)
 	end
@@ -238,25 +301,68 @@ function Builder.Build(specs: { any }, anchorCFrame: CFrame?, options: Options?)
 			Builder.AddPersistentPlayer(model, o.PersistentPlayer)
 		end
 	end
+end
+
+-- Returns (done, model); the model is complete (and parented) only once done is true.
+function Job.Step(self: any, deadline: number?): (boolean, Model)
+	if self.Done then
+		return true, self.Model
+	end
+	local specs = self.Specs
+	while self.Index < #specs do
+		self.Index += 1
+		local part = Builder.Part(specs[self.Index], self.Anchor, self.Context)
+		part.Parent = self.Model
+		if deadline and self.Index < #specs and os.clock() >= deadline then
+			return false, self.Model
+		end
+	end
+	self.Done = true
+	finish(self)
+	return true, self.Model
+end
+
+-- Stops a build that is no longer wanted and destroys what it made.
+function Job.Cancel(self: any)
+	self.Done = true
+	self.Model:Destroy()
+end
+
+-- Builds `specs` at anchorCFrame into a Model (WorldPivot = the anchor). Parents it once at the end.
+function Builder.Build(specs: { any }, anchorCFrame: CFrame?, options: Options?): Model
+	local _, model = Builder.Begin(specs, anchorCFrame, options):Step()
 	return model
 end
 
--- Idempotent build: a child `name` of `parent` with LayoutVersion == version is reused; any other
--- child of that name is destroyed and buildFn() (which returns an unparented Model) replaces it.
+-- Idempotent build: a child `name` of `parent` with LayoutVersion == version is reused; every other
+-- child of that name (older versions, duplicates) is destroyed and, when none was reused, buildFn()
+-- (which returns an unparented Model) replaces them. The model's LayoutVersion is always `version`.
 -- Returns the model and whether it was (re)built.
 function Builder.EnsureBuilt(parent: Instance, name: string, version: any, buildFn: () -> Model): (Model, boolean)
-	local existing = parent:FindFirstChild(name)
-	if existing and existing:IsA("Model") and existing:GetAttribute("LayoutVersion") == version then
-		return existing, false
+	local reused: any = nil
+	local stale = {}
+	for _, child in ipairs(parent:GetChildren()) do
+		if child.Name == name then
+			if reused == nil and child:IsA("Model") and child:GetAttribute("LayoutVersion") == version then
+				reused = child
+			else
+				table.insert(stale, child)
+			end
+		end
 	end
-	if existing then
-		existing:Destroy()
+	for _, child in ipairs(stale) do
+		child:Destroy()
+	end
+	if reused then
+		return reused, false
 	end
 	local model = buildFn()
 	model.Name = name
-	if model:GetAttribute("LayoutVersion") == nil then
-		model:SetAttribute("LayoutVersion", version)
+	local own = model:GetAttribute("LayoutVersion")
+	if own ~= nil and own ~= version then
+		warn(string.format("World.Builder: EnsureBuilt(%s): the build set LayoutVersion %s, %s is used", name, tostring(own), tostring(version)))
 	end
+	model:SetAttribute("LayoutVersion", version)
 	model.Parent = parent
 	return model, true
 end

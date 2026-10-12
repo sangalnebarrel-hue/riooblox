@@ -242,10 +242,65 @@ end
 -- Mirror image across the anchor's YZ plane (x -> -x). Boxes, balls, cylinders, trusses and
 -- wedges are symmetric along their own X, so M * CF * M is exact; a corner wedge is not, so it is
 -- turned a quarter around Y with its X / Z sizes swapped to keep its peak at the mirrored corner.
+-- Children follow their part: a child CFrame / Position (attachments) is mirrored in the part's
+-- space, and a face (Face, EmissionDirection: signs, surface / spot lights, emitters) that pointed
+-- along the part's X now points the other way (Left <-> Right), so mirrored signs face outwards.
 local QUARTER = CFrame.Angles(0, math.pi / 2, 0)
+local UNQUARTER = QUARTER:Inverse()
 function Spec.MirrorCFrame(cf: CFrame): CFrame
 	local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = cf:GetComponents()
 	return CFrame.new(-x, y, z, r00, -r01, -r02, -r10, r11, r12, -r20, r21, r22)
+end
+
+local NORMALS = {
+	Right = Vector3.new(1, 0, 0), Left = Vector3.new(-1, 0, 0), Top = Vector3.new(0, 1, 0),
+	Bottom = Vector3.new(0, -1, 0), Back = Vector3.new(0, 0, 1), Front = Vector3.new(0, 0, -1),
+}
+local FACE_KEYS = { "Face", "EmissionDirection" }
+
+local function mirrorVector(v: Vector3): Vector3
+	return Vector3.new(-v.X, v.Y, v.Z)
+end
+
+-- A NormalId name (or EnumItem) mirrored, then turned by `turn` (a pure rotation).
+local function mirrorFace(face: any, turn: CFrame): any
+	local name = if typeof(face) == "EnumItem" then face.Name else face
+	local normal = NORMALS[name]
+	if not normal then
+		return face
+	end
+	local mirrored = turn * mirrorVector(normal)
+	for candidate, n in pairs(NORMALS) do
+		if n:Dot(mirrored) > 0.5 then
+			return candidate
+		end
+	end
+	return face
+end
+
+-- Children of a mirrored part. `turn` is the rotation the mirrored parent added on top of the
+-- mirror (a corner wedge's quarter turn, undone here); deeper levels need none.
+local function mirrorChildren(children: { any }, turn: CFrame): { any }
+	local out = {}
+	for _, child in ipairs(children) do
+		local c = copy(child)
+		if typeof(child.CFrame) == "CFrame" then
+			c.CFrame = turn * Spec.MirrorCFrame(child.CFrame)
+		end
+		if typeof(child.Position) == "Vector3" then
+			c.Position = turn * mirrorVector(child.Position)
+		end
+		for _, key in ipairs(FACE_KEYS) do
+			if child[key] ~= nil then
+				c[key] = mirrorFace(child[key], turn)
+			end
+		end
+		if child.Children then
+			c.Children = mirrorChildren(child.Children, CFrame.identity)
+		end
+		table.insert(out, c)
+	end
+	return out
 end
 
 function Spec.MirrorX(specs: any): { any }
@@ -253,12 +308,17 @@ function Spec.MirrorX(specs: any): { any }
 	for _, spec in ipairs(list(specs)) do
 		local s = copy(spec)
 		local cf = Spec.MirrorCFrame(spec.CFrame or CFrame.identity)
+		local turn = CFrame.identity
 		if spec.Class == "CornerWedgePart" then
 			local size = spec.Size or Vector3.new(1, 1, 1)
 			s.Size = Vector3.new(size.Z, size.Y, size.X)
 			cf = cf * QUARTER
+			turn = UNQUARTER
 		end
 		s.CFrame = cf
+		if spec.Children then
+			s.Children = mirrorChildren(spec.Children, turn)
+		end
 		table.insert(out, s)
 	end
 	return out
