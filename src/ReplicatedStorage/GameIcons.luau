@@ -67,6 +67,31 @@ function G.Apply(assets)
  for key in pairs(G.Aliases)do local asset=G.Resolve(key);if asset then assets[key]=asset end end
  return assets
 end
+-- Glyphs: emoji / unicode symbols every Roblox client renders (no upload needed) for rarity tiers,
+-- item classes, actions and places. Rarity glyphs are plain shapes, so a label's TextColor3 gives
+-- them the rarity colour. G.Glyph(name[, group]) never fails: unknown names give G.GlyphFallback.
+G.GlyphFallback='•'
+G.Glyphs={
+ Rarity={Common='●',Uncommon='▲',Rare='◆',Epic='✦',Legendary='★',Mythic='✹',Secret='❖',['Brainrot God']='♛'},
+ Class={Treasure='💰',Artifact='🗿',Special='🌟',Secret='🔮',['World Find']='🌍',Dog='🐶'},
+ Action={Sell='💲',Favourite='⭐',Unfavourite='☆',Lock='🔒',Unlock='🔓',Trade='🔄',Showcase='🏆',Mutate='⚛️',
+  Route='📍',Eye='👀',Hide='🙈',Settings='⚙️',Filter='🔽',Sort='↕',Search='🔍',Close='✕',Back='◀',
+  Check='✓',Plus='+',Info='ℹ️',Warning='⚠️',Gift='🎁',Equip='🎽',Upgrade='⏫',Timer='⏳',Coins='💰',Bones='🦴'},
+ Place={Lab='⚗️',Shop='🛒',Museum='🏛️',Yard='🏡',Mine='⛏️',Events='🎉',Inventory='🎒',Dogs='🐶',Map='🗺️'},
+}
+G.GlyphAliases={Favorite='Favourite',Unfavorite='Unfavourite',Show='Eye',Visible='Eye',Gear='Settings',Mining='Mine',
+ Plot='Yard',Home='Yard',Dogdex='Museum',DogDex='Museum',Mutation='Mutate',Path='Route',Navigate='Route',Exit='Close',Cancel='Close'}
+local glyphOrder={'Action','Place','Rarity','Class'}
+local glyphLower={}
+for _,group in ipairs(glyphOrder)do for name,glyph in pairs(G.Glyphs[group])do local k=string.lower(name);if glyphLower[k]==nil then glyphLower[k]=glyph end end end
+for alias,name in pairs(G.GlyphAliases)do for _,group in ipairs(glyphOrder)do local glyph=G.Glyphs[group][name];if glyph then glyphLower[string.lower(alias)]=glyphLower[string.lower(alias)]or glyph;break end end end
+function G.Glyph(name,group)
+ if type(name)~='string'or name==''then return G.GlyphFallback end
+ local own=group and G.Glyphs[group];if own and own[name]then return own[name]end
+ local canonical=G.GlyphAliases[name]or name
+ for _,g in ipairs(glyphOrder)do local glyph=G.Glyphs[g][canonical];if glyph then return glyph end end
+ return glyphLower[string.lower(name)]or G.GlyphFallback
+end
 local preloadState={}
 local PRELOAD_TIMEOUT=14
 local RETRY_DELAYS={2,8}
