@@ -8,7 +8,8 @@
 -- Action SettingsSave (DogEconomyRequest, cost 0.5 token, Reply='Patch'):
 --   {Key=k, Value=v}               one setting
 --   {Values={[k]=v, ...}}          several at once (all valid or nothing is saved)
---   -> "Settings saved", StatePatch = {Settings = <all settings>}
+--   -> "Settings saved", StatePatch = {Features = {Settings = <all settings>}} (the new value of
+--      snapshot.Features.Settings)
 -- Clients read snapshot.Features.Settings and the player attributes Setting_<Key> (published by
 -- Project, only when a value changes). Server code reads one value with F.Get(p, key) (nil-safe).
 local RS = game:GetService("ReplicatedStorage")
@@ -133,8 +134,9 @@ function F.Action(R, p, action, a, _now, _random)
 	return "Settings saved"
 end
 
+-- The new snapshot.Features.Settings (FeatureRegistry wraps it as StatePatch.Features.Settings).
 function F.Patch(_player, _action, _result, p)
-	return { Settings = F.View(p) }
+	return F.View(p)
 end
 
 -- snapshot.Features.Settings: every setting with its current value.

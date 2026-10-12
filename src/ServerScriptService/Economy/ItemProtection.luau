@@ -2,24 +2,26 @@
 -- transfers ask it instead of each system checking every other system's flags.
 --   Register(name, fn, contexts?)   fn(p, uid, item) -> reason string | nil. Pure and cheap: it runs
 --                                   inside profile transactions, once per find. contexts limits it
---                                   to some of the contexts below ({Bulk=true}); nil = all of them.
+--                                   to some of the contexts below ({Sell=true}); nil = all of them.
 --                                   Registering a name again replaces it. A showcase protector:
 --                                     ItemProtection.Register('Showcase', function(p, uid)
 --                                      return Showcase.Has(p, uid) and 'This find is on your showcase' end)
 --   Reason(p, uid, context?, ignore?) -> the first reason (registration order) or nil
 --   IsProtected(p, uid, context?, ignore?) -> boolean
--- Contexts: 'Sell' (one chosen find at the collector), 'Bulk' (BulkSell, "sell all" quotes),
--- 'Transfer' (trade offers, market listings, lab catalysts: ItemRules.Get(p, uid, true)).
--- context nil asks every protector. ignore = {[name]=true} skips protectors (BulkSell with
--- IncludeFavorites=true skips Favorite). A protector that errors protects the find (fail closed).
--- Built in: 'Favorite' (item.Favorite == true), for bulk sales only.
+-- Contexts: 'Sell' (every collector sale: BulkSell, SellQuote / NPCSell, Snapshot.SellableItems;
+-- one find or many, the protocol does not tell them apart), 'Transfer' (trade offers, market
+-- listings, lab catalysts: ItemRules.Get(p, uid, true, ignore)).
+-- context nil asks every protector. ignore = {[name]=true} skips protectors by name: a sale with
+-- IncludeFavorites=true skips Favorite, and a transfer with an explicit player toggle (Trade 2.0)
+-- passes its own set to ItemRules.Get. A protector that errors protects the find (fail closed).
+-- Built in: 'Favorite' (item.Favorite == true), for sales only.
 local P={List={},ByName={}}
-P.Contexts={Sell=true,Bulk=true,Transfer=true}
+P.Contexts={Sell=true,Transfer=true}
 
 function P.Register(name,fn,contexts)
  assert(type(name)=='string'and #name>0 and type(fn)=='function','ItemProtection.Register(name, fn[, contexts])')
  if contexts~=nil then
-  assert(type(contexts)=='table','contexts must be a set such as {Bulk=true}')
+  assert(type(contexts)=='table','contexts must be a set such as {Sell=true}')
   for context in pairs(contexts)do assert(P.Contexts[context],'Unknown protection context '..tostring(context))end
  end
  local row=P.ByName[name]
@@ -43,7 +45,7 @@ end
 function P.IsProtected(p,uid,context,ignore)return P.Reason(p,uid,context,ignore)~=nil end
 
 P.Register('Favorite',function(_p,_uid,item)
- if item.Favorite==true then return 'Favorite finds are kept out of bulk sales'end
+ if item.Favorite==true then return 'Favorite finds are kept; unfavorite to sell'end
  return nil
-end,{Bulk=true})
+end,{Sell=true})
 return P

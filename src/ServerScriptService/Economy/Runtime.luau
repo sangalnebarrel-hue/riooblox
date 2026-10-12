@@ -111,11 +111,14 @@ local function bumpInventory(player,p)
 end
 -- Player.DogInventory mirrors every dog as a StringValue whose attributes are the dog's scalar fields
 -- (EconomyVisuals, YardPageController, DogKennelService read them; this projection is their only
--- writer). Each entry keeps a shadow of what was written last, so only changed fields are written,
--- and OwnerHistory (append-only, capped at 100 with EarlierTransfers) is JSON-encoded again only when
--- its length, its earlier-transfer count or its newest row changes.
-local dogShadows=setmetatable({},{__mode='k'})
-local DISPLAY,HISTORY={},{}
+-- writer). Each dog keeps a shadow of what was written last (dogShadows[player][dogUid], dropped
+-- with the dog and on PlayerRemoving), so only changed fields are written, and OwnerHistory
+-- (append-only, capped at 100 with EarlierTransfers) is JSON-encoded again only when its length,
+-- its earlier-transfer count or its newest row changes. The shadow holds its entry: a recreated
+-- entry is written in full. Plain keys, not a weak table of Instances (Roblox may collect an
+-- Instance's Lua wrapper while the Instance lives, which would empty a weak entry).
+local dogShadows={}
+local ENTRY,DISPLAY,HISTORY={},{},{}
 local function historyMark(d)
  local h=d.OwnerHistory
  if type(h)~='table'then return'-'end
@@ -125,10 +128,12 @@ local function historyMark(d)
 end
 local function projectDogs(player,p)
  local inv=folder(player,'DogInventory')
+ local shadows=dogShadows[player];if not shadows then shadows={};dogShadows[player]=shadows end
+ for uid in pairs(shadows)do if not p.Dogs[uid]then shadows[uid]=nil end end
  for _,entry in ipairs(inv:GetChildren())do if not p.Dogs[entry.Name] then entry:Destroy()end end
  for uid,d in pairs(p.Dogs)do
   local entry=folder(inv,uid,'StringValue')
-  local shadow=dogShadows[entry];if not shadow then shadow={};dogShadows[entry]=shadow end
+  local shadow=shadows[uid];if not shadow or shadow[ENTRY]~=entry then shadow={[ENTRY]=entry};shadows[uid]=shadow end
   if shadow[DISPLAY]~=d.DisplayName then entry.Value=d.DisplayName;shadow[DISPLAY]=d.DisplayName end
   for key,value in pairs(d)do
    local kind=type(value)
@@ -195,6 +200,8 @@ function Runtime.Project(player,p)
  local offline=type(p.OfflineEarnings)=='table'and p.OfflineEarnings or{}
  local offlineMark=tostring(offline.Revision or 0)..':'..tostring(offline.LastReturnAt or 0)
  if player:GetAttribute('OfflineEarningsRevision')~=offlineMark then player:SetAttribute('OfflineEarningsRevision',offlineMark)end
+ -- Feature world phase first (yard geometry such as mine floors), then the yard reconcilers.
+ Rules.Features.ProjectWorld(player,p,Runtime)
  require(script.Parent.PlotDevelopment).Reconcile(player,p)
  if Runtime.Kennels then Runtime.Kennels.Reconcile(player,p)end
  require(script.Parent.PlotShowcase).Reconcile(player,p)
@@ -363,10 +370,12 @@ end
 function Runtime.Snapshot(player)
  local p=Runtime.Views[player.UserId];Rules.Check(p,'Loading profile')
  local view=Rules.Copy(p);view.Session=nil;view.RecordJobs=nil
- local sellable={}
- if not Runtime.Engine.TradeByUser[player.UserId]then
-  local commerce=require(script.Parent.YardCommerce)
-  for uid in pairs(p.Items or{})do if commerce.CanSell(p,uid)then sellable[uid]=true end end
+ -- What the collector would take in a sale (no IncludeFavorites), and why the other finds stay.
+ local sellable,protected={},{}
+ local commerce=require(script.Parent.YardCommerce);local trading=Runtime.Engine.TradeByUser[player.UserId]
+ for uid in pairs(p.Items or{})do
+  local ok,reason=commerce.CanSell(p,uid)
+  if reason then protected[uid]=reason elseif ok and not trading then sellable[uid]=true end
  end
  for _,b in pairs(view.OwnedBlocks or {})do
   if b.Pool then
@@ -396,13 +405,14 @@ function Runtime.Snapshot(player)
  local tradeView=trade and Rules.Copy(trade)
  if tradeView then tradeView.Details={};for _,offer in pairs(tradeView.Offers)do for uid,dog in pairs(offer.Details or {})do tradeView.Details[uid]=dog end end end
  return {Features=features,Profile=view,OfflineEarnings=Offline.Report(view),Meta=Rules.Meta(os.time()),Week=Rules.Week(os.time()),EventTotal=Runtime.EventTotal or 0,
-  SellableItems=sellable,DogStats=dogStats,IncomeEstimate=income,IncomePerMinute=model.PerMinute,Storage=Rules.Storage(p,os.time()),EventEnds=345600+(Rules.Week(os.time())+1)*604800,Trade=tradeView,Players=online,Preview=memory,Now=os.time(),Dex=dex,GlobalRecords=Runtime.GlobalRecords or {},ServerRecords=Runtime.ServerRecords or {}}
+  SellableItems=sellable,ProtectedItems=protected,DogStats=dogStats,IncomeEstimate=income,IncomePerMinute=model.PerMinute,Storage=Rules.Storage(p,os.time()),EventEnds=345600+(Rules.Week(os.time())+1)*604800,Trade=tradeView,Players=online,Preview=memory,Now=os.time(),Dex=dex,GlobalRecords=Runtime.GlobalRecords or {},ServerRecords=Runtime.ServerRecords or {}}
 end
 -- Actions owned by a feature (FeatureRegistry Actions) take the hook path: Cost, Gate, then the
--- feature's Request or Engine:Action, then the Reply mode. Everything else is the legacy path below.
+-- feature's Request or Engine:Action, then Refresh (unless the feature opts out) and the Reply mode.
+-- Everything else is the legacy path below.
 local function featureReply(player,action,success,result)
  if not success then return false,result end
- Runtime.Refresh(player)
+ if Rules.Features.Refresh(action)then Runtime.Refresh(player)end
  local mode=Rules.Features.Reply(action)
  if type(result)=='table'and mode~='None'then
   local patch=mode=='Patch'and Rules.Features.Patch(player,action,result,Runtime.Views[player.UserId])
@@ -715,7 +725,7 @@ function Runtime.Start()
    if not(called and saveOK)then warn('DOGROTS final profile save deferred:',uid,called and saveResult or saveOK)
    elseif not rejoined()then Runtime.Tx:UnloadProfile(uid)end
   end
-  buckets[p]=nil;marketQueries[p]=nil
+  buckets[p]=nil;marketQueries[p]=nil;dogShadows[p]=nil
   if rejoined()then return end
   Runtime.Loaded[uid]=nil;Runtime.Views[uid]=nil;if Runtime.SeenFinds then Runtime.SeenFinds[uid]=nil end
   Runtime.Draining[uid]=nil;if Runtime.TickWarnings then Runtime.TickWarnings[uid]=nil end

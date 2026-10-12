@@ -45,14 +45,15 @@ end
 function I.Free(p,capacity)return count(p.Items)+count(p.ItemReservations)<(capacity or I.Capacity(p))end
 -- transfer: the find is about to leave the profile for another player or system (trade offer,
 -- market listing, lab catalyst): it must be tradeable, past its record check and not protected
--- (Economy.ItemProtection, 'Transfer' context).
-function I.Get(p,uid,transfer)
+-- (Economy.ItemProtection, 'Transfer' context). ignore = {[protector]=true} skips protectors the
+-- player explicitly overrode (Trade 2.0: I.Get(p, uid, true, offer.Allow)).
+function I.Get(p,uid,transfer,ignore)
  check(type(uid)=='string' and #uid<=100,'Invalid ItemUid')
  local x=p.Items[uid];check(x and x.ItemUid==uid and x.OwnerUserId==p.UserId,'Item not owned')
  if transfer then
   check(x.Tradeable,'This item cannot be transferred')
   check(not (p.RecordJobs[x.ItemId] and p.RecordJobs[x.ItemId].ItemUid==uid),'Record check pending; retry shortly')
-  local protected=Protection.Reason(p,uid,'Transfer');check(not protected,protected)
+  local protected=Protection.Reason(p,uid,'Transfer',ignore);check(not protected,protected)
  end
  return x
 end

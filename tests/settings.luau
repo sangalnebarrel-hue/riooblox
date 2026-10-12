@@ -81,6 +81,11 @@ test("the schema lists the eight settings with valid defaults", function()
 	eq(Config.Read(nil, "Quality"), "Auto")
 	eq(Config.Read({ Quality = "Ultra" }, "Quality"), "Auto")
 	eq(Config.Read({ Quality = "Low" }, "Quality"), "Low")
+	-- Unknown keys (a newer build's setting, a bad attribute name) are nil-safe everywhere.
+	eq(Config.Heal("FutureKey", 1), nil, "Heal of an unknown key")
+	eq(Config.Heal(nil, 1), nil)
+	eq(Config.Valid("FutureKey", 1), false)
+	eq(Config.Read({ FutureKey = 1 }, "FutureKey"), nil)
 end)
 
 test("Normalize creates p.Settings with every default (R.Profile does not)", function()
@@ -218,8 +223,9 @@ test("snapshot, patch and readers carry every setting", function()
 	F.Snapshot(R, p, view, NOW)
 	eq(view.Settings.Quality, "High")
 	eq(view.Settings.Version, nil, "only the settings")
+	-- Patch is the new snapshot.Features.Settings (the registry wraps it in StatePatch.Features).
 	local patch = F.Patch(nil, "SettingsSave", {}, p)
-	same(patch.Settings, view.Settings)
+	same(patch, view.Settings)
 	local defaults = F.View({})
 	for _, row in Config.Keys do
 		eq(defaults[row.Key], row.Default)
@@ -259,6 +265,11 @@ end)
 local World = require("./lib/server_world")
 local W = World.new()
 local player = W.Join(1)
+-- What snapshot.Features.Settings holds right now (the patch must carry the same).
+local function snapshotSettings(world)
+	local _, snapshot = world.Request(player, "Snapshot", {})
+	return snapshot.Features.Settings
+end
 
 test("SettingsSave through Runtime.Request: a small patch, attributes and the saved profile", function()
 	eq(player:GetAttribute("Setting_Quality"), "Auto", "published at join")
@@ -266,7 +277,8 @@ test("SettingsSave through Runtime.Request: a small patch, attributes and the sa
 	truthy(ok, tostring(result))
 	eq(result.Message, "Settings saved")
 	eq(result.StateSnapshot, nil, "no full snapshot")
-	eq(result.StatePatch.Settings.Quality, "Low")
+	same(result.StatePatch, { Features = { Settings = snapshotSettings(W) } }, "StatePatch.Features.Settings only")
+	eq(result.StatePatch.Features.Settings.Quality, "Low")
 	eq(player:GetAttribute("Setting_Quality"), "Low")
 	eq(W.Profile(1).Settings.Quality, "Low")
 	ok, result = W.Request(player, "SettingsSave", { Values = { MusicVolume = 0.1, HideUIHint = false } })

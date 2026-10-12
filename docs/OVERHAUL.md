@@ -17,31 +17,35 @@ Feature-модуль — это `ServerScriptService/Economy/Features/<X>.luau`.
 | `Name`, `Order` | при загрузке | имя для логов; порядок (меньше — раньше, по умолчанию 100) |
 | `Normalize(R,p,now)` | в конце `Rules.Normalize`, в каждой транзакции | создаёт `p.<X>={Version=1,…}`, лечит типы, обрезает по капу |
 | `Validate(R,p)` | в конце `Rules.Validate` | только структура; никогда не отклоняет то, что лечит `Normalize` |
-| `Action(R,p,action,a,now,random)` | из `Rules.Action` | `nil` — не моё действие; иначе `message[, extra]` |
-| `Snapshot(R,p,view,now)` | в `Runtime.Snapshot` (в pcall) | кладёт лёгкие данные в `snapshot.Features.<X>` |
+| `Action(R,p,action,a,now,random)` | из `Rules.Action` | `nil` — не моё действие; иначе `message[, extra]`. Действие из `Actions` получает **только его владелец** и обязан ответить (`nil` — отказ `Unknown action`); необъявленные имена, как раньше, предлагаются всем фичам по `Order` |
+| `Snapshot(R,p,view,now)` | в `Runtime.Snapshot` (в pcall) | кладёт лёгкие данные в `snapshot.Features.<Name>` |
 
 **Хуки запроса** (`Runtime.Request`, remote `DogEconomyRequest`). Они действуют на действия, которые фича перечислила в `Actions`:
 
 | Поле | Что делает |
 |---|---|
-| `Actions={Name=true,…}` | действия фичи. `Registry.Owner(action)` возвращает фичу-владельца или `nil`. Тест `tests/feature_hooks.luau` падает, если два модуля объявили одно имя или имя совпало с устаревшим действием |
-| `Cost(action) -> число` | цена запроса в корзине токенов (по умолчанию 1; корзина на 8 токенов, пополнение 1,5 в секунду, общая для всех remote) |
-| `Gate(player,action,a,Runtime)` | проверки мира **до** транзакции: близость к витрине или пульту, свой участок. Отказ — `Rules.Check(false,'…')` или возврат строки с причиной; `nil`/`true` — пропустить |
+| `Actions={Name=true,…}` | действия фичи. `Registry.Owner(action)` возвращает фичу-владельца или `nil`. Тест `tests/feature_hooks.luau` падает, если два модуля объявили одно имя или имя совпало с устаревшим действием. Имя с зарезервированным префиксом (`Registry.ReservedPrefixes`, сейчас `Mining`) реестр не регистрирует |
+| `Cost(action) -> число` | цена запроса в корзине токенов, от `Registry.MinCost = 0.25` до 8 (по умолчанию 1; корзина на 8 токенов, пополнение 1,5 в секунду, общая для всех remote). Цена вне диапазона (0, NaN, не число) считается за 1, с warn: бесплатный запрос снял бы ограничение частоты с remote, который запускает транзакцию и `Refresh` |
+| `Gate(player,action,a,Runtime)` | проверки мира **до** транзакции: близость к витрине или пульту, свой участок. **Пропускают только `nil` и `true`.** Отказ — `Rules.Check(false,'…')`, возврат строки с причиной или `false[, причина]`: однострочный `return Access.CanUse(player, yard, anchor)` — уже рабочий гейт. Любое другое значение (таблица, число) — тоже отказ, с warn. Отказ без своей причины — `Registry.GateRefusal` = `"You cannot do that here"` (RU в `Localization/ServerCore.luau`). Булев гейт должен возвращать именно булево: `return yard ~= nil and Access.CanUse(…)`, а не `yard and …` (при `yard == nil` это `nil`, то есть «пропустить») |
 | `Request(player,action,a,receiptId,Runtime) -> ok,result` | полностью свой путь (как `LabService.Request`). Без него действие идёт `Engine:Action → Rules.Action → Registry.Action` |
-| `Reply='Snapshot'\|'Patch'\|'None'` (или `{[action]=режим}`) | что получает клиент при успехе: полный `StateSnapshot` (как раньше), `StatePatch` или ничего |
-| `Patch(player,action,result,p) -> таблица` | лёгкий ответ для `Reply='Patch'`; `p` — обновлённый `Runtime.Views`. Если `Patch` упал или его нет — отправляется полный снимок |
-| `Project(player,p,Runtime)` | в конце каждого `Runtime.Project`, у каждой фичи свой pcall. Публикует атрибуты игрока и участка — **только при изменении значения**. Ошибка — warn не чаще раза в 30 с |
+| `Refresh=true\|false` (или `{[action]=bool}`) | вызывать ли `Runtime.Refresh(player)` после успеха (по умолчанию да). `false` — только для действий, которые не меняют сохранённый профиль (каталоги, оценки, шаги в RAM), или если `Request` фичи сам обновляет то, что изменил (например, обоих участников обмена). Без `Refresh` не запускаются и хуки `Project` |
+| `Reply='Snapshot'\|'Patch'\|'None'` (или `{[action]=режим}`) | что получает клиент при успехе: полный `StateSnapshot` (как раньше), `StatePatch` или ничего. `Reply` не зависит от `Refresh` |
+| `Patch(player,action,result,p) -> таблица` | лёгкий ответ для `Reply='Patch'`: **новое значение `snapshot.Features.<Name>`** (то же, что кладёт `Snapshot`). Ответ содержит `StatePatch = {Features = {[<Name>] = patch}}`, поэтому клиент сливает патчи всех фич одинаково: заменяет `snapshot.Features[<Name>]`. `p` — `Runtime.Views` (обновлённый, если не `Refresh=false`). Если `Patch` упал или его нет — отправляется полный снимок |
+| `ProjectWorld(player,p,Runtime)` | мировая фаза `Runtime.Project`: **до** `PlotDevelopment.Reconcile`, `Kennels.Reconcile` и `PlotShowcase.Reconcile`. Для геометрии участка, на которой стоят собаки и предметы (полы глубокой шахты F5 — до посадки собак в будки). Правила те же, что у `Project` |
+| `Project(player,p,Runtime)` | в конце каждого `Runtime.Project`. Публикует атрибуты игрока и участка — **только при изменении значения**. У обоих `Project`-хуков у каждой фичи свой pcall; ошибка — warn не чаще раза в 30 с |
 
 Порядок в `Runtime.Request` для действия фичи:
 
 1. общая проверка: корзина (`Cost`), `Ready`, `clean` (глубина ≤3, ≤30 элементов, строки ≤120), 32-hex `requestId`;
 2. `Gate`;
 3. `Request` фичи или `Engine:Action`;
-4. при успехе — `Runtime.Refresh(player)` (значит, и `Project` всех фич), затем ответ по `Reply`. После отказа ничего не обновляется.
+4. при успехе — `Runtime.Refresh(player)` (значит, и `ProjectWorld`/`Project` всех фич), если фича не объявила `Refresh=false`, затем ответ по `Reply`. После отказа ничего не обновляется.
+
+Порядок `Runtime.Project`: атрибуты игрока и `DogInventory` → `ProjectWorld` всех фич → `PlotDevelopment` → `Kennels` → `PlotShowcase` → `Project` всех фич. Фичи сортируются по `Order` внутри каждой фазы.
 
 Фича без новых полей работает ровно как раньше. Её действие, не перечисленное в `Actions`, проходит устаревшей веткой `engine:Action` и получает полный снимок.
 
-**Правила имён.** Имя действия уникально, с префиксом фичи, не длиннее 40 символов. Префикс `Mining` зарезервирован: такие запросы `Runtime.Request` отдаёт мини-шахте раньше фич. Намеренный перехват устаревшего имени (`DexClaim` у `Dogdex`) записывается в `TAKEOVERS` теста.
+**Правила имён.** Имя действия уникально, с префиксом фичи, не длиннее 40 символов. Префикс `Mining` зарезервирован за мини-шахтой: `Runtime.Request` проверяет владельца-фичу раньше ветки мини-шахты, поэтому фича с действием `Mining…` обошла бы проверку расстояния, RAM-проверку ударов и `RefreshMining`. Чтобы этого не случилось, `Registry.Add` не регистрирует такие имена (warn и строка в `Registry.Collisions` с `Owner='Runtime'`), а `tests/feature_hooks.luau` сверяет `Registry.ReservedPrefixes` с исходником `Runtime.Request`. Намеренный перехват устаревшего имени (`DexClaim` у `Dogdex`) записывается в `TAKEOVERS` теста.
 
 **Уже объявлены:** `Settings` → `SettingsSave`; `UpgradeTree` → `TreeUpgrade`, `Upgrade`; `Dogdex` → `DexClaim`; `Equipment` → `EquipmentOpenCase`, `EquipArtifact`, `UnequipArtifact`, `EquipAccessory`, `UnequipAccessory`, `SalvageEquipment`, `LockEquipment`.
 
@@ -53,18 +57,20 @@ F.Actions = { ShowcaseSet = true }
 F.Reply = "Patch"
 function F.Cost(_action) return 1 end
 function F.Gate(player, _action, a, Runtime)
-	-- мир: игрок стоит у своего постамента
-	if not nearPedestal(player, a.Slot) then return "Stand at your showcase" end
+	-- мир: игрок стоит у своего постамента (false — отказ с этой причиной)
+	return nearPedestal(player, a.Slot) == true, "Stand at your showcase"
 end
 function F.Normalize(R, p, now) ... end
 function F.Validate(R, p) ... end
 function F.Action(R, p, action, a, now, random) ... end
-function F.Patch(_player, _action, _result, p) return { Showcase = view(p) } end
+function F.Snapshot(R, p, view, now) view.Showcase = viewOf(p) end
+-- ответ: StatePatch = {Features = {Showcase = viewOf(p)}}
+function F.Patch(_player, _action, _result, p) return viewOf(p) end
 function F.Project(player, p, Runtime) ... end -- атрибуты участка, только при изменении
 return F
 ```
 
-API реестра для тестов и инструментов: `Registry.Add(feature)` (регистрация; повтор имени действия оставляет первого владельца и пишет строку в `Registry.Collisions`), `Registry.Owner`, `Registry.Cost`, `Registry.Gate`, `Registry.Reply`, `Registry.Patch`, `Registry.Project`, `Registry.Modules`.
+API реестра для тестов и инструментов: `Registry.Add(feature)` (регистрация; повтор имени действия оставляет первого владельца и пишет строку в `Registry.Collisions`), `Registry.Owner`, `Registry.Cost`, `Registry.Gate`, `Registry.Refresh`, `Registry.Reply`, `Registry.Patch`, `Registry.ProjectWorld`, `Registry.Project`, `Registry.Modules`, константы `Registry.MinCost`, `Registry.GateRefusal`, `Registry.ReservedPrefixes`.
 
 ### 2. Общие remote: `ReplicatedStorage/Net/Remotes.luau`
 
@@ -101,10 +107,10 @@ API реестра для тестов и инструментов: `Registry.Ad
 * **Действие** `SettingsSave` (стоит 0,5 токена, `Reply='Patch'`):
   * `{Key=k, Value=v}` — одна настройка;
   * `{Values={[k]=v,…}}` — несколько сразу: сохраняются все или ни одна;
-  * ответ: `"Settings saved"`, `StatePatch={Settings={…все настройки…}}`, полного снимка нет;
+  * ответ: `"Settings saved"`, `StatePatch={Features={Settings={…все настройки…}}}` (новое `snapshot.Features.Settings`), полного снимка нет;
   * отказы: `Choose a setting`, `Unknown setting`, `Invalid value for this setting`, `Too many settings` (RU — `Localization/ServerCore.luau`).
 * **Клиент** читает `snapshot.Features.Settings` и атрибуты `Setting_<Key>`. Атрибуты пишет `Project` фичи, только при изменении. Когда приходит ответ на `SettingsSave`, атрибуты уже обновлены.
-* **Сервер** читает одно значение через `Features.Settings.Get(p, key)` (безопасно к `nil`). Пример для F6: `Settings.Get(p, 'TradeRequests') == 'Off'`. Схема клиента: `SettingsConfig.Read(settings, key)`, `SettingsConfig.Attribute(key)`.
+* **Сервер** читает одно значение через `Features.Settings.Get(p, key)` (безопасно к `nil`). Пример для F6: `Settings.Get(p, 'TradeRequests') == 'Off'`. Схема клиента: `SettingsConfig.Read(settings, key)`, `SettingsConfig.Attribute(key)`, `SettingsConfig.Valid(key, value)`, `SettingsConfig.Heal(key, value)` (для неизвестного ключа — `nil`).
 
 ### 4. Редкость находок: `ReplicatedStorage/ItemRarity.luau`
 
@@ -139,26 +145,26 @@ Secret: `the_cube`, `null`, `unknown_question`, `normal_bone` (класс Secret
 
 | API | Что делает |
 |---|---|
-| `Register(name, fn, contexts?)` | `fn(p, uid, item) -> причина\|nil`. Чистая и дешёвая: выполняется в транзакции для каждой находки. `contexts` — подмножество `{Sell=true, Bulk=true, Transfer=true}`; `nil` — все. Повторная регистрация имени заменяет защиту |
+| `Register(name, fn, contexts?)` | `fn(p, uid, item) -> причина\|nil`. Чистая и дешёвая: выполняется в транзакции для каждой находки. `contexts` — подмножество `{Sell=true, Transfer=true}`; `nil` — все. Повторная регистрация имени заменяет защиту |
 | `Reason(p, uid, context?, ignore?)` | первая причина в порядке регистрации или `nil`. `context=nil` спрашивает все защиты; `ignore={[name]=true}` пропускает защиты по имени |
 | `IsProtected(p, uid, context?, ignore?)` | `true`/`false` |
 
 Контексты:
 
-* `'Sell'` — одна выбранная находка (по умолчанию в `YardCommerce.CanSell`);
-* `'Bulk'` — все продажи коллекционеру (`BulkSell`, `SellQuote`, `NPCSell`);
-* `'Transfer'` — находка уходит из профиля: предложение обмена, лот рынка, катализатор лаборатории (`ItemRules.Get(p, uid, true)`).
+* `'Sell'` — любая продажа коллекционеру: `BulkSell`, `SellQuote`, `NPCSell`, а также `Runtime.Snapshot.SellableItems`/`ProtectedItems` и `YardCommerce.CanSell`. Одна находка или много — протокол их не различает (кнопка «SELL» у одной находки и «SELL ALL» при одной находке шлют один и тот же `BulkSell {Uids={uid}}`), поэтому контекст один;
+* `'Transfer'` — находка уходит из профиля: предложение обмена, лот рынка, катализатор лаборатории (`ItemRules.Get(p, uid, true, ignore?)`).
 
 Защита, которая упала с ошибкой, **защищает** находку (fail closed).
 
-Встроенная защита `Favorite` (`item.Favorite == true`) действует только для `'Bulk'`.
+Встроенная защита `Favorite` (`item.Favorite == true`, причина `"Favorite finds are kept; unfavorite to sell"`) действует только для `'Sell'`.
 
 Где спрашивается:
 
-* `BulkSell {Uids, IncludeFavorites?}`. Защищённые находки пропускаются, ответ содержит `SkippedProtected` (сколько осталось). Избранное продаётся только при `IncludeFavorites == true`; другие защиты флаг не снимает. Если продавать нечего, потому что всё защищено, отказ — с причиной защиты. `ValidBulkArgs` принимает только булев `IncludeFavorites`.
+* `BulkSell {Uids, IncludeFavorites?}`. Защищённые находки пропускаются, ответ содержит `SkippedProtected` (сколько осталось). Избранное продаётся только при `IncludeFavorites == true` — и при одном uid тоже; другие защиты флаг не снимает. Если продавать нечего, потому что всё защищено, отказ — с причиной защиты. `ValidBulkArgs` принимает только булев `IncludeFavorites`.
 * `SellQuote {All | Uids, IncludeFavorites?}` не берёт защищённые находки в оценку (`SkippedProtected`). `NPCSell` проверяет защиту ещё раз в момент продажи.
-* `Runtime.Snapshot.SellableItems` — контекст `'Sell'`: витринные находки исключены, избранное можно продать по одной.
-* `ItemRules.Get(p, uid, true)` отказывает с причиной защиты. Через неё идут обмен (`Engine:Trade` Offer и коммит), рынок (`Market:Create`), катализаторы лаборатории.
+* `YardCommerce.CanSell(p, uid, ignore?) -> true | false[, причина]` — то же решение, что у продажи без `IncludeFavorites` (`ignore={Favorite=true}` — с ним).
+* `Runtime.Snapshot.SellableItems` — то, что продажа заберёт без `IncludeFavorites` (во время обмена — пусто). `Runtime.Snapshot.ProtectedItems = {[uid] = причина}` — почему остальные находки остаются: интерфейс показывает причину и для избранного предлагает `IncludeFavorites` после подтверждения.
+* `ItemRules.Get(p, uid, true, ignore?)` отказывает с причиной защиты. Через неё идут обмен (`Engine:Trade` Offer и коммит), рынок (`Market:Create`), катализаторы лаборатории. `ignore={[защита]=true}` — явное решение игрока снять конкретную защиту (Trade 2.0: `I.Get(p, uid, true, offer.Allow)`); остальные защиты действуют.
 
 Защита витрины (F3) подключается одной строкой:
 
@@ -208,7 +214,7 @@ end)
 
   Работа собаки (`NextWorkAt`, `WorkSequence`, `MasteryXP`, `LastYield`…) и доход ревизию больше не двигают. Открытый инвентарь перестал скачивать полный Snapshot каждые 1,5–3 с. `RefreshSale` двигает ревизию один раз. `UpgradeTreeScreen` теперь слушает `leaderstats.Coins` напрямую: раньше живую цену монет ему приносил каждый тик `InventoryRevision`.
 * **`LabInfo` / `LabPreview`** (только чтение) больше не вызывают `Runtime.Refresh`.
-* **`DogInventory`.** Атрибуты собаки пишутся только при изменении поля: у каждой записи есть тень последних записанных значений. `OwnerHistory` кодируется в JSON заново, только когда меняется длина истории, `EarlierTransfers` или последняя строка (история только дописывается).
+* **`DogInventory`.** Атрибуты собаки пишутся только при изменении поля: у каждой собаки есть тень последних записанных значений. `OwnerHistory` кодируется в JSON заново, только когда меняется длина истории, `EarlierTransfers` или последняя строка (история только дописывается). Тени лежат в обычной таблице `[player][dogUid]`, а не в слабой таблице с ключами-инстансами: Roblox может собрать Lua-обёртку живого инстанса, и тень пропала бы. Тень держит свою запись: пересозданная запись (или новый `Player` после быстрого перезахода) пишется целиком. Тень удаляется вместе с собакой и на `PlayerRemoving`.
 * **Пустой опрос `Menus`.** Раньше полный Snapshot запрашивался раз в 15 с, даже без открытого меню, — только ради плашки «WHILE YOU WERE AWAY». Теперь сервер публикует атрибут `OfflineEarningsRevision` (`<Revision>:<LastReturnAt>` из `p.OfflineEarnings`; меняется при возвращении с офлайн-монетами и при получении). Меню без открытой страницы запрашивает Snapshot только когда метка сдвинулась. Неудачный запрос повторяется.
 * **Повтор входа** (`Runtime.JoinRetry = {Attempts=6, Delay=2.5}`, `Runtime.JoinRetryable(message)`). Раньше повторялась только ошибка «another server». Теперь повторяются и «busy», `DataStore…`, «Storage unavailable», «pending/retry», «expired before commit». Профиль, который не проходит проверку, кикает сразу, как и раньше.
 * **Обмен, срочное исправление** (полный Trade 2.0 — F6):
@@ -219,7 +225,7 @@ end)
 
 ### 8. Известные ограничения
 
-* **Старые кнопки «SELL».** `CollectorScreen`, `InventoryController` и `ServiceMenusController` продают одну находку через `BulkSell` с одним uid. Избранную находку теперь нужно сначала снять с избранного (сервер ответит «Favorite finds are kept out of bulk sales»). Новый инвентарь F2 передаёт `IncludeFavorites=true` после явного подтверждения. Предсказание продажи в старом клиенте на мгновение прячет избранное, пока не придёт следующий Snapshot: ревизия инвентаря сдвигается, и клиент его запрашивает.
-* **`StatePatch` у `SettingsSave`.** Кэш `Modules/Net` обновляется только из `StateSnapshot`. Окно настроек читает `StatePatch.Settings` или атрибуты `Setting_<Key>`.
+* **Старые кнопки «SELL» (осознанное изменение).** `CollectorScreen`, `InventoryController` и `ServiceMenusController` продают одну находку через `BulkSell` с одним uid. До переработки так продавалась и избранная находка; теперь её нужно сначала снять с избранного (сервер ответит «Favorite finds are kept; unfavorite to sell»). Иначе нельзя: «SELL ALL FINDS» при единственной находке шлёт тот же запрос, и избранное ушло бы без подтверждения. `SellableItems` и `ProtectedItems` говорят ровно то же, что сервер. Новый инвентарь F2 передаёт `IncludeFavorites=true` после явного подтверждения. Предсказание продажи в старом клиенте на мгновение прячет избранное, пока не придёт следующий Snapshot: ревизия инвентаря сдвигается, и клиент его запрашивает.
+* **`StatePatch.Features` на клиенте.** Кэш `Modules/Net` пока обновляется только из `StateSnapshot`, а `Menus` применяет только поля продаж. Клиентский фундамент сливает `StatePatch.Features[<Name>]` в `snapshot.Features[<Name>]` кэша. До этого окно настроек читает `StatePatch.Features.Settings` или атрибуты `Setting_<Key>`.
 * **Ловушка валидатора (не новая).** Если `p.Upgrades` целиком потерян (повреждён не по значениям, а целиком), `PlotRules.Validate` отклоняет собак в будках, которые стали закрытыми, и вход падает. Кроме того, `OnboardingRules.Observe` читает `p.Upgrades` до того, как его лечит `UpgradeTree`. Поэтому `save_compat` портит только значения внутри таблицы.
 * **Клиентская часть `Remotes`** проверена на фейковых инстансах. Реальное ожидание `WaitForChild` проверяется в Studio.

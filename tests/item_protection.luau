@@ -1,7 +1,7 @@
 --!nocheck
 --!nolint
 -- Economy.ItemProtection and its users: collector sales (YardCommerce BulkSell / SellQuote / NPCSell,
--- Snapshot.SellableItems) and transfers (ItemRules.Get(p, uid, true): trade offers, market
+-- Snapshot.SellableItems / ProtectedItems, all in the 'Sell' context) and transfers (ItemRules.Get(p, uid, true): trade offers, market
 -- listings, lab catalysts): lune run tests/item_protection.luau
 -- Runs the REAL Runtime / YardCommerce / Engine on tests/lib/server_world (memory store); the yard
 -- visit check is replaced by a stub (no world in Lune).
@@ -35,6 +35,7 @@ local function fails(fn, pattern)
 end
 
 local SHOWCASE = "This find is on your showcase"
+local FAVORITE = "Favorite finds are kept; unfavorite to sell"
 -- A world with player `uid` owning finds: plain ones, a favourite and one "on the showcase".
 local function shop(uid)
 	local W = World.new()
@@ -74,29 +75,29 @@ test("Register, Reason, IsProtected: contexts, ignore, order, replacement, fail 
 	local P, p = M.Protection, W.Profile(1)
 	eq(P.Reason(p, "shown"), SHOWCASE, "every context")
 	eq(P.Reason(p, "shown", "Transfer"), SHOWCASE)
-	eq(P.Reason(p, "plain1", "Bulk"), nil)
-	eq(P.Reason(p, "missing", "Bulk"), nil, "no find, nothing to protect")
+	eq(P.Reason(p, "plain1", "Sell"), nil)
+	eq(P.Reason(p, "missing", "Sell"), nil, "no find, nothing to protect")
 	eq(P.Reason(nil, "shown"), nil)
 	truthy(P.IsProtected(p, "shown", "Sell"))
 	eq(P.IsProtected(p, "shown", "Sell", { Showcase = true }), false, "ignored by name")
-	-- Favorite: bulk sales only.
-	eq(P.Reason(p, "fav", "Bulk"), "Favorite finds are kept out of bulk sales")
-	eq(P.Reason(p, "fav", "Sell"), nil)
+	-- Favorite: sales only.
+	eq(P.Reason(p, "fav", "Sell"), FAVORITE)
 	eq(P.Reason(p, "fav", "Transfer"), nil)
-	eq(P.Reason(p, "fav", "Bulk", { Favorite = true }), nil)
+	eq(P.Reason(p, "fav", "Sell", { Favorite = true }), nil)
+	eq(P.Contexts.Bulk, nil, "one sale context: the protocol cannot tell one find from a bulk sale")
 	-- Context-limited protectors and replacement.
 	P.Register("Lending", function(_, uid)
 		return uid == "plain3" and "Lent to a friend" or nil
 	end, { Transfer = true })
 	eq(P.Reason(p, "plain3", "Transfer"), "Lent to a friend")
-	eq(P.Reason(p, "plain3", "Bulk"), nil)
+	eq(P.Reason(p, "plain3", "Sell"), nil)
 	P.Register("Lending", function()
 		return nil
 	end)
 	eq(P.Reason(p, "plain3", "Transfer"), nil, "re-registering replaces")
 	-- The first reason in registration order wins.
 	M.Showcase.fav = true
-	eq(P.Reason(p, "fav", "Bulk"), "Favorite finds are kept out of bulk sales")
+	eq(P.Reason(p, "fav", "Sell"), FAVORITE)
 	M.Showcase.fav = nil
 	-- A broken protector protects.
 	P.Register("Broken", function()
@@ -143,7 +144,7 @@ test("a bulk sale of protected finds only is refused with the reason", function(
 	eq(result, SHOWCASE)
 	ok, result = W.Request(player, "BulkSell", { Uids = { "fav" } })
 	eq(ok, false)
-	eq(result, "Favorite finds are kept out of bulk sales")
+	eq(result, FAVORITE)
 	truthy(W.Profile(1).Items.fav and W.Profile(1).Items.shown)
 end)
 
@@ -193,12 +194,36 @@ test("SellQuote leaves protected finds out; NPCSell re-checks at the sale", func
 	eq(W.Profile(1).Items.plain2, nil)
 end)
 
-test("Snapshot.SellableItems: protected finds out, favourites sellable one by one", function()
-	local W, player = shop(1)
+test("CanSell and the snapshot match what a sale does", function()
+	local W, player, M = shop(1)
+	local p = W.Profile(1)
+	local can, why = M.Commerce.CanSell(p, "plain1")
+	eq(can, true)
+	eq(why, nil)
+	can, why = M.Commerce.CanSell(p, "fav")
+	eq(can, false)
+	eq(why, FAVORITE)
+	eq(M.Commerce.CanSell(p, "fav", { Favorite = true }), true, "IncludeFavorites")
+	can, why = M.Commerce.CanSell(p, "shown", { Favorite = true })
+	eq(can, false)
+	eq(why, SHOWCASE)
+	can, why = M.Commerce.CanSell(p, "missing")
+	eq(can, false)
+	eq(why, nil, "not owned: no protection reason")
 	local ok, snapshot = W.Request(player, "Snapshot", {})
 	truthy(ok, tostring(snapshot))
-	truthy(snapshot.SellableItems.plain1 and snapshot.SellableItems.fav, "sellable")
+	truthy(snapshot.SellableItems.plain1 and snapshot.SellableItems.plain2, "sellable")
+	eq(snapshot.SellableItems.fav, nil, "a sale without IncludeFavorites keeps it")
 	eq(snapshot.SellableItems.shown, nil)
+	eq(snapshot.ProtectedItems.fav, FAVORITE, "why it stays")
+	eq(snapshot.ProtectedItems.shown, SHOWCASE)
+	eq(snapshot.ProtectedItems.plain1, nil)
+	-- Each one-find SELL button of the old clients sends exactly this, and the server agrees.
+	local sold, result = W.Request(player, "BulkSell", { Uids = { "fav" } })
+	eq(sold, false)
+	eq(result, snapshot.ProtectedItems.fav)
+	sold, result = W.Request(player, "BulkSell", { Uids = { "plain1" } })
+	truthy(sold and snapshot.SellableItems.plain1, tostring(result))
 end)
 
 test("transfers refuse protected finds with the protector's reason", function()
@@ -209,6 +234,11 @@ test("transfers refuse protected finds with the protector's reason", function()
 	end, SHOWCASE)
 	eq(M.I.Get(p, "fav", true).ItemUid, "fav", "favourites can still be offered")
 	eq(M.I.Get(p, "shown", false).ItemUid, "shown", "reading is not a transfer")
+	-- An explicit player override (Trade 2.0 toggles) skips the named protectors only.
+	eq(M.I.Get(p, "shown", true, { Showcase = true }).ItemUid, "shown")
+	fails(function()
+		M.I.Get(p, "shown", true, { Favorite = true })
+	end, SHOWCASE)
 	-- Market listing.
 	fails(function()
 		W.Engine.Market:Create(1, { Mode = "BuyNow", Price = 100, Kind = "Item", Uid = "shown" })

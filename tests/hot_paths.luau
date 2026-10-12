@@ -225,6 +225,30 @@ test("DogInventory writes only what changed and encodes OwnerHistory only when i
 	eq(W.JsonEncodes, encodes + 2)
 end)
 
+test("a recreated DogInventory entry or a rejoined player is written in full", function()
+	local W, player = yard()
+	local inventory = player:FindFirstChild("DogInventory")
+	-- Something else removed an entry: the next projection writes it again, history included.
+	inventory:FindFirstChild("dog2"):Destroy()
+	local encodes = W.JsonEncodes
+	W.Runtime.Refresh(player)
+	local entry = inventory:FindFirstChild("dog2")
+	truthy(entry, "recreated")
+	eq(entry.Value, "Sausagedog")
+	eq(entry:GetAttribute("DogId"), "Sausagedog")
+	eq(entry:GetAttribute("OwnerUserId"), 1)
+	eq(W.JsonEncodes, encodes + 1, "its OwnerHistory only")
+	-- A quick rejoin on this server: a new Player for the same UserId starts with no shadows.
+	local again = W.AddPlayer(1)
+	W.Runtime.Refresh(again)
+	local fresh = again:FindFirstChild("DogInventory")
+	for _, uid in { "dog1", "dog2", "dog3" } do
+		local row = fresh:FindFirstChild(uid)
+		truthy(row and row:GetAttribute("DogId"), uid .. " written for the new player")
+	end
+	eq(W.JsonEncodes, encodes + 4, "every history encoded once for the new player")
+end)
+
 -- (d) ---------------------------------------------------------------------------------------------
 test("OfflineEarningsRevision moves on a claim or a return, not on refreshes", function()
 	local W, player = yard()

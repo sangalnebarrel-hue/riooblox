@@ -5,7 +5,8 @@
 --   Attribute(key)       "Setting_<Key>": the player attribute the server publishes (on change only)
 --   Valid(key, value)    true when `value` may be saved as is for `key`
 --   Heal(key, value)     a valid value for `key`: `value` itself, a clamped and rounded number, or
---                        the default (wrong type, unknown option, NaN)
+--                        the default (wrong type, unknown option, NaN); nil for a key this build
+--                        does not know
 --   Defaults()           {[key]=default} for every key
 --   Read(settings, key)  the saved value or the default (nil-safe: settings may be nil)
 -- Numbers are volumes in 0..1, stored rounded to 0.01. IDs and options are saved data: only add.
@@ -49,7 +50,10 @@ function SettingsConfig.Valid(key: any, value: any): boolean
 end
 
 function SettingsConfig.Heal(key: string, value: any): any
-	local row = SettingsConfig.ByKey[key]
+	local row = type(key) == "string" and SettingsConfig.ByKey[key] or nil
+	if not row then
+		return nil
+	end
 	if row.Type == "Number" then
 		if type(value) ~= "number" or value ~= value then
 			return row.Default

@@ -1,7 +1,8 @@
 --!nocheck
 --!nolint
 -- FeatureRegistry hooks (Actions, Cost, Gate, Request, Reply/Patch, Project) through the REAL
--- Runtime.Request and Runtime.Project, and the action-name collision rules:
+-- Runtime.Request and Runtime.Project (plus Refresh and ProjectWorld), the owner-only routing of
+-- declared actions, and the action-name collision rules:
 --   lune run tests/feature_hooks.luau
 -- Probe features are injected with Registry.Add into a fresh tests/lib/server_world (memory store).
 local fs = require("@lune/fs")
@@ -55,10 +56,13 @@ local function probeWorld()
 	engine = {
 		Name = "HookProbe",
 		Order = 900,
-		Actions = { ProbeSnapshot = true, ProbePatch = true, ProbeNone = true, ProbeGate = true, ProbePricey = true, ProbeBrokenPatch = true },
+		Actions = {
+			ProbeSnapshot = true, ProbePatch = true, ProbeNone = true, ProbeGate = true, ProbePricey = true, ProbeBrokenPatch = true,
+			ProbeFree = true, ProbeTiny = true, ProbeCheap = true,
+		},
 		Reply = { ProbePatch = "Patch", ProbeNone = "None", ProbeBrokenPatch = "Patch" },
 		Cost = function(action)
-			return action == "ProbePricey" and 4 or 1
+			return ({ ProbePricey = 4, ProbeFree = 0, ProbeTiny = 0.1, ProbeCheap = 0.25 })[action] or 1
 		end,
 		Normalize = function(_, p)
 			if type(p.HookProbe) ~= "table" then
@@ -87,7 +91,17 @@ local function probeWorld()
 			if a.Boom then
 				R.Check(false, "Gate exploded")
 			end
-			return nil
+			-- The one-line gate style: `return Access.CanUse(...)`.
+			if a.No then
+				return false
+			end
+			if a.NoWhy then
+				return false, "Too far from the probe"
+			end
+			if a.Odd then
+				return 5
+			end
+			return true
 		end,
 		Patch = function(player, action, result, p)
 			if action == "ProbeBrokenPatch" then
@@ -151,6 +165,7 @@ test("Owner, Cost and Reply read the declared hooks", function()
 	eq(Registry.Cost("ProbeCustom"), 1, "no Cost hook: 1 token")
 	eq(Registry.Cost("Nope"), 1)
 	eq(Registry.Cost("SettingsSave"), 0.5)
+	eq(Registry.Cost("ProbeCheap"), Registry.MinCost, "the floor itself is a valid price")
 	eq(Registry.Reply("ProbePatch"), "Patch")
 	eq(Registry.Reply("ProbeNone"), "None")
 	eq(Registry.Reply("ProbeSnapshot"), "Snapshot", "missing from the Reply table")
@@ -178,7 +193,10 @@ test("Reply='Patch' ships the patch only, Reply='None' ships nothing", function(
 	truthy(ok, tostring(result))
 	eq(result.StateSnapshot, nil)
 	eq(type(result.StatePatch), "table")
-	eq(result.StatePatch.Count, 1)
+	-- The patch sits under the feature's Name, like its snapshot.Features entry.
+	eq(next(result.StatePatch), "Features")
+	eq(next(result.StatePatch, "Features"), nil, "nothing else in the patch")
+	eq(result.StatePatch.Features.HookProbe.Count, 1)
 	local call = log.Patches[#log.Patches]
 	eq(call.Player, player)
 	eq(call.Action, "ProbePatch")
@@ -227,11 +245,45 @@ test("Gate refusals stop the request before the transaction", function()
 	eq(W.Profile(14).HookProbe.Count, count + 1, "an open gate lets the transaction run")
 end)
 
+test("Gate fails closed: false, false with a message and odd verdicts refuse", function()
+	local player = W.Join(17)
+	local actions, count = #log.Actions, W.Profile(17).HookProbe.Count
+	local ok, result = W.Request(player, "ProbeGate", { No = true })
+	eq(ok, false)
+	eq(result, W.Registry.GateRefusal)
+	eq(result, "You cannot do that here")
+	ok, result = W.Request(player, "ProbeGate", { NoWhy = true })
+	eq(ok, false)
+	eq(result, "Too far from the probe")
+	truthy(not warned(W, "HookProbe.Gate"), "false is a normal refusal")
+	ok, result = W.Request(player, "ProbeGate", { Odd = true })
+	eq(ok, false)
+	eq(result, W.Registry.GateRefusal)
+	truthy(warned(W, "HookProbe.Gate"), "an unexpected verdict warns")
+	eq(#log.Actions, actions, "Action never ran")
+	eq(W.Profile(17).HookProbe.Count, count)
+end)
+
 test("Cost spends the shared token bucket", function()
 	local spender = W.Join(2)
 	truthy(W.Request(spender, "ProbePricey", {}))
 	truthy(W.Request(spender, "ProbePricey", {}))
 	local ok, result = W.Request(spender, "ProbePricey", {})
+	eq(ok, false)
+	eq(result, "Please wait a moment")
+end)
+
+test("a price below MinCost counts as 1 token: no feature can switch the rate limit off", function()
+	eq(W.Registry.MinCost, 0.25)
+	eq(W.Registry.Cost("ProbeFree"), 1)
+	eq(W.Registry.Cost("ProbeTiny"), 1)
+	truthy(warned(W, "HookProbe.Cost"), "warned")
+	local spender = W.Join(4)
+	for i = 1, 8 do
+		local ok, result = W.Request(spender, "ProbeFree", {})
+		truthy(ok, "request " .. i .. ": " .. tostring(result))
+	end
+	local ok, result = W.Request(spender, "ProbeFree", {})
 	eq(ok, false)
 	eq(result, "Please wait a moment")
 end)
@@ -303,6 +355,122 @@ test("features without hooks behave as before", function()
 	truthy(tostring(result):find("level", 1, true), tostring(result))
 end)
 
+test("a declared action goes to its owner only; undeclared ones are still offered in Order", function()
+	W.Registry.Add({
+		Name = "HookOwner",
+		Order = 500,
+		Actions = { OwnerAct = true, OwnerSilent = true },
+		Action = function(_, _, action)
+			return action == "OwnerAct" and "owner" or nil
+		end,
+	})
+	-- Runs first and answers loosely (a prefix match).
+	W.Registry.Add({
+		Name = "HookGreedy",
+		Order = 1,
+		Action = function(_, _, action)
+			return action:sub(1, 5) == "Owner" and "greedy" or nil
+		end,
+	})
+	local player = W.Join(18)
+	local ok, result = W.Request(player, "OwnerAct", {})
+	truthy(ok, tostring(result))
+	eq(result.Message, "owner")
+	-- An owner that passes on its own action refuses it; no other feature picks it up.
+	ok, result = W.Request(player, "OwnerSilent", {})
+	eq(ok, false)
+	eq(result, "Unknown action")
+	ok, result = W.Request(player, "OwnerLoose", {})
+	truthy(ok, tostring(result))
+	eq(result.Message, "greedy", "an undeclared name")
+end)
+
+test("reserved names stay with Runtime.Request", function()
+	local collisions = #W.Registry.Collisions
+	W.Registry.Add({ Name = "HookMiner", Actions = { MiningHit = true, MinerTool = true } })
+	eq(W.Registry.Owner("MiningHit"), nil, "the mini-mine keeps MiningHit")
+	eq(W.Registry.Owner("MinerTool").Name, "HookMiner")
+	eq(#W.Registry.Collisions, collisions + 1)
+	local row = W.Registry.Collisions[#W.Registry.Collisions]
+	eq(row.Action, "MiningHit")
+	eq(row.Owner, "Runtime")
+	eq(row.Feature, "HookMiner")
+	truthy(warned(W, "claims the reserved action MiningHit"), "warned")
+end)
+
+test("Refresh=false skips Runtime.Refresh (and every Project hook) after a success", function()
+	W.Registry.Add({
+		Name = "HookQuiet",
+		Order = 903,
+		Actions = { ProbeQuiet = true, ProbeLoud = true },
+		Refresh = { ProbeQuiet = false },
+		Reply = "None",
+		Request = function(_, action)
+			return true, { Message = action }
+		end,
+	})
+	W.Registry.Add({
+		Name = "HookHush",
+		Actions = { ProbeHush = true },
+		Refresh = false,
+		Request = function()
+			return true, { Message = "hush" }
+		end,
+	})
+	local Registry = W.Registry
+	eq(Registry.Refresh("ProbeQuiet"), false)
+	eq(Registry.Refresh("ProbeLoud"), true, "missing from the Refresh table")
+	eq(Registry.Refresh("ProbeHush"), false)
+	eq(Registry.Refresh("ProbePatch"), true, "no Refresh field")
+	eq(Registry.Refresh("Nope"), true)
+	local player = W.Join(19)
+	local projects = #log.Projects
+	local ok, result = W.Request(player, "ProbeQuiet", {})
+	truthy(ok, tostring(result))
+	ok, result = W.Request(player, "ProbeHush", {})
+	truthy(ok, tostring(result))
+	truthy(type(result.StateSnapshot) == "table", "Reply is separate from Refresh: the default snapshot is still sent")
+	eq(#log.Projects, projects, "no Project hook ran")
+	ok, result = W.Request(player, "ProbeLoud", {})
+	truthy(ok, tostring(result))
+	eq(#log.Projects, projects + 1)
+end)
+
+test("ProjectWorld runs before the yard reconcilers, Project after them", function()
+	local order, seen = {}, nil
+	W.Registry.Add({
+		Name = "HookWorld",
+		Order = 904,
+		ProjectWorld = function(...)
+			seen = { ... }
+			table.insert(order, "World")
+		end,
+		Project = function()
+			table.insert(order, "Project")
+		end,
+	})
+	W.Registry.Add({
+		Name = "HookBrokenWorld",
+		Order = 905,
+		ProjectWorld = function()
+			error("world bug")
+		end,
+	})
+	local path = "ServerScriptService/Economy/PlotDevelopment"
+	W.L.Overrides[path] = { Reconcile = function() table.insert(order, "PlotDevelopment") end }
+	W.Runtime.Kennels = { Reconcile = function() table.insert(order, "Kennels") end }
+	local ok, err = pcall(W.Runtime.Refresh, player)
+	W.L.Overrides[path] = nil
+	W.Runtime.Kennels = nil
+	truthy(ok, tostring(err))
+	eq(table.concat(order, ","), "World,PlotDevelopment,Kennels,Project")
+	eq(seen[1], player)
+	eq(seen[2], W.Runtime.Views[1])
+	eq(seen[3], W.Runtime)
+	truthy(warned(W, "HookBrokenWorld.ProjectWorld"), "the broken hook warned")
+	eq(player:GetAttribute("ProbeCount"), W.Profile(1).HookProbe.Count, "the end phase still ran")
+end)
+
 test("Registry.Add keeps the first owner of a claimed action", function()
 	local collisions = #W.Registry.Collisions
 	W.Registry.Add({ Name = "Clash", Actions = { ProbePatch = true } })
@@ -340,8 +508,15 @@ for _, part in {
 end
 -- Legacy names that features took over on purpose (documented in their headers).
 local TAKEOVERS = { DexClaim = "Dogdex" }
--- Prefixes Runtime.Request routes before any feature could see them.
-local RESERVED_PREFIX = { "Mining" }
+-- Prefixes Runtime.Request keeps for its own paths (Registry.Add never registers them).
+local RESERVED_PREFIX = Registry.ReservedPrefixes
+
+test("the reserved prefixes are the ones Runtime.Request routes itself", function()
+	eq(#RESERVED_PREFIX, 1)
+	eq(RESERVED_PREFIX[1], "Mining")
+	local request = body(read("src/ServerScriptService/Economy/Runtime.luau"), "function Runtime.Request(")
+	truthy(request:find("if action:sub(1,6)=='Mining'then", 1, true), "the mini-mine branch")
+end)
 
 test("the legacy scan sees every known legacy action", function()
 	for _, name in {
@@ -398,6 +573,13 @@ test("features answer exactly the actions they declare", function()
 				if not (f.Actions and f.Actions[name]) then
 					local ok, message = pcall(f.Action, R, R.Copy(p), name, {}, now, rng)
 					truthy(ok and message == nil, f.Name .. " answers the legacy action " .. name .. ": " .. tostring(message))
+				end
+			end
+			-- Nor an action another feature declared (those never reach it, see Registry.Action).
+			for action, owner in Registry.Owners do
+				if owner ~= f then
+					local ok, message = pcall(f.Action, R, R.Copy(p), action, {}, now, rng)
+					truthy(ok and message == nil, f.Name .. " answers " .. owner.Name .. "'s action " .. action .. ": " .. tostring(message))
 				end
 			end
 			-- A declared action is really answered (a reply or a refusal), never passed on.

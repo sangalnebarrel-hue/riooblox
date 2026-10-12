@@ -43,14 +43,18 @@ local function owned(p,uid)
  local x=p.Items and p.Items[uid]
  return x~=nil and x.ItemUid==uid and x.OwnerUserId==p.UserId
 end
--- Collector sales ask Economy.ItemProtection in the 'Bulk' context: favourites are kept unless the
+-- Collector sales ask Economy.ItemProtection in the 'Sell' context: favourites are kept unless the
 -- request says IncludeFavorites=true (then the Favorite protector is skipped).
 local function saleRules(a)
- return 'Bulk',(type(a)=='table'and a.IncludeFavorites==true)and{Favorite=true}or nil
+ return 'Sell',(type(a)=='table'and a.IncludeFavorites==true)and{Favorite=true}or nil
 end
--- Owned and not protected in `context` (default 'Sell': one chosen find); ignore = protectors to skip.
-function S.CanSell(p,uid,context,ignore)
- return owned(p,uid)and not Protection.IsProtected(p,uid,context or'Sell',ignore)
+-- -> true when a sale would take the find; false[, reason] when it is not owned or a protector keeps
+-- it (ignore = protectors to skip, {Favorite=true} for IncludeFavorites).
+function S.CanSell(p,uid,ignore)
+ if not owned(p,uid)then return false end
+ local reason=Protection.Reason(p,uid,'Sell',ignore)
+ if reason then return false,reason end
+ return true
 end
 -- Sells the owned, unprotected finds of a.Uids; protected ones stay (SkippedProtected counts them).
 function S.BulkSell(player,a,receipt)
