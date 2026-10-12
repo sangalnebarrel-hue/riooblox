@@ -17,7 +17,7 @@ local connections = {}
 -- Kennel dogs replicate a role and the work timing; every client plays the dig chain and
 -- counts the label down itself (DogAnimations). Attributes are written only on change:
 --   AnimationName "Work" while producing, "Idle" otherwise (WorkState DIGGING/RESTING)
---   Producing     false when storage is full (Rules.Storage) or the work tick has stalled
+--   Producing     false when digging is blocked (Rules.Storage LootFull) or the work tick has stalled
 --   StorageFull   why it is not producing
 --   NextWorkAt, WorkSequence, WorkCycle (seconds between finds), AssignedAt (model created)
 local STALL_GRACE=3
@@ -29,7 +29,9 @@ local function economy(name)
     return require(script.Parent.Economy:FindFirstChild(name))
 end
 -- Rules.Storage (economy) -> {LootUnits,LootCapacity,ItemCount,ItemCapacity,LootFull,ItemFull}.
--- Until it exists (or if it fails) storage never blocks the animation.
+-- Until it exists (or if it fails) storage never blocks the animation. Ordinary loot is paid
+-- straight into the wallet, so only LootFull stops a dog's work; a full finds storage
+-- (ItemFull) only stops new discoveries while the dog keeps digging and earning coins.
 local function storageFull(profile,now)
     if type(profile)~="table" then return false end
     local ok,result=pcall(function()
@@ -37,7 +39,7 @@ local function storageFull(profile,now)
         return type(Rules.Storage)=="function" and Rules.Storage(profile,now) or nil
     end)
     if not ok or type(result)~="table" then return false end
-    return result.ItemFull==true or result.LootFull==true
+    return result.LootFull==true
 end
 local function workCycles(profile)
     local cycles={}
