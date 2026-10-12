@@ -17,6 +17,7 @@ export type Props = {
 	Size: UDim2?,
 	Position: UDim2?,
 	AnchorPoint: Vector2?,
+	LayoutOrder: number?,
 	ZIndex: number?,
 	-- Minimum cell width and the row height, or a function (viewWidth, viewHeight) -> Vector2
 	-- (return a wide, short size to switch to list rows on small screens).
@@ -88,6 +89,7 @@ function VirtualGrid.new(parent: Instance?, props: Props): any
 		Size = p.Size or UDim2.fromScale(1, 1),
 		Position = p.Position or UDim2.new(),
 		AnchorPoint = p.AnchorPoint or Vector2.zero,
+		LayoutOrder = p.LayoutOrder or 0,
 		ZIndex = z,
 	})
 	self.Instance = root

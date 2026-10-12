@@ -369,39 +369,46 @@ function Base.Face(button: GuiButton, color: Color3?, radius: any?, zIndex: numb
 	return face
 end
 
--- A rounded pill-shaped toggle button that grows with its text (tabs, chips, menu options).
+-- A rounded pill-shaped toggle button as wide as its text (tabs, chips, menu options). The width
+-- follows the caption's TextBounds, so it also fits text AutoTranslate replaces later (no
+-- AutomaticSize: a scale-sized face inside an auto-sized button can grow in a loop).
 -- Returns the button, its caption and its face (colour it, it holds the UIStroke).
-function Base.PillButton(parent: Instance, props: { Name: string?, Text: string?, TextSize: number?, MinWidth: number?, Height: number?, LayoutOrder: number?, ZIndex: number?, NoTranslate: boolean? }): (any, any, any)
+function Base.PillButton(parent: Instance, props: { Name: string?, Text: string?, TextSize: number?, MinWidth: number?, HeightScale: number?, HeightOffset: number?, LayoutOrder: number?, ZIndex: number?, NoTranslate: boolean? }): (any, any, any)
 	local zIndex = props.ZIndex or 1
+	local pad = 14
+	local minWidth = props.MinWidth or 56
+	local heightScale, heightOffset = props.HeightScale or 1, props.HeightOffset or 0
 	local button = Base.New("TextButton", {
 		Name = props.Name or "Pill",
 		Text = "",
 		AutoButtonColor = false,
-		AutomaticSize = Enum.AutomaticSize.X,
-		Size = props.Height and UDim2.fromOffset(0, props.Height) or UDim2.fromScale(0, 1),
+		Size = UDim2.new(0, minWidth, heightScale, heightOffset),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		LayoutOrder = props.LayoutOrder or 0,
 		ZIndex = zIndex,
 	})
-	local pad = 14
-	Base.Padding(button, pad, 0, pad, 0)
-	-- The face spans the padding too (children are laid out inside the padding).
 	local face = Base.Face(button, Theme.White, "pill", zIndex)
-	face.Position = UDim2.fromOffset(-pad, 0)
-	face.Size = UDim2.new(1, pad * 2, 1, 0)
 	Base.Stroke(face, Theme.Colors.edge, 2, 0.55)
-	Base.New("UISizeConstraint", { MinSize = Vector2.new(props.MinWidth or 56, 0) }, button)
 	local label = Base.Text(button, {
 		Name = "Caption",
 		Text = props.Text,
 		TextSize = props.TextSize or 16,
-		AutoX = true,
-		Size = UDim2.fromScale(0, 1),
 		AlignX = "Center",
+		Position = UDim2.fromOffset(pad, 0),
+		Size = UDim2.new(1, -pad * 2, 1, 0),
 		ZIndex = zIndex + 1,
 		NoTranslate = props.NoTranslate,
 	})
+	label.TextTruncate = Enum.TextTruncate.None
+	local function fit()
+		local width = math.max(minWidth, math.ceil(label.TextBounds.X) + pad * 2)
+		if button.Size.X.Offset ~= width then
+			button.Size = UDim2.new(0, width, heightScale, heightOffset)
+		end
+	end
+	label:GetPropertyChangedSignal("TextBounds"):Connect(fit)
+	fit()
 	button.Parent = parent
 	return button, label, face
 end

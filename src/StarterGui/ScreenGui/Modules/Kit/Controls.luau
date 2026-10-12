@@ -59,11 +59,11 @@ function Tabs.SetTabs(self: any, tabs: { any }, selected: string?)
 			Text = tab.Text,
 			TextSize = self.Props.TextSize or 17,
 			MinWidth = 84,
+			HeightOffset = -4,
 			LayoutOrder = i,
 			ZIndex = self.Z + 1,
 			NoTranslate = tab.NoTranslate,
 		})
-		button.Size = UDim2.new(0, 0, 1, -4)
 		local badge = Base.Text(button, {
 			Name = "Badge",
 			Text = tab.Badge and tostring(tab.Badge) or "",
@@ -72,7 +72,7 @@ function Tabs.SetTabs(self: any, tabs: { any }, selected: string?)
 			AlignX = "Center",
 			Color = Theme.White,
 			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.new(1, 12, 0, 4),
+			Position = UDim2.new(1, -6, 0, 4),
 			Size = UDim2.fromOffset(22, 18),
 			ZIndex = self.Z + 3,
 			NoTranslate = true,
@@ -341,17 +341,17 @@ function Chips.SetOptions(self: any, options: { any })
 			Text = option.Text,
 			TextSize = self.Props.TextSize or 15,
 			MinWidth = 48,
+			HeightOffset = -4,
 			LayoutOrder = i,
 			ZIndex = self.Z + 1,
 			NoTranslate = option.NoTranslate,
 		})
-		button.Size = UDim2.new(0, 0, 1, -4)
 		local dot = Base.New("Frame", {
 			Name = "Dot",
 			BackgroundColor3 = option.Color or Theme.Accent,
 			BorderSizePixel = 0,
 			AnchorPoint = Vector2.new(0, 0.5),
-			Position = UDim2.new(0, -8, 0.5, 0),
+			Position = UDim2.new(0, 5, 0.5, 0),
 			Size = UDim2.fromOffset(8, 8),
 			Visible = option.Color ~= nil,
 			ZIndex = self.Z + 2,

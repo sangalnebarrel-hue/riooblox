@@ -39,6 +39,9 @@ function Cards.new(frame: GuiObject, kind: string?, opts: any?): any
 		AutoButtonColor = false,
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
+		-- Centred anchor: the hover / press UIScale grows the card around its middle.
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromScale(1, 1),
 		ZIndex = z,
 	}, frame)
