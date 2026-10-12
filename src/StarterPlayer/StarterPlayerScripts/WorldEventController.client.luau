@@ -1,4 +1,4 @@
-local RS=game:GetService('ReplicatedStorage');local Players=game:GetService('Players');local Run=game:GetService('RunService');local UIS=game:GetService('UserInputService');local PromptService=game:GetService('ProximityPromptService')
+local RS=game:GetService('ReplicatedStorage');local Players=game:GetService('Players');local Run=game:GetService('RunService');local PromptService=game:GetService('ProximityPromptService')
 local package=RS:WaitForChild('WorldEvents');local Config=require(package.WorldEventConfig);local Definitions=require(package.WorldEventDefinitions)
 local Lighting=require(package.WorldEventLighting);local Audio=require(package.WorldEventAudio);local FX=require(package.WorldEventFX)
 local player=Players.LocalPlayer
@@ -29,9 +29,9 @@ local function layoutNotice()
 end
 gui:GetPropertyChangedSignal('AbsoluteSize'):Connect(layoutNotice);gui:GetAttributeChangedSignal('HUDInnerLeft'):Connect(layoutNotice);gui:GetAttributeChangedSignal('HUDInnerRight'):Connect(layoutNotice);layoutNotice()
 local current,activeDef,endingAt,endingLength;local noticeUntil=0;local enteredAt=0;local lastRevision=-1;local lastTick=-1;local generation
--- Phones and tablets start on Medium (Low hid most of every event); the PAWPAD setting
--- still cycles High / Medium / Low and now shows the level actually in use.
-if player:GetAttribute('WorldEventFX')==nil then player:SetAttribute('WorldEventFX',(UIS.TouchEnabled and not UIS.KeyboardEnabled)and 'Medium'or 'High')end
+-- The tier lives in Perf.Quality (phones start on Medium, the saved setting, PAWPAD's High /
+-- Medium / Low cycle, the FPS watchdog); it keeps WorldEventFX equal to the level in use.
+require(RS:WaitForChild('Perf'):WaitForChild('Quality')).Start()
 local function quality()return Config.FX[player:GetAttribute('WorldEventFX')or 'High']or Config.FX.Medium end
 local function notify(text,sub,color,duration)
  if gui:GetAttribute('OpenMenu')~=nil then return end
