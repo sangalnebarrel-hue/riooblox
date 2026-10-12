@@ -268,7 +268,7 @@ end
 | `ServerScriptService/Economy/Features/Equipment.luau` | данные, действия, снимок, Robux-каталог |
 | `ServerScriptService/Economy/EquipmentWorld.luau`, `ServerScriptService/EquipmentAvatar.server.luau` | аксессуары на персонаже, вывески и витрина магазина |
 | `ServerScriptService/Economy/ShopInteriorAccess.luau`, `World.luau` | терминал UPGRADES → экран `Equipment` |
-| `ServerScriptService/Economy/PurchaseService.luau` | +8 строк: каталоги фич (`feature.Catalogs(register)`) |
+| `ServerScriptService/Economy/PurchaseService.luau` | +9 строк: каталоги фич (`feature.Catalogs(register)`) |
 | `StarterGui/ScreenGui/Modules/Equipment/*` | `EquipmentScreen`, `ArtifactPanel`, `CaseOpening`, `Shared` |
 | `StarterGui/ScreenGui/Modules/GUIIntegration.luau` | маршрут `Equipment` (2 строки) |
 | `ReplicatedStorage/Localization/Equipment.luau` | русские тексты вывесок и сообщений сервера |
