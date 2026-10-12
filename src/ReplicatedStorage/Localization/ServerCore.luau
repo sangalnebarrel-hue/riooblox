@@ -12,6 +12,9 @@ return {
 		["Invalid settings version"] = "Неверная версия настроек",
 		-- Economy.ItemProtection (bulk sales, trades, market listings, lab catalysts).
 		["Favorite finds are kept out of bulk sales"] = "Избранные находки не продаются оптом",
+		-- Engine:Trade safety.
+		["Trade is committing"] = "Обмен уже выполняется",
+		["Offer changed; review it again"] = "Предложение изменилось, проверь его ещё раз",
 	},
 	Patterns = {
 		{ "^This find is protected %((.+)%)$", "Эта находка защищена (%1)" },

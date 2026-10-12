@@ -305,50 +305,65 @@ function E:Trade(id,action,a)
    R.Check(not dog.PaidRandom or (PaidPolicy.Allowed(t.Users[1])and PaidPolicy.Allowed(t.Users[2])),'Paid-item trading is unavailable for a participant')
    prints[uid]=fingerprint(dog);details[uid]=R.Copy(dog);local def=D[dog.DogId];estimated+=def and(def.LinePrice or def.BasePrice or 0)or 0
   end
+  -- The policy lookups above can yield: a commit that started meanwhile keeps its reviewed offers.
+  R.Check(self.Trades[t.Id]==t and t.Expires>self.Now(),"Trade expired")
+  R.Check(not t.Committing,"Trade is committing")
   t.Offers[tostring(id)]={Dogs=R.Copy(a.Dogs),Cash=a.Cash,Prints=prints,Details=details,Items=R.Copy(a.Items or {}),ItemPrints=itemPrints,Estimated=estimated}
   t.Version+=1;t.Ready={};t.Confirmed={};t.ConfirmAfter=nil;t.UpdatedAt=self.Now();return {Message="Offer updated. Both sides must lock again."}
  elseif action=="Ready" then
   R.Check(a.Version==t.Version,"Offer changed; review it again")
   R.Check(t.Offers[tostring(t.Users[1])] and t.Offers[tostring(t.Users[2])],"Both players must submit an offer")
+  -- Locking again at the same version changes nothing (it never restarts the safety review).
+  if t.Ready[tostring(id)] then return {Message="Offer locked. Any change unlocks both sides."} end
   R.Check(self.Now()-(t.UpdatedAt or 0)>=2,"Review the newest offer for a moment before locking")
   t.Ready[tostring(id)]=true
-  if t.Ready[tostring(t.Users[1])] and t.Ready[tostring(t.Users[2])] then t.ConfirmAfter=self.Now()+(t.ConfirmDelay or 8) end
+  if t.Ready[tostring(t.Users[1])] and t.Ready[tostring(t.Users[2])] and not t.ConfirmAfter then t.ConfirmAfter=self.Now()+(t.ConfirmDelay or 8) end
   return {Message="Offer locked. Any change unlocks both sides."}
  elseif action=="Confirm" then
   R.Check(a.Version==t.Version and t.ConfirmAfter and self.Now()>=t.ConfirmAfter,"Safety review is still running; final confirm unlocks after 8 seconds")
   t.Confirmed[tostring(id)]=true
   if not (t.Confirmed[tostring(t.Users[1])] and t.Confirmed[tostring(t.Users[2])]) then return {Message="Waiting for final confirmation"} end
-  local hasPaid=false;for _,offer in pairs(t.Offers)do for _,asset in pairs(offer.Details)do if asset.PaidRandom then hasPaid=true end end end
-  R.Check(not hasPaid or (PaidPolicy.Allowed(t.Users[1])and PaidPolicy.Allowed(t.Users[2])),'Paid-item trading is unavailable for a participant')
+  -- The commit moves exactly the offers both players reviewed at this version: they are copied and
+  -- the trade is marked Committing BEFORE the paid-item policy lookup, which can yield (a parallel
+  -- Offer is refused meanwhile). Committing is cleared on every exit.
+  local version,offers=t.Version,R.Copy(t.Offers)
   t.Committing=true
-  local left,right=t.Users[1],t.Users[2];local now=self.Now()
-  local ok,result=self.Tx:Run({pk(left),pk(right)},function(v)
-   local p,q=v[pk(left)],v[pk(right)];self:Authorize(p,left);self:Authorize(q,right)
-   local a,b=t.Offers[tostring(left)],t.Offers[tostring(right)]
-   R.Check(R.Count(p.Dogs)-#a.Dogs+#b.Dogs+R.Count(p.Reservations)<=R.Capacity(p),"First player's storage is full")
-   R.Check(R.Count(q.Dogs)-#b.Dogs+#a.Dogs+R.Count(q.Reservations)<=R.Capacity(q),"Second player's storage is full")
-   for _,side in ipairs({{p,a},{q,b}}) do for _,uid in ipairs(side[2].Dogs) do
-    R.Check(fingerprint(R.Dog(side[1],uid,true))==side[2].Prints[uid],"A dog changed; create a fresh offer")
-   end end
-   I.Normalize(p);I.Normalize(q)
-   R.Check(I.Count(p.Items)-#(a.Items or {})+#(b.Items or {})+I.Count(p.ItemReservations)<=I.Capacity(p),"First player's item storage is full")
-   R.Check(I.Count(q.Items)-#(b.Items or {})+#(a.Items or {})+I.Count(q.ItemReservations)<=I.Capacity(q),"Second player's item storage is full")
-   for _,side in ipairs({{p,a},{q,b}})do for _,uid in ipairs(side[2].Items or {})do local x=I.Get(side[1],uid,true)
-    R.Check(table.concat({x.ItemUid,x.ItemId,tostring(x.WeightKg),x.Mutation},"|")==side[2].ItemPrints[uid],"Item changed; review offer")
-   end end
-   R.Pay(p,a.Cash);R.Pay(q,b.Cash);R.Credit(p,b.Cash,false);R.Credit(q,a.Cash,false)
-   local outgoingA,outgoingB={},{}
-   for _,uid in ipairs(a.Dogs) do outgoingA[uid]=p.Dogs[uid];p.Dogs[uid]=nil end
-   for _,uid in ipairs(b.Dogs) do outgoingB[uid]=q.Dogs[uid];q.Dogs[uid]=nil end
-   for uid,d in pairs(outgoingA) do R.Check(not q.Dogs[uid],"Duplicate DogUid");R.Transfer(d,q,now,"Trade") end
-   for uid,d in pairs(outgoingB) do R.Check(not p.Dogs[uid],"Duplicate DogUid");R.Transfer(d,p,now,"Trade") end
-   local itemsA,itemsB={},{}
-   for _,uid in ipairs(a.Items or {})do itemsA[uid]=p.Items[uid];p.Items[uid]=nil end
-   for _,uid in ipairs(b.Items or {})do itemsB[uid]=q.Items[uid];q.Items[uid]=nil end
-   for _,x in pairs(itemsA)do I.Transfer(q,x)end;for _,x in pairs(itemsB)do I.Transfer(p,x)end
-   p.Stats.CompletedTrades+=1;q.Stats.CompletedTrades+=1;R.Validate(p);R.Validate(q);return {Message="Trade completed"}
-  end,'trade-'..t.Id)
-  t.Committing=false;self:CancelTrade(id)
+  local done,ok,result=pcall(function()
+   local hasPaid=false;for _,offer in pairs(offers)do for _,asset in pairs(offer.Details)do if asset.PaidRandom then hasPaid=true end end end
+   R.Check(not hasPaid or (PaidPolicy.Allowed(t.Users[1])and PaidPolicy.Allowed(t.Users[2])),'Paid-item trading is unavailable for a participant')
+   R.Check(self.Trades[t.Id]==t and t.Expires>self.Now(),"Trade expired")
+   R.Check(t.Version==version,"Offer changed; review it again")
+   local left,right=t.Users[1],t.Users[2];local now=self.Now()
+   return self.Tx:Run({pk(left),pk(right)},function(v)
+    local p,q=v[pk(left)],v[pk(right)];self:Authorize(p,left);self:Authorize(q,right)
+    local a,b=offers[tostring(left)],offers[tostring(right)]
+    R.Check(R.Count(p.Dogs)-#a.Dogs+#b.Dogs+R.Count(p.Reservations)<=R.Capacity(p),"First player's storage is full")
+    R.Check(R.Count(q.Dogs)-#b.Dogs+#a.Dogs+R.Count(q.Reservations)<=R.Capacity(q),"Second player's storage is full")
+    for _,side in ipairs({{p,a},{q,b}}) do for _,uid in ipairs(side[2].Dogs) do
+     R.Check(fingerprint(R.Dog(side[1],uid,true))==side[2].Prints[uid],"A dog changed; create a fresh offer")
+    end end
+    I.Normalize(p);I.Normalize(q)
+    R.Check(I.Count(p.Items)-#(a.Items or {})+#(b.Items or {})+I.Count(p.ItemReservations)<=I.Capacity(p),"First player's item storage is full")
+    R.Check(I.Count(q.Items)-#(b.Items or {})+#(a.Items or {})+I.Count(q.ItemReservations)<=I.Capacity(q),"Second player's item storage is full")
+    for _,side in ipairs({{p,a},{q,b}})do for _,uid in ipairs(side[2].Items or {})do local x=I.Get(side[1],uid,true)
+     R.Check(table.concat({x.ItemUid,x.ItemId,tostring(x.WeightKg),x.Mutation},"|")==side[2].ItemPrints[uid],"Item changed; review offer")
+    end end
+    R.Pay(p,a.Cash);R.Pay(q,b.Cash);R.Credit(p,b.Cash,false);R.Credit(q,a.Cash,false)
+    local outgoingA,outgoingB={},{}
+    for _,uid in ipairs(a.Dogs) do outgoingA[uid]=p.Dogs[uid];p.Dogs[uid]=nil end
+    for _,uid in ipairs(b.Dogs) do outgoingB[uid]=q.Dogs[uid];q.Dogs[uid]=nil end
+    for uid,d in pairs(outgoingA) do R.Check(not q.Dogs[uid],"Duplicate DogUid");R.Transfer(d,q,now,"Trade") end
+    for uid,d in pairs(outgoingB) do R.Check(not p.Dogs[uid],"Duplicate DogUid");R.Transfer(d,p,now,"Trade") end
+    local itemsA,itemsB={},{}
+    for _,uid in ipairs(a.Items or {})do itemsA[uid]=p.Items[uid];p.Items[uid]=nil end
+    for _,uid in ipairs(b.Items or {})do itemsB[uid]=q.Items[uid];q.Items[uid]=nil end
+    for _,x in pairs(itemsA)do I.Transfer(q,x)end;for _,x in pairs(itemsB)do I.Transfer(p,x)end
+    p.Stats.CompletedTrades+=1;q.Stats.CompletedTrades+=1;R.Validate(p);R.Validate(q);return {Message="Trade completed"}
+   end,'trade-'..t.Id)
+  end)
+  t.Committing=false
+  if not done then error(ok,0)end
+  self:CancelTrade(id)
   R.Check(ok,result);return result
  end
  error("Invalid trade action",0)

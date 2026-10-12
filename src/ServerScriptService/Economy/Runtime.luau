@@ -418,6 +418,8 @@ function Runtime.Request(player,action,a,requestId)
  local validArgs=action=='BulkSell'and require(script.Parent.YardCommerce).ValidBulkArgs(a)or action~='BulkSell'and clean(a or {},0)
  if type(action)~='string'or #action>40 or not validArgs then return false,'Invalid request'end
  a=a or {}
+ -- The two participants of the trade a Trade step touches (refreshed after it, not the server).
+ local tradeUsers=nil
  local ok,success,result=pcall(function()
   if action=='Snapshot' then return true,Runtime.Snapshot(player)end
   if action=='MarketQuery' then
@@ -487,7 +489,9 @@ function Runtime.Request(player,action,a,requestId)
    if target then Replicated.DogEconomyOpen:FireClient(target,'Trade','Trade invitation from '..player.DisplayName)end
    return true,invitation
   elseif action=='TradeCancel' then engine:CancelTrade(id);return true,{Message='Trade cancelled'}
-  elseif action=='Trade' then return true,engine:Trade(id,a.Action,a)
+  elseif action=='Trade' then
+   local trade=engine.Trades[engine.TradeByUser[id]];tradeUsers=trade and table.clone(trade.Users)
+   return true,engine:Trade(id,a.Action,a)
   else return engine:Action(id,action,a,receiptId)end
  end)
  if not ok then return false,tostring(success)end
@@ -504,7 +508,12 @@ function Runtime.Request(player,action,a,requestId)
    -- Rejected sales do not need any world/profile projection.
   elseif action=='LabInfo'or action=='LabPreview'then
    -- Read-only lab requests change no profile state.
-  elseif action=='Trade'or action=='BuyListing'or action=='CancelListing'or action=='Bid'then Runtime.RefreshAll()
+  elseif action=='Trade'then
+   -- A trade step can only change its two participants (a commit moves both profiles).
+   for _,uid in ipairs(tradeUsers or{player.UserId})do
+    local participant=Players:GetPlayerByUserId(uid);if participant then Runtime.Refresh(participant)end
+   end
+  elseif action=='BuyListing'or action=='CancelListing'or action=='Bid'then Runtime.RefreshAll()
   else Runtime.Refresh(player)end
   if success and action~='LabInfo'and action~='LabPreview'then
    if miningAction then
