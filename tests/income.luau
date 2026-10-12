@@ -11,6 +11,11 @@ local O = L.Require("ServerScriptService.Economy.OfflineEarnings")
 local Value = L.Require("ReplicatedStorage.ItemValuation")
 local Lifetime = L.Require("ServerScriptService.Economy.LifetimeStats")
 
+-- Real bonus sources (upgrade tree, artifacts, ...) are set aside so each case below measures only
+-- its own dummy source; they are restored at the end.
+local installedSources = table.clone(B.Sources)
+table.clear(B.Sources)
+
 local passed, failed = 0, 0
 local function test(name, fn)
 	local ok, err = pcall(fn)
@@ -309,7 +314,7 @@ local function onlyChanged(diff, allowed, key)
 end
 
 test("pipeline: baseline is untouched without sources", function()
-	eq(#B.Sources, 0, "no sources installed in src")
+	eq(#B.Sources, 0, "sources set aside")
 	local p = team({ "Breadog" })
 	local s = snapshotOf(p)
 	eq(s.IncomeMult, 1)
@@ -442,5 +447,6 @@ test("pipeline: item value is fixed at mint (no equip-then-sell)", function()
 	truthy(Value.Price(x) >= plain * 3 - 1, "stored multiplier counts")
 end)
 
+for _, source in ipairs(installedSources) do table.insert(B.Sources, source) end
 print(string.format("income: %d passed, %d failed", passed, failed))
 if failed > 0 then error("income tests failed") end
