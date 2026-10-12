@@ -92,6 +92,7 @@
   "ServerScriptService/Economy/Features/Passes (ModuleScript)",
   "StarterGui/ScreenGui/Modules/Kit (ModuleScript)",
   "StarterGui/ScreenGui/Modules/LuckyReel (ModuleScript)",
+  "StarterGui/ScreenGui/Modules/Net (ModuleScript)",
   "StarterPlayer/StarterPlayerScripts/MiningClient/Anim (ModuleScript)",
   "StarterPlayer/StarterPlayerScripts/MiningClient/Debug (ModuleScript)",
   "StarterPlayer/StarterPlayerScripts/MiningClient/FX (ModuleScript)",
