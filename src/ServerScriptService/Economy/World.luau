@@ -32,7 +32,7 @@ function World.Start()
   target:GetPropertyChangedSignal('CFrame'):Connect(function()anchor.CFrame=target.CFrame*offset end)
   local prompt=Instance.new('ProximityPrompt');prompt.ActionText='OPEN';prompt.ObjectText=row[1];prompt.MaxActivationDistance=14;prompt.RequiresLineOfSight=false;prompt.Parent=anchor
   if row[5]then
-   prompt.Name='ShopTerminalPrompt';prompt.ActionText='OPEN '..row[1];prompt.ObjectText='SERVICE TERMINAL';prompt.MaxActivationDistance=ShopAccess.Distance;prompt.RequiresLineOfSight=true
+   prompt.Name='ShopTerminalPrompt';prompt.ActionText='OPEN '..(ShopAccess.Labels[row[1]]or row[1]);prompt.ObjectText='SERVICE TERMINAL';prompt.MaxActivationDistance=ShopAccess.Distance;prompt.RequiresLineOfSight=true
    prompt:SetAttribute('ShopInteriorPrompt',true)
    prompt.Triggered:Connect(function(player)World.TryOpenShop(player,row[5])end)
   else

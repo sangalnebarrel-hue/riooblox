@@ -11,7 +11,7 @@ Routing.Locations={
  {Key='MutationLab',Name='Mutation lab',Detail='Variants, ascension and research'},
  {Key='GlobalDigSite',Name='Global event',Detail='COMING SOON',Sealed=true},
  {Key='RewardMachine',Name='DOG-O-MATIC PLAZA',Detail='DOG-O-MATIC rewards and odds'},
- {Key='Shops',Name='Paw market',Detail='Upgrades, cosmetics and supplies'},
+ {Key='Shops',Name='Paw market',Detail='Equipment, cosmetics and supplies'},
  {Key='DogPark',Name='Leaderboard Plaza',Detail='All-time records and the social court'},
  {Key='PortalRuins',Name='Digging layers',Detail='Discover the underground layers'},
  {Key='TheVoid',Name='The Void',Detail='SEALED / FUTURE AREA',Sealed=true},
