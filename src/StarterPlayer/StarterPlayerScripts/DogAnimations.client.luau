@@ -18,11 +18,12 @@ local CLIENT_STALL = 12 -- a deadline this far in the past means the server stop
 local NEAR = 30 -- always animate dogs this close to the camera, even behind it
 local LABEL_DISTANCE = 80 -- kennel labels render within 55 studs (BillboardGui.MaxDistance)
 local KENNEL_KEYS = {AnimationName = true, Producing = true, NextWorkAt = true, WorkSequence = true,
-    WorkCycle = true, AssignedAt = true, StorageFull = true}
+    WorkCycle = true, AssignedAt = true, StorageFull = true, FindsFull = true}
 
 -- Kennel status text --------------------------------------------------------------------------
 local texts = {
     DIGGING = {"DIGGING"}, FIND_IN = {"DIGGING · FIND IN %ds"}, RESTING = {"RESTING"}, STORAGE_FULL = {"STORAGE FULL"},
+    FINDS_FULL = {"DIGGING · FINDS FULL"},
 }
 do
     local folder = ReplicatedStorage:WaitForChild("Localization", 10)
@@ -70,7 +71,10 @@ local function updateLabel(entry, now)
         if not label or not label:IsA("TextLabel") then return end
     end
     local info, value, color = entry.Info, nil, nil
-    if info.Working then
+    if info.Working and info.FindsFull == true then
+        -- A full item bag never stops the dig (coins keep coming); it only finds no items.
+        value, color = text("FINDS_FULL"), STATUS_COLORS.Full
+    elseif info.Working then
         local left = if type(info.NextWorkAt) == "number" then math.ceil(info.NextWorkAt - now) else 0
         value = if left >= 1 and left < 3600 then text("FIND_IN", left) else text("DIGGING")
         color = STATUS_COLORS.Digging

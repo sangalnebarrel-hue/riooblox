@@ -7,6 +7,8 @@ local Kennel = {
 	FIND_IN = { "DIGGING · FIND IN %ds", "КОПАЕТ · НАХОДКА ЧЕРЕЗ %d с" },
 	RESTING = { "RESTING", "ОТДЫХАЕТ" },
 	STORAGE_FULL = { "STORAGE FULL", "ХРАНИЛИЩЕ ЗАПОЛНЕНО" },
+	-- A full item bag: the dog keeps digging and earning, it only finds no items.
+	FINDS_FULL = { "DIGGING · FINDS FULL", "КОПАЕТ · НАХОДКИ: НЕТ МЕСТА" },
 }
 
 return {
@@ -15,6 +17,7 @@ return {
 		["DIGGING"] = "КОПАЕТ",
 		["RESTING"] = "ОТДЫХАЕТ",
 		["STORAGE FULL"] = "ХРАНИЛИЩЕ ЗАПОЛНЕНО",
+		["DIGGING · FINDS FULL"] = "КОПАЕТ · НАХОДКИ: НЕТ МЕСТА",
 	},
 	Patterns = {
 		{ "^DIGGING · FIND IN (%d+)s$", "КОПАЕТ · НАХОДКА ЧЕРЕЗ %1 с" },

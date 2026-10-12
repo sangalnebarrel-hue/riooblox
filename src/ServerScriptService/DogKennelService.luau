@@ -17,8 +17,10 @@ local connections = {}
 -- Kennel dogs replicate a role and the work timing; every client plays the dig chain and
 -- counts the label down itself (DogAnimations). Attributes are written only on change:
 --   AnimationName "Work" while producing, "Idle" otherwise (WorkState DIGGING/RESTING)
---   Producing     false when storage is full (Rules.Storage) or the work tick has stalled
+--   Producing     false when loot storage is full (Rules.Storage LootFull) or the work tick has stalled
 --   StorageFull   why it is not producing
+--   FindsFull     the item bag is full (Rules.Storage ItemFull): the dog keeps digging and earning
+--                 coins (R.Dig pays loot into the wallet), it only finds no items
 --   NextWorkAt, WorkSequence, WorkCycle (seconds between finds), AssignedAt (model created)
 local STALL_GRACE=3
 local advancedAt=setmetatable({},{__mode="k"})
@@ -29,15 +31,16 @@ local function economy(name)
     return require(script.Parent.Economy:FindFirstChild(name))
 end
 -- Rules.Storage (economy) -> {LootUnits,LootCapacity,ItemCount,ItemCapacity,LootFull,ItemFull}.
+-- Returns lootFull (the dog cannot produce), itemFull (it digs and earns, but finds no items).
 -- Until it exists (or if it fails) storage never blocks the animation.
-local function storageFull(profile,now)
-    if type(profile)~="table" then return false end
+local function storageState(profile,now)
+    if type(profile)~="table" then return false,false end
     local ok,result=pcall(function()
         local Rules=economy("Rules")
         return type(Rules.Storage)=="function" and Rules.Storage(profile,now) or nil
     end)
-    if not ok or type(result)~="table" then return false end
-    return result.ItemFull==true or result.LootFull==true
+    if not ok or type(result)~="table" then return false,false end
+    return result.LootFull==true,result.ItemFull==true
 end
 local function workCycles(profile)
     local cycles={}
@@ -54,7 +57,7 @@ local function workCycles(profile)
     end)
     return cycles
 end
-local function applyWorkState(model,now,full)
+local function applyWorkState(model,now,full,findsFull)
     local deadline=model:GetAttribute("NextWorkAt")
     -- A deadline that has not moved for a few seconds after it passed means the economy tick
     -- is not running for this player (session lock, failed transaction): show it resting.
@@ -62,6 +65,7 @@ local function applyWorkState(model,now,full)
     local producing=not stalled and not full
     put(model,"Producing",producing)
     put(model,"StorageFull",full==true)
+    put(model,"FindsFull",findsFull==true)
     put(model,"WorkState",producing and "DIGGING" or "RESTING")
     local role=producing and "Work" or "Idle"
     if model:GetAttribute("AnimationName")~=role then
@@ -171,7 +175,7 @@ function Service.Reconcile(player,profile)
         end
     end
     local now=os.time()
-    local full=storageFull(profile,now)
+    local full,findsFull=storageState(profile,now)
     local cycles=workCycles(profile)
     for uid,d in pairs(profile.Dogs) do if d.AssignedSlot~="" then
         local slot=yard:FindFirstChild(d.AssignedSlot);local entry=player.DogInventory:FindFirstChild(uid)
@@ -190,7 +194,7 @@ function Service.Reconcile(player,profile)
                 if cycles[uid] then put(model,"WorkCycle",cycles[uid]) end
                 put(model,"Variant",d.Variant);put(model,"Mastery",d.Mastery)
                 put(model,"EquippedCosmetic",profile.EquippedCosmetic)
-                applyWorkState(model,now,full)
+                applyWorkState(model,now,full,findsFull)
                 if fresh then model.Parent=residents end
                 slot:SetAttribute("AssignedDogUid",uid);slot:SetAttribute("AssignedOwnerUserId",player.UserId);slot:SetAttribute("AssignedDogName",d.DisplayName)
             end
@@ -216,14 +220,15 @@ end
 -- Every Config.TickSeconds (Runtime, before the economy tick). Reconcile only runs on a
 -- refresh, so storage and stalls are re-checked here; nothing is written unless it changed.
 function Service.UpdateWorkVisuals()
- local now=os.time();local fullByOwner={}
+ local now=os.time();local stateByOwner={}
  for _,model in ipairs(residents:GetChildren())do
   local owner=model:GetAttribute("OwnerUserId")
-  local full=owner~=nil and fullByOwner[owner]
-  if owner~=nil and full==nil then
-   full=storageFull(Runtime.Views[owner],now);fullByOwner[owner]=full
+  local state=owner~=nil and stateByOwner[owner] or nil
+  if owner~=nil and state==nil then
+   local full,findsFull=storageState(Runtime.Views[owner],now)
+   state={full,findsFull};stateByOwner[owner]=state
   end
-  applyWorkState(model,now,full==true)
+  applyWorkState(model,now,state~=nil and state[1],state~=nil and state[2])
  end
 end
 function Service.Start()
