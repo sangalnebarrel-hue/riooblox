@@ -238,6 +238,18 @@ local function wallet(c,parent,info)
  U.Text(panel,'Free every 5 hours after use. Stores one free DOG TOKEN; bought tokens never expire.',14,narrow and 190 or c.Mobile and 162 or 139,W-52,narrow and 44 or c.Mobile and 40 or 27,16,P.text)
  return height+19,total,free,paid
 end
+-- An info poll that landed inside the 7 s reset says CanSpin=false (ReasonCode Cooldown). That
+-- refusal ends with the reset: the button is ready again at NextSpinAt without waiting for the
+-- next poll, and the screen redraws itself at that moment (polls and redraws are ~5 s apart).
+local function canSpin(info,cooling)
+ return info.CanSpin~=false or(info.ReasonCode=='Cooldown'and not cooling)
+end
+local function redrawAfterReset(c,info)
+ local s=c.State;local at=tonumber(info.NextSpinAt)or 0
+ if s.ResetRedrawAt==at then return end
+ s.ResetRedrawAt=at
+ task.delay(math.max(0,at-c.Now())+.05,function()if s.ResetRedrawAt==at then c.Draw()end end)
+end
 local function prizeRarity(row)
  local def=row.Kind=='Dog'and Definitions[row.Id]
  return row.Rarity or(def and def.Rarity)or({Cash='Coins',Bones='Bones',Boost='Boost'})[row.Kind]or row.Kind or'Reward'
@@ -401,7 +413,8 @@ function S.WorldRewardMachine(c)
  local free=tonumber(info.FreeTickets)or math.min(1,tonumber(info.Tickets)or 0);local total=free+usablePaid(info)
  local serverNow=workspace:GetServerTimeNow()
  local spinning=(s.WorldSpinUntil or 0)>serverNow;local cooling=(tonumber(info.NextSpinAt)or 0)>c.Now()
- local ready=total>0 and info.CanSpin~=false and info.InRange~=false and not cooling and not spinning and not s.RewardBusy
+ local allowed=canSpin(info,cooling);if cooling then redrawAfterReset(c,info)end
+ local ready=total>0 and allowed and info.InRange~=false and not cooling and not spinning and not s.RewardBusy
  U.Text(panel,U.Fmt(total)..' DOG TOKEN',12,wide and 9 or 24,wide and 190 or 131,28,wide and 23 or 18,P.text,true)
  U.Text(panel,'FREE · '..free..' / 1',wide and 12 or 145,wide and 36 or 26,wide and 190 or W-195,23,wide and 15 or 13,P.purple,true)
  local at=tonumber(info.NextFreeTicketAt or info.NextTicketAt)or 0
@@ -412,7 +425,7 @@ function S.WorldRewardMachine(c)
  local noticeShown=renderNotices(c,info,spinning)
  local status=U.Text(panel,(not noticeShown and not spinning and s.RewardMessage)or statusText,12,wide and 63 or 52,wide and 190 or W-24,wide and 23 or 20,13,P.muted)
  if not spinning and free==0 and at>0 and(noticeShown or not s.RewardMessage)then status:SetAttribute('Deadline',at);status:SetAttribute('CountdownStyle','Clock');status:SetAttribute('CountdownPrefix','Free in ')end
- local label=spinning and'ACTIVATING…'or s.RewardBusy and'PLEASE WAIT…'or info.InRange==false and'VISIT DOG-O-MATIC'or total==0 and'NO DOG TOKEN'or cooling and'RESETTING…'or info.CanSpin==false and'UNAVAILABLE'or'ACTIVATE · 1 TOKEN'
+ local label=spinning and'ACTIVATING…'or s.RewardBusy and'PLEASE WAIT…'or info.InRange==false and'VISIT DOG-O-MATIC'or total==0 and'NO DOG TOKEN'or cooling and'RESETTING…'or not allowed and'UNAVAILABLE'or'ACTIVATE · 1 TOKEN'
  local spinX,spinY,spinW,spinH=wide and 214 or 12,wide and 18 or 80,wide and math.min(260,W-452)or W-170,wide and 58 or 40
  local spin=U.Button(panel,'Spin',label,spinX,spinY,spinW,spinH,ready and function()
   s.SpinRequest=s.SpinRequest or Http:GenerateGUID(false):gsub('-','')
@@ -463,8 +476,9 @@ function S.RewardMachine(c)
  local sc=U.Scroll(c.Parent,'MachineRewards',0,0,W,H)
  local y,total=wallet(c,sc,info)
  local cooling=(tonumber(info.NextSpinAt)or 0)>c.Now()
- local ready=total>0 and info.CanSpin~=false and info.InRange~=false and not cooling and not s.RewardBusy
- local label=s.RewardBusy and'ACTIVATING…'or info.InRange==false and'VISIT DOG-O-MATIC'or total==0 and'WAITING FOR A DOG TOKEN'or cooling and'MACHINE RESETTING…'or info.CanSpin==false and'ACTIVATION UNAVAILABLE'or'ACTIVATE · 1 TOKEN'
+ local allowed=canSpin(info,cooling);if cooling then redrawAfterReset(c,info)end
+ local ready=total>0 and allowed and info.InRange~=false and not cooling and not s.RewardBusy
+ local label=s.RewardBusy and'ACTIVATING…'or info.InRange==false and'VISIT DOG-O-MATIC'or total==0 and'WAITING FOR A DOG TOKEN'or cooling and'MACHINE RESETTING…'or not allowed and'ACTIVATION UNAVAILABLE'or'ACTIVATE · 1 TOKEN'
  U.Button(sc,'Spin',label,8,y,W-24,55,ready and function()
   s.SpinRequest=s.SpinRequest or Http:GenerateGUID(false):gsub('-','')
   local startedAt=beginWorldPrediction(c,s.SpinRequest)
@@ -476,7 +490,7 @@ function S.RewardMachine(c)
  end or nil,ready and P.green or P.purple);y+=66
  U.Button(sc,'TicketShop',info.FreeOnly==false and'DOG TOKENS · LUCKY SPINS'or'FREE DOG TOKEN INFO',8,y,W-24,42,function()c.Show('TicketShop')end,P.gold);y+=49
  if info.InRange==false then U.Button(sc,'FindRewardMachine','FIND DOG-O-MATIC',8,y,W-24,42,function()require(script.Parent.GUIIntegration).Navigate('DOG-O-MATIC PLAZA')end,P.blue);y+=51 end
- local message=s.RewardMessage or info.CanSpin==false and info.UnavailableReason
+ local message=s.RewardMessage or not allowed and info.UnavailableReason
  if message and message~=''then U.Text(sc,tostring(message),12,y,W-32,48,17,not s.RewardMessage and(total==0 or cooling)and P.muted or P.red);y+=54 end
  if info.ActiveBoost then
   local strip=U.Frame(sc,'BoostStrip',8,y,W-24,40,P.purple);U.Round(strip,10);rainbow(strip)
