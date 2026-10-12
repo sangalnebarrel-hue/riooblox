@@ -29,8 +29,12 @@ Quality.Preference()            --> "Auto" | "High" | "Medium" | "Low"
 Quality.Reduced()               --> true, если включено уменьшение движения
 Quality.Budget("Lights")        --> бюджет для текущего уровня
 Quality.Budget("Lights", "Low") --> бюджет для заданного уровня
-Quality.Changed:Connect(function(tier, reduced) end)
+Quality.Changed:Connect(function(tier, reduced) end)            -- сменился уровень или «движение»
+Quality.PreferenceChanged:Connect(function(preference, tier) end) -- явный выбор игрока (не сторож FPS)
 Quality.SetPreference("Low")    -- выбор на сессию
+Quality.Claim("Highlights", owner, 3) --> сколько выдано (0…3)
+Quality.Release(owner)          -- снять все заявки владельца (или Release(owner, "Highlights"))
+Quality.Claimed("Lights"); Quality.Available("Lights"[, tier])
 Quality.State()                 -- отладка: все входы и итог
 ```
 
@@ -41,11 +45,13 @@ Quality.State()                 -- отладка: все входы и итог
 3. иначе `Auto`:
    * `UserGameSettings().SavedQualityLevel`: 1–3 → Low, 4–6 → Medium, 7–10 и «Автоматически» → High;
    * сенсорный экран без клавиатуры — не выше Medium (телефоны начинают с Medium);
-   * сторож FPS: первые 15 с не считаются; если средний FPS за блок 10 с ниже 40, уровень снижается на ступень (не больше двух ступеней); через 60 с стабильных 55+ FPS — повышается обратно. Если после повышения в течение 60 с снова пришлось снижать, время возврата удваивается (до 600 с). Когда окно игры не в фокусе, сторож стоит на паузе.
+   * сторож FPS: первые 15 с не считаются; если средний FPS за блок 10 с ниже 40, уровень снижается на ступень (не больше двух ступеней); через 60 с стабильных 55+ FPS — повышается обратно. Если после повышения в течение 60 с снова пришлось снижать, время возврата удваивается (до 600 с). Пока окно игры не в фокусе (Roblox тогда сам режет FPS), замеры не считаются; один замер длиннее 5 с (клиент стоял) отбрасывается.
 
 Явный выбор (High/Medium/Low) сторож и устройство не меняют. Окно настроек (F2) вызывает `SettingsSave` на сервере; сервер возвращает значение атрибутом `Setting_Quality`.
 
-**Уменьшение движения** = настройка доступности Roblox (`GuiService.ReducedMotionEnabled`) **или** выбор в игре: `Setting_ReducedMotion` либо переключатель PAWPAD «Motion» (атрибут `ReducedMotion`). Если включено в Roblox, игра его не выключает.
+**Ступень сторожа — не выбор игрока.** Она меняет `Tier()`, `WorldEventFX` и вызывает `Changed`, но не `PreferenceChanged`. `WorldEventController` перезапускает идущий ивент только по `PreferenceChanged` (PAWPAD, окно настроек) и только если уровень правда другой; ступень сторожа во время ивента его не трогает (иначе заставка и все эффекты пересобирались бы каждые 10–60 с, как раз когда FPS и так низкий). Следующий ивент начинается уже на новом уровне.
+
+**Уменьшение движения** = настройка доступности Roblox (`GuiService.ReducedMotionEnabled`) **или** сохранённая настройка `Setting_ReducedMotion`. Переключатель PAWPAD «Motion» (атрибут `ReducedMotion`) — явный выбор на эту сессию: он главнее обоих, в том числе может выключить уменьшение, включённое в Roblox. Новое значение `Setting_ReducedMotion` (окно настроек) снова отменяет переключатель. Сохранённое `false` само по себе настройку Roblox не выключает, поэтому значение по умолчанию с сервера доступность не ломает. Окно настроек может показать «включено в Roblox» по `Quality.State().SystemReduced`.
 
 **Совместимость.** Старые скрипты (около 12 штук) читают атрибуты напрямую. `Quality` сам пишет атрибуты игрока, только когда значение меняется:
 
@@ -75,6 +81,8 @@ Quality.State()                 -- отладка: все входы и итог
 | `LodNear` / `LodFar` | 160 / 320 | 120 / 240 | 85 / 160 | дистанции LOD по умолчанию |
 | `FeatureMs` | 0,3 | 0,3 | 0,2 | Lua-время одной фичи за кадр |
 
+**Общие бюджеты — заявки.** `Lights`, `Particles`, `Highlights`, `Viewports` (и любой другой ключ) тратят несколько систем сразу. Система, которая сама включает свет, эмиттеры, Highlight или ViewportFrame (всё `FXManaged`, витрина, лаборатория, превью), сначала делает `Quality.Claim(key, owner, n)` и включает не больше выданного. Новая заявка того же владельца заменяет прежнюю; выдаётся не больше остатка после других владельцев. `WorldDetailQuality` заявок не делает и тратит `Quality.Available("Lights")` / `Available("Particles")` — остаток бюджета. Когда уровень падает, заявки не урезаются сами: владелец подписан на `Quality.Changed`, заявляет заново и гасит то, что не выдали. Уходя, владелец вызывает `Quality.Release(owner)` (через Maid). `LabLights` / `LabEmitters` — внутренние лимиты лаборатории; её свет всё равно заявляется из общего `Lights`.
+
 ### Perf.Scheduler — один Heartbeat
 
 ```lua
@@ -92,6 +100,7 @@ Scheduler.Stats() -- {Jobs, Frames, ByName = {[name] = {Calls, Errors, AvgMs, Ma
 * **Нарезка времени.** На вызов — 1 мс (`deadline`). Длинный проход возвращает `true` и продолжается в следующем кадре. Время сверх бюджета становится «долгом», который переносится: задача пропускает кадры, пока долг не погашен, поэтому в среднем она укладывается в ~1 мс на кадр. Все задачи вместе получают 4 мс на кадр; задачи, которым не хватило времени, идут первыми в следующем кадре (по кругу, никто не голодает).
 * **Профайлер.** Каждый вызов обёрнут в `debug.profilebegin("Perf:" .. name)`: в MicroProfiler видно, кто сколько стоит.
 * **Ошибки.** Вызов в `pcall`; ошибка считается и пишется в `warn` один раз на задачу; расписание задачи не ломается.
+* **Задача не должна уступать** (`task.wait`, `WaitForChild`, `InvokeServer`, `PreloadAsync`): то, что ждёт, запускайте через `task.spawn`. Вызовы идут в переиспользуемой сопрограмме-исполнителе (без нового потока на вызов). Если задача всё же уступила, стоит только она: `warn` один раз, повторно она не запускается, пока тот вызов не вернётся, остальные задачи идут дальше. Ошибка после ожидания тоже считается.
 * Heartbeat подключён, только пока есть задачи. `Scheduler.new({Clock = ...})` создаёт отдельный планировщик без Heartbeat (для тестов).
 
 Новым фичам свои `RenderStepped`/`Heartbeat`/`Stepped` запрещены: это проверяет `tests/perf_lint.luau`. `WorldDetailQuality` и `PlotSkinMotion` уже переведены на планировщик.
@@ -105,16 +114,20 @@ local arrows = Pool.new({
 	Max = 32, Prewarm = 8, Parent = folder,
 	Hide = "Modifier", -- "Modifier" | "Transparency" | "Folder" | "None" | function(obj, hidden)
 	Steal = false,     -- при Max: true — забрать самый старый активный, false — вернуть nil
+	OnSteal = function(arrow) end, -- со Steal: прежний пользователь узнаёт, что объект забрали
 })
-local arrow = arrows:Acquire(); arrows:Release(arrow)
+local arrow, lease = arrows:Acquire(); arrows:Release(arrow, lease)
 arrows:Stats() -- {Active, Free, Created, Reused, Dropped, Peak, Max}; arrows:Destroy()
 ```
 
-Объекты один раз ставятся в `Parent` и остаются там:
+Объекты один раз ставятся в `Parent` (или туда, куда их поставил сам `Create`) и остаются там:
 
-* `Modifier` (по умолчанию для Instance) — свободный объект прячется через `LocalTransparencyModifier = 1`, GUI через `Visible`, свет, эмиттеры, лучи и GUI-слои — через `Enabled = false`. При показе восстанавливается ровно то, что было изменено.
+* `Modifier` (по умолчанию для любого Instance) — свободный объект прячется через `LocalTransparencyModifier = 1`, GUI через `Visible`, свет, эмиттеры, лучи и GUI-слои — через `Enabled = false`. При показе восстанавливается ровно то, что было изменено.
 * `Transparency` — то же через `Transparency`, для серверных пулов.
 * `Folder` — перенос в скрытую папку и обратно.
+* `None` (по умолчанию для таблиц) — ничего, прячет `Reset` или сам вызывающий.
+
+**Аренда.** `Acquire` возвращает объект и номер аренды. `Release(obj, lease)` с устаревшим номером ничего не делает: тот, у кого объект забрали (`Steal`), не освободит его у нового владельца. Пулам со `Steal` (стрелки F1, титулы F10) аренду передавать обязательно, а `OnSteal` — чтобы прежний владелец забыл ссылку. `Release(obj)` без номера освобождает всегда.
 
 ### Perf.Lod
 
@@ -129,10 +142,14 @@ handle.Level; handle:SetRange(near, far); handle:Destroy()
 ```
 
 * Проверка 5 Гц через `Scheduler`, проход нарезается по времени.
+* `OnLevel` вызывается в своём потоке (`task.spawn`): обработчик, который ждёт (строит модель, грузит ассеты), не тормозит проход и не ломает очередь. После ожидания проверяйте `handle.Level` — уровень мог уже смениться.
+* Цель-Instance снимается с учёта сама, когда её уничтожают (`Destroying`); `handle:Destroy()` по-прежнему лучший способ.
 * Гистерезис ±10 %: граница пересекается наружу только за порогом ×1,1, обратно — внутри порога ×0,9.
 * `Cull = true`: объект вне пирамиды камеры и дальше `Near` считается уровнем 2. Логика угла та же, что `viewHalfAngle` в `DogAnimations`.
 * За тик применяется не больше `Lod.MaxSwitches` (8) смен уровня, ближние первыми, плюс до `Lod.MaxInitial` (64) первых назначений.
-* **Без кода — тегом.** Модель или деталь с тегом `DOGROTS_Lod` (Builder ставит его по `opts.Lod`). Атрибуты `LodNear`, `LodFar`, `LodCull` переопределяют значения по умолчанию. На уровне 1 скрываются потомки с `LodDetail = true`, на уровне 2 — всё, кроме `LodKeep = true` (дальний силуэт). Скрытие — через `LocalTransparencyModifier`. Свет, эмиттеры и лучи выключаются, только если модель `FXManaged`; иначе ими владеет `WorldDetailQuality`.
+* **Без кода — тегом.** Модель или деталь с тегом `DOGROTS_Lod` (Builder ставит его по `opts.Lod`). Атрибуты `LodNear`, `LodFar`, `LodCull` переопределяют значения по умолчанию. На уровне 1 скрываются потомки с `LodDetail = true`, на уровне 2 — всё, кроме `LodKeep = true` (дальний силуэт). Скрытие — через `LocalTransparencyModifier`. На корень пишется атрибут `LodLevel` (0 / 1 / 2).
+* **Только Workspace.** Тег учитывается только у моделей в Workspace и не внутри ViewportFrame / WorldModel: шаблон в ReplicatedStorage и клон в превью (инвентарь, выбор для витрины) LOD не трогает, хотя `Clone()` копирует тег. Модель, которая переехала в Workspace или из него, подключается или отпускается сама; отпущенная показывается целиком.
+* **Свет и эффекты в `FXManaged`-модели.** Когда их деталь скрыта, Lod выключает свет, эмиттеры, лучи и GUI и запоминает прежнее `Enabled`; когда деталь снова видна — возвращает, если владелец не включил их сам за это время. Пока деталь видна, Lod их не трогает, так что решения владельца по бюджету не откатываются. Владелец, который меняет эффекты, пока модель скрыта, сверяется с `LodLevel`. В моделях без `FXManaged` эффекты не трогаются (ими владеет `WorldDetailQuality`).
 
 ### Perf.Maid и Perf.Signal
 
@@ -140,8 +157,8 @@ handle.Level; handle:SetRange(near, far); handle:Destroy()
 
 ### WorldDetailQuality, PlotSkinMotion и телефоны
 
-* **`FXManaged = true`** на источнике света, эмиттере или любом предке — WDQ его не трогает: не гасит, не урезает `Rate`, не выключает тени. Так новые эффекты (колба, витрина, декор) не гаснут молча. Фича, которая ставит `FXManaged`, сама соблюдает бюджеты `Quality`. Прежние исключения (`LuckyVisual`, `MuseumLight`) остались.
-* Бюджеты WDQ берутся из `Quality`: `Lights`, `LightRadius`, `Particles`, `EmitterRate`, `EmitterRadius`. При уменьшении движения действует бюджет Low, как и раньше.
+* **`FXManaged = true`** на источнике света, эмиттере или любом предке — WDQ его не трогает: не гасит, не урезает `Rate`, не выключает тени. Так новые эффекты (колба, витрина, декор) не гаснут молча. Фича, которая ставит `FXManaged`, сама соблюдает бюджеты `Quality` и заявляет свою долю (`Quality.Claim`). Прежние исключения (`LuckyVisual`, `MuseumLight`) остались.
+* Бюджеты WDQ берутся из `Quality`: `Lights` и `Particles` — остаток после заявок (`Available`), `LightRadius`, `EmitterRate`, `EmitterRadius`. При уменьшении движения действует бюджет Low, как и раньше. И свет, и эмиттеры получают бюджет от ближних к дальним (туман своего участка не гаснет из-за дальних). Свойства пишутся, только когда значение меняется.
 * **Спор за `PlotMist` устранён.** Владелец всех эмиттеров района — WDQ. `PlotSkinMotion` больше не включает и не выключает `PlotMist` (раньше 30 раз в секунду, поверх бюджета), а только качает `PlotFloat`.
 * **Телефоны.** `WorldEventController` больше не ставит свой `WorldEventFX` по умолчанию: уровень даёт `Quality` (тач без клавиатуры → Medium). `VoidAtmosphere` читает `Quality.Tier()` и `Quality.Reduced()`, ветки «`WorldEventFX == nil` и `TouchEnabled`» больше нет.
 * PAWPAD «Motion» переключает общий атрибут `ReducedMotion` (а не свою локальную копию).
@@ -162,7 +179,8 @@ S.PartCount(specs); S.Count(specs); S.Bounds(specs); S.Validate(specs)
 * **Детали:** `Part`, `Block`, `Ball` (диаметр), `Cylinder` (длина по оси X, как в Roblox), `Wedge` (высокая сторона сзади, +Z), `CornerWedge` (вершина в углу +X +Y −Z), `Truss`.
 * **Материалы:** `Mat`, `Neon`, `Glass`, `Metal`, `ForceField`.
 * **Дети:** `PointLight`, `SpotLight`, `SurfaceLight`, `Emitter`, `Attachment`, `Beam`, `Label`, `Child`.
-* **Преобразования** (возвращают новые списки): `Offset`/`Transform`, `Rotate`, `MirrorX` (точно; у угловых клиньев поворот на 90° и обмен X/Z), `Array`, `Ring`, `Arc` (`Face = "Out" | "In" | "Fixed"`), `Concat`, `Flatten`, `With`, `Merge`.
+* **Преобразования** (возвращают новые списки): `Offset`/`Transform`, `Rotate`, `MirrorX`, `Array`, `Ring`, `Arc` (`Face = "Out" | "In" | "Fixed"`), `Concat`, `Flatten`, `With`, `Merge`.
+* **`MirrorX` точный и для детей.** У угловых клиньев поворот на 90° и обмен X/Z. `CFrame` / `Position` детей (вложения) отражаются в системе детали, а грани `Face` и `EmissionDirection` (таблички, SurfaceLight, SpotLight, эмиттеры) меняются Left ↔ Right, так что отражённая табличка смотрит наружу.
 * **Запросы:** `Bounds`, `PartCount`, `Count` (детали, свет, эмиттеры, лучи…), `Validate`.
 * **Детерминированный генератор** `Rng(seed)` даёт одинаковые числа в Lune и в Roblox.
 
@@ -176,13 +194,21 @@ local model = Builder.Build(specs, anchorCFrame, {
 local model, rebuilt = Builder.EnsureBuilt(parent, "MiningCorner", 24, function()
 	return Builder.Build(layout(), anchor, { BuilderId = "MiningCorner" }) -- без Parent
 end)
+-- то же по кусочкам (декор участка, уровень шахты): детали, пока не вышло время кадра
+local build = Builder.Begin(specs, anchor, options)
+Scheduler.Every(0, "Decor.Build", function(_, deadline)
+	local done, model = build:Step(deadline) -- модель готова и стоит в Parent, только когда done
+	return not done
+end)                                         -- build:Cancel() — бросить и удалить
 ```
 
 * Модель собирается отдельно от мира и ставится в `Parent` одним действием. `WorldPivot` = якорь. Атрибуты `BuilderId`, `LayoutVersion`, `PartCount`.
 * Режим стриминга и `AddPersistentPlayer` ставятся в `pcall`, как в `MiningWorld`; `AddPersistentPlayer` работает только на сервере.
 * По умолчанию детали `Anchored`, `CanCollide`/`CanQuery`/`CanTouch = false`, если спецификация не просит иного.
 * `CastShadow`, если он не задан: выключен у Neon, Glass, ForceField, у деталей прозрачнее 0,5 и у деталей меньше 4 стадов по всем осям. В плейсе уже около 12 800 видимых деталей с тенью.
-* `EnsureBuilt` переиспользует ребёнка с той же `LayoutVersion`, иначе уничтожает и строит заново.
+* `EnsureBuilt` переиспользует ребёнка с той же `LayoutVersion`, иначе строит заново. Все остальные дети с этим именем (старые версии, дубликаты) уничтожаются. `LayoutVersion` модели всегда равна аргументу `version` (если `buildFn` поставил другую — `warn`), поэтому повторные вызовы не перестраивают модель.
+* **Лучи** ищут вложения по имени сначала в своей верхней детали, потом во всей сборке (с `warn`, если имя не уникально). Поэтому копии из `Array` / `Ring` / `Arc` / `MirrorX` соединяются каждая со своими вложениями.
+* **Большие сборки на клиенте** (декор до 300 деталей на участок, уровень шахты до 400, несколько участков при входе) — через `Builder.Begin` и задачу планировщика, а не одним `Build`: так соблюдается общий бюджет 1 мс на задачу.
 
 Раскладки фич — чистые модули `ReplicatedStorage/<Feature>/<Feature>Layout.luau`, которые возвращают спецификации. Их проверяют в Lune (бюджет деталей, границы, детерминизм) и смотрят через `tools/preview`.
 
@@ -212,12 +238,13 @@ UISound.Play("Success")
 UISound.Play("Coin", { Pitch = 1.2, Volume = 0.8, Bus = "SFX", From = guiObject })
 local binding = UISound.Bind(button)                   -- наведение + нажатие; binding:Disconnect()
 UISound.Bind(button, { Hover = "Hover", Press = false })
+UISound.Start()                                       -- клиент: громкость из настроек → шины (PerfBootstrap)
 ```
 
 * **Сигналы:** `Hover`, `Press`, `Open`, `Close`, `Tab`, `Toggle`, `Success`, `Error`, `Reward`, `Coin`, `Whoosh`, `Pop`, `Rare`, `Epic`, `Legendary`, `Countdown`, `Lock`. Они собраны из встроенных звуков движка, которые проект уже использует (`volume_slider.ogg`, `collide.wav`, `electronicpingshort.wav`, `swordslash.wav`, `action_jump_land.mp3`; как в `MiningAudio`, `LabAudioConfig`, `LuckyAudio`), слоями с разной высотой. Владелец может загрузить свои звуки и прописать `UISound.AssetIds[cue] = id` (0 = встроенный рецепт).
 * **Пул:** не больше 6 звуков одновременно. Наведение никогда не обрывает другой звук; важные сигналы (`Success`, `Reward`, `Legendary`…) могут забрать самый старый голос того же или меньшего приоритета. У каждого сигнала своя пауза: спам наведением не слышен.
-* **Шины.** `ServerScriptService.AudioBootstrap` создаёт `SoundService.DOGROTS_AUDIO/{UI,SFX,Ambient}`; `Music` и `WorldEvents` уже есть в плейсе. Туда же сами попадают звуки `RewardAudio`, `WorldSound`, `LabAudioConfig` и музыка `WorldAmbience`, которые раньше шли мимо шины. На клиенте громкость групп UI и SFX следует атрибутам `Setting_UIVolume` / `Setting_SFXVolume` (0…1, по умолчанию 1). Если группы ещё нет, звук всё равно играет, а громкость настройки применяется к самому звуку. Приглушение музыки во время секретных сцен (`SecretArrivals/Kit`) не трогает шины UI и SFX.
-* **Kit.** `Kit.Button` звучит при наведении и нажатии; кнопка с удержанием — в начале и в конце удержания; `Sound = false` — без звука. `Kit.Window` звучит при открытии и закрытии; `Sound = false` ставит на окно атрибут `UISoundOff`, и замолкает всё внутри. `Kit.Tabs` звучит при смене вкладки. Атрибут `UISoundOff = true` на любом GUI-предке глушит поддерево.
+* **Шины.** `ServerScriptService.AudioBootstrap` создаёт `SoundService.DOGROTS_AUDIO/{UI,SFX,Ambient}`; `Music` и `WorldEvents` уже есть в плейсе. Туда же сами попадают звуки `RewardAudio`, `WorldSound`, `LabAudioConfig` и музыка `WorldAmbience`, которые раньше шли мимо шины. На клиенте `UISound.Start()` (его вызывает `PerfBootstrap` при входе) сразу ставит громкость групп UI и SFX из атрибутов `Setting_UIVolume` / `Setting_SFXVolume` (0…1, по умолчанию 1) и следит за изменениями атрибутов и за группами, которые реплицируются позже. Так ползунки F2 работают и для звуков, которые сами идут в шину (лаборатория в SFX, награды и звуки мира в UI), даже если ни один сигнал UISound ещё не играл. Если группы ещё нет, сигнал всё равно играет, а громкость настройки применяется к самому звуку. Приглушение музыки во время секретных сцен (`SecretArrivals/Kit`) не трогает шины UI и SFX.
+* **Kit.** `Kit.Button` звучит при наведении и нажатии; кнопка с удержанием — в начале и в конце удержания. `Sound = true` или не задан — сигналы по умолчанию, `false` — без звука, `{Hover = cue | false, Press = cue | false}` — свои сигналы (и для кнопки с удержанием). `Kit.Window` звучит при открытии и закрытии; `Sound = false` ставит на окно атрибут `UISoundOff`, и замолкает всё внутри. `Kit.Tabs` звучит при смене вкладки. Атрибут `UISoundOff = true` на любом GUI-предке глушит поддерево.
 
 ### Kit: токены, движение, иконки
 
@@ -245,7 +272,7 @@ UISound.Bind(button, { Hover = "Hover", Press = false })
 * **`DOGROTS_AutoTranslateUI`:**
   * Кэш облачного переводчика ограничен: два поколения по 1000 строк (≈LRU на 2000).
   * Добавлен такой же ограниченный кэш итогов `translateUI`. Повторный текст больше не проходит заново ~550 шаблонов и фраз.
-  * Оба кэша очищаются при смене локали.
+  * Оба кэша очищаются при смене локали. Кэш итогов очищается ещё раз, когда переводчик загрузился: надписи, изменившиеся во время загрузки, не застревают без облачного перевода.
   * Поведение не изменилось: старый и новый скрипт на 7 392 строках (словари, динамические фразы, 5 000 уникальных цен), по три прохода, дали 22 176 одинаковых результатов.
 
 ### perf-lint
@@ -275,6 +302,7 @@ UISound.Bind(button, { Hover = "Hover", Press = false })
 * **Во время работы появляются:**
   * группы звука `UI`, `SFX`, `Ambient` в `SoundService.DOGROTS_AUDIO`;
   * атрибуты игрока `LowFX`, `WorldEventFX`, `ReducedMotion`;
+  * атрибут `LodLevel` на моделях с тегом `DOGROTS_Lod`;
   * 6 объектов `Sound` с именем `DOGROTS_UISound` в `SoundService` (пул).
 
 ### Чек-лист для Studio (клиентская часть)
@@ -282,14 +310,15 @@ UISound.Bind(button, { Hover = "Hover", Press = false })
 1. **Play Solo.** Убедиться, что:
    * у игрока есть атрибуты `WorldEventFX` (High на ПК), `LowFX = false` и `ReducedMotion`;
    * в `SoundService.DOGROTS_AUDIO` есть группы `UI`, `SFX` и `Ambient`.
-2. **PAWPAD → «World Event FX».** Уровень меняется по кругу High → Medium → Low; при Low `LowFX = true`; ивент меняет плотность эффектов.
-3. **PAWPAD → «Motion».** Окна Kit открываются без анимации; повторное нажатие возвращает анимацию.
+2. **PAWPAD → «World Event FX».** Уровень меняется по кругу High → Medium → Low; при Low `LowFX = true`; идущий ивент перезапускается с новой плотностью эффектов. Сторож FPS (например, в эмуляторе слабого устройства) идущий ивент не перезапускает.
+3. **PAWPAD → «Motion».** Окна Kit открываются без анимации; повторное нажатие возвращает анимацию. То же при включённом «Уменьшении движения» в настройках Roblox: первое нажатие возвращает анимацию.
 4. **Эмуляция телефона (Device Emulator).** После входа `WorldEventFX = Medium`; источников света вокруг не больше 16.
 5. **MicroProfiler (Ctrl+F6).** Видны метки `Perf:WorldDetailQuality`, `Perf:PlotSkinMotion`, `Perf:Quality.Watchdog`, `Perf:Lod`, у новых фич — `Perf:<name>`. Ни одна не держит больше ~1 мс в кадре.
 6. **Окно Kit (`KitDemo = true`).**
    * Наведение и нажатие кнопок дают тихий щелчок; при открытии и закрытии окна и при смене вкладки тоже есть звук.
    * Спам наведением не трещит.
    * Атрибут игрока `Setting_UIVolume = 0` (вручную в Studio или из окна настроек F2) глушит звуки UI, `1` возвращает их.
+   * Сразу после входа, ничего не нажимая: `Setting_SFXVolume = 0.2` делает тише звуки лаборатории (группа `DOGROTS_AUDIO/SFX` получает `Volume = 0.2`).
 7. **Участок с туманом `PlotMist`.** Туман не мигает. При Low эмиттеров вокруг почти нет.
 8. **Memory (F9 → Memory).** После долгой игры на русском `LuaHeap` не растёт без конца: кэши AutoTranslate ограничены.
 
