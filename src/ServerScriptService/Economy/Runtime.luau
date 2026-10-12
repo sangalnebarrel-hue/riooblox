@@ -503,7 +503,9 @@ function Runtime.PumpAnnouncements()
 end
 Runtime.GlobalRecords=Runtime.GlobalRecords or {};Runtime.ServerRecords=Runtime.ServerRecords or {}
 function Runtime.CollectRecords(id)
- local transport,ok,result=pcall(function()return Runtime.Engine:Records(id,Runtime.ServerBook)end)
+ -- Timeout=0: a profile whose lock is held (a Robux receipt waiting on DataStore) is retried next
+ -- pass; waiting here would pause the economy loop (every player's tick) for up to LockWait.
+ local transport,ok,result=pcall(function()return Runtime.Engine:Records(id,Runtime.ServerBook,{Timeout=0})end)
  if not(transport and ok and type(result)=='table')then return 0 end
  local count=0
  for depth,rows in pairs(result.Server or {})do
@@ -524,6 +526,9 @@ function Runtime.CollectRecords(id)
 end
 function Runtime.FlushRecords()
  if Runtime.FlushingRecords then return end;Runtime.FlushingRecords=true
+ -- The guard is always released: one failing step must not stop record batches (and the
+ -- shutdown flush) for the rest of the server's life.
+ local batchOk,batchError=pcall(function()
  for depth,queue in pairs(Runtime.RecordQueue)do if next(queue)then
   Runtime.RecordQueue[depth]={}
   local candidates={};for itemId,entry in pairs(queue)do candidates[itemId]=entry.Row end
@@ -552,12 +557,14 @@ function Runtime.FlushRecords()
       if held then held.RecordAtCreation=held.RecordAtCreation or {};held.RecordAtCreation.Global=true;if info.Previous then held.RecordAtCreation.ImprovedGlobal=true end end
       return true
      end)end)
-     local player=okFlag and Players:GetPlayerByUserId(finder);if player then Runtime.Refresh(player)end
+     local player=okFlag and Players:GetPlayerByUserId(finder);if player then pcall(Runtime.Refresh,player)end
     end
    end
   end
  end end
+ end)
  Runtime.FlushingRecords=false
+ if not batchOk then warn('DOGROTS record batch failed:',batchError)end
 end
 -- Keeps the global record board fresh for display: one depth per call (≈2 reads/min).
 function Runtime.ReadNextRecordDepth()
@@ -626,12 +633,18 @@ function Runtime.Start()
  Players.PlayerRemoving:Connect(function(p)
   p:SetAttribute('EconomyLeaving',true)
   local uid=p.UserId
+  -- A quick rejoin to this server can load a new session for uid while this release yields (lock
+  -- wait, slow save): that session keeps its profile in RAM and its runtime state.
+  local function rejoined()local current=Players:GetPlayerByUserId(uid);return current~=nil and current~=p end
   if Runtime.Loaded[uid] then
    -- A receipt may hold the profile lock while it waits on DataStore: give Leave time.
    local called,saveOK,saveResult=pcall(Runtime.ReleaseProfile,uid,Runtime.Closing,30)
-   if called and saveOK then Runtime.Tx:UnloadProfile(uid)else warn('DOGROTS final profile save deferred:',uid,called and saveResult or saveOK)end
+   if not(called and saveOK)then warn('DOGROTS final profile save deferred:',uid,called and saveResult or saveOK)
+   elseif not rejoined()then Runtime.Tx:UnloadProfile(uid)end
   end
-  Runtime.Loaded[uid]=nil;Runtime.Views[uid]=nil;if Runtime.SeenFinds then Runtime.SeenFinds[uid]=nil end;buckets[p]=nil;marketQueries[p]=nil
+  buckets[p]=nil;marketQueries[p]=nil
+  if rejoined()then return end
+  Runtime.Loaded[uid]=nil;Runtime.Views[uid]=nil;if Runtime.SeenFinds then Runtime.SeenFinds[uid]=nil end
   Runtime.Draining[uid]=nil;if Runtime.TickWarnings then Runtime.TickWarnings[uid]=nil end
  end)
  game:BindToClose(function()
@@ -644,18 +657,25 @@ function Runtime.Start()
    end)
   end end
   local untilTime=os.clock()+25;while remaining>0 and os.clock()<untilTime do task.wait(.1)end
-  -- Retry any dirty profile left behind by a failed PlayerRemoving save and
-  -- flush the batched community counter before the process disappears.
+  -- Player data first: retry any dirty profile left behind by a failed release save before the
+  -- community counter and the record batch spend what is left of the 30 s budget, then save
+  -- the record flags that batch may set on items (only profiles that are dirty again).
+  local function flushProfiles()
+   local ok,summary=pcall(function()return Runtime.Tx:FlushAllProfiles()end)
+   if not ok then warn('DOGROTS final shutdown flush failed:',summary)
+   elseif summary and next(summary.Failed or{})then for key,err in pairs(summary.Failed)do warn('DOGROTS final profile save deferred:',key,err)end end
+  end
+  flushProfiles()
   pcall(Runtime.FlushEvents);pcall(Runtime.FlushRecords)
-  local ok,summary=pcall(function()return Runtime.Tx:FlushAllProfiles()end)
-  if not ok then warn('DOGROTS final shutdown flush failed:',summary)
-  elseif summary and next(summary.Failed or{})then for key,err in pairs(summary.Failed)do warn('DOGROTS final profile save deferred:',key,err)end end
+  flushProfiles()
  end)
  -- The economy loop renews sessions, autosaves and drives every timed system, and Robux
  -- receipts need a live session. Every step runs in its own pcall (errors are logged at
  -- most every 30 s per step) so one exception can never stop it again, and a watchdog
  -- starts a fresh loop if this one stops beating (a step that yields forever).
  local stepWarnings,lastServerLuckSync={},0
+ -- In-flight guards for the steps that run beside the loop (shared by every loop generation).
+ local specialRunning,settling=false,false
  local function step(name,fn,...)
   local result=table.pack(pcall(fn,...))
   if not result[1]and os.clock()-(stepWarnings[name]or -60)>=30 then
@@ -712,8 +732,11 @@ function Runtime.Start()
     for _,key in ipairs(unload)do pcall(Runtime.Tx.UnloadProfile,Runtime.Tx,key)end
    end)
   end
-  if os.time()-(Runtime.LastSpecial or 0)>=10 then
-   Runtime.LastSpecial=os.time();step('special discoveries',Runtime.SpecialTick,os.time())
+  -- Special grants and market settlement are journaled DataStore transactions: they run beside
+  -- the loop, one at a time, so a slow DataStore never pauses digging and session renewal.
+  if os.time()-(Runtime.LastSpecial or 0)>=10 and not specialRunning then
+   Runtime.LastSpecial=os.time();specialRunning=true
+   task.spawn(function()step('special discoveries',Runtime.SpecialTick,os.time());specialRunning=false end)
   end
   -- Record checks are RAM-only now; items leave "record check pending" within ~5 s.
   if os.time()-(Runtime.LastRecords or 0)>=5 then
@@ -726,9 +749,13 @@ function Runtime.Start()
   if os.time()-(Runtime.LastRecordFlush or 0)>=60 then Runtime.LastRecordFlush=os.time();task.spawn(Runtime.FlushRecords)end
   step('announcements',Runtime.PumpAnnouncements)
   if os.time()-(Runtime.LastRecordRead or 0)>=30 then Runtime.LastRecordRead=os.time();task.spawn(Runtime.ReadNextRecordDepth)end
-  if os.time()-(Runtime.LastSettlement or 0)>=20 then
-   Runtime.LastSettlement=os.time();local ok,count=pcall(function()return Runtime.Engine.Market:Due()end)
-   if not ok then warn('DOGROTS settlement deferred:',count)elseif (count or 0)>0 then step('refresh all',Runtime.RefreshAll)end
+  if os.time()-(Runtime.LastSettlement or 0)>=20 and not settling then
+   Runtime.LastSettlement=os.time();settling=true
+   task.spawn(function()
+    local ok,count=pcall(function()return Runtime.Engine.Market:Due()end)
+    settling=false
+    if not ok then warn('DOGROTS settlement deferred:',count)elseif (count or 0)>0 then step('refresh all',Runtime.RefreshAll)end
+   end)
   end
   -- Paid server luck lives in each buyer's profile as a credit: keep the saved remainder in
   -- step with this server's timer and start queued time when there is room.

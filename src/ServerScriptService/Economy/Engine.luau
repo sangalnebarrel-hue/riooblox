@@ -36,9 +36,14 @@ function E:Join(id)
 end
 -- options (optional) go to Tx:Run, e.g. {Timeout=30}: PlayerRemoving waits longer for a
 -- receipt that holds the profile lock, so the session is released instead of left to expire.
+-- A player who is connected again (a quick rejoin to this server loaded a new session with the
+-- same server session id while the old release waited for the lock or a save) is not leaving:
+-- the old release must not end the new session.
 function E:Leave(id,options)
+ if self.Connected(id)then return true,"Rejoined"end
  pcall(self.CancelTrade,self,id)
  local ok,result=self.Tx:Run({pk(id)},function(v)
+  if self.Connected(id)then return "Rejoined"end
   local p=v[pk(id)];if p and p.Session and p.Session.Id==self.Session then
     local now=self.Now();local play=p.PlaytimeRewards
     if type(play)=='table'and play.Day==math.floor(now/86400)then
@@ -48,7 +53,7 @@ function E:Leave(id,options)
    end
   return "Saved"
  end,nil,options)
- if ok and self.OnProfileReleased then pcall(self.OnProfileReleased,id)end
+ if ok and result~="Rejoined"and self.OnProfileReleased then pcall(self.OnProfileReleased,id)end
  return ok,result
 end
 function E:Get(id) return self.Tx:Read(pk(id)) end
@@ -349,7 +354,9 @@ end
 -- RAM-only: hands this profile's pending record checks to the server batch.
 -- Server-session records are decided here against the in-memory server book;
 -- global records are merged by Runtime.FlushRecords with one UpdateAsync per depth.
-function E:Records(id,serverBook)
+-- options go to Tx:Run: the economy loop passes {Timeout=0}, so a profile whose lock is held
+-- (a Robux receipt waiting on DataStore) is retried next pass instead of stalling every tick.
+function E:Records(id,serverBook,options)
  local profile=self:Get(id);if not profile then return true,{Jobs={},Server={}}end
  I.Normalize(profile)
  if not next(profile.RecordJobs)then return true,{Jobs={},Server={}}end
@@ -370,6 +377,6 @@ function E:Records(id,serverBook)
    jobs[itemId]=R.Copy(x);p.RecordJobs[itemId]=nil
   end
   return {Jobs=jobs,Server=server}
- end)
+ end,nil,options)
 end
 return E
