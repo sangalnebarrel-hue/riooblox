@@ -53,7 +53,7 @@ function R.Normalize(p,uid,now)
  if type(p)=='table'and(tonumber(p.MegaResetVersion)or 0)<C.MegaResetVersion then
   local old=p
   p=R.Profile(uid,now);p.RebootGift.WasReset=true;p.LuckyCredits[C.MegaResetGiftTier]=C.MegaResetGiftCount
-  for _,key in ipairs({'PaidRouletteTickets','CommercePurchases','Supplies','SupplyReserve','LuckBoosts','LuckReserve','ServerLuckCredits','Passes','Cosmetics'})do
+  for _,key in ipairs({'PaidRouletteTickets','CommercePurchases','Supplies','SupplyReserve','LuckBoosts','LuckReserve','ServerLuckCredits','Passes','Cosmetics','Equipment'})do
    if old[key]~=nil then p[key]=R.Copy(old[key])end
   end
   local support=type(old.Lifetime)=='table'and tonumber(old.Lifetime.SupportRobux)
