@@ -12,7 +12,7 @@ local I=require(script.Parent.ItemRules)
 local Messaging=game:GetService('MessagingService')
 local Definitions=require(script.Parent.DogDefinitions)
 local Offline=require(script.Parent.OfflineEarnings)
-local Runtime={Loaded={},Views={},Closing=false}
+local Runtime={Loaded={},Views={},Closing=false,Push=nil::RemoteEvent?}
 local session=Http:GenerateGUID(false)
 local rng=Random.new()
 local function guid()return Http:GenerateGUID(false):gsub('%-','')end
@@ -348,9 +348,10 @@ function Runtime.Snapshot(player)
   local cooldown=Rules.Cooldown(p,d,team);dogStats[uid]={Cooldown=cooldown,Cycle=cooldown+Config.Work.Duration,Luck=team.DigitalLuck or 0,MaxDepth=p.CurrentLayer}
   if d.AssignedSlot~=''then local layer=Config.Layers[p.CurrentLayer];local value,weight=0,0;for _,v in ipairs(layer.Loot)do value+=v[3]*v[4];weight+=v[3]end;income+=2*value/weight/(cooldown+Config.Work.Duration)*Rules.Bonus(d)*(Definitions[d.DogId].PowerBudget or 1)*(1+(team.SellValue or 0))end
  end
+ local features={};Rules.Features.Snapshot(Rules,p,features,os.time())
  local tradeView=trade and Rules.Copy(trade)
  if tradeView then tradeView.Details={};for _,offer in pairs(tradeView.Offers)do for uid,dog in pairs(offer.Details or {})do tradeView.Details[uid]=dog end end end
- return {Profile=view,OfflineEarnings=Offline.Report(view),Meta=Rules.Meta(os.time()),Week=Rules.Week(os.time()),EventTotal=Runtime.EventTotal or 0,
+ return {Features=features,Profile=view,OfflineEarnings=Offline.Report(view),Meta=Rules.Meta(os.time()),Week=Rules.Week(os.time()),EventTotal=Runtime.EventTotal or 0,
   SellableItems=sellable,DogStats=dogStats,IncomeEstimate=income,EventEnds=345600+(Rules.Week(os.time())+1)*604800,Trade=tradeView,Players=online,Preview=memory,Now=os.time(),Dex=dex,GlobalRecords=Runtime.GlobalRecords or {},ServerRecords=Runtime.ServerRecords or {}}
 end
 function Runtime.Request(player,action,a,requestId)
@@ -556,8 +557,16 @@ function Runtime.ReadNextRecordDepth()
  local ok,book=pcall(function()return Runtime.Tx:Read('records:'..depth)end)
  if ok then for itemId,row in pairs(book or {})do Runtime.GlobalRecords[itemId]=row end end
 end
+-- Server -> client notifications for the new systems (trade invites, case results, level-ups...):
+-- DogEconomyPush:FireClient(player, kind, data). Created before anything can fire it.
+function Runtime.PushTo(player,kind,data)
+ local push=Runtime.Push
+ if push and player and player.Parent then push:FireClient(player,kind,data)end
+end
 function Runtime.Start()
- if Runtime.Started then return end;Runtime.Started=true;require(script.Parent.PurchaseService).Start(Runtime)
+ if Runtime.Started then return end;Runtime.Started=true
+ local push=Replicated:FindFirstChild('DogEconomyPush')or Instance.new('RemoteEvent');push.Name='DogEconomyPush';push.Parent=Replicated;Runtime.Push=push
+ require(script.Parent.PurchaseService).Start(Runtime)
  local eventKey='event:'..Rules.Week(os.time());local okEvent,event=pcall(function()return Runtime.Tx:Read(eventKey)end)
  Runtime.EventTotal=okEvent and event and event.Total or 0
  if not memory then pcall(function()Messaging:SubscribeAsync('DOGROTS_WEIGHT_RECORDS_V2',function(message)

@@ -2490,6 +2490,31 @@ local function _startDogrotsRussianUI()
         {"SHOP", "МАГАЗИН"},
     }
 
+    -- Feature dictionaries: every ModuleScript in ReplicatedStorage.Localization returns
+    -- {Exact={[english]=russian}, Patterns={{luaPattern, replacement}}, Phrases={{from, to}}}.
+    -- Exact entries win over the tables above; feature patterns run before the generic ones.
+    do
+        local folder = game:GetService("ReplicatedStorage"):WaitForChild("Localization", 10)
+        local modules = folder and folder:GetChildren() or {}
+        table.sort(modules, function(a, b) return a.Name < b.Name end)
+        local featurePatterns = {}
+        for _, module in ipairs(modules) do
+            if module:IsA("ModuleScript") then
+                local ok, dict = pcall(require, module)
+                if ok and type(dict) == "table" then
+                    for en, ru in pairs(dict.Exact or {}) do
+                        if type(en) == "string" and type(ru) == "string" then extra[en] = ru end
+                    end
+                    for _, rule in ipairs(dict.Patterns or {}) do table.insert(featurePatterns, rule) end
+                    for _, pair in ipairs(dict.Phrases or {}) do table.insert(phrases, pair) end
+                else
+                    warn("DOGROTS localization: " .. module.Name .. " failed: " .. tostring(dict))
+                end
+            end
+        end
+        for i = #featurePatterns, 1, -1 do table.insert(patterns, 1, featurePatterns[i]) end
+    end
+
     local function isRussian()
         return locale:sub(1, 2):lower() == "ru"
     end

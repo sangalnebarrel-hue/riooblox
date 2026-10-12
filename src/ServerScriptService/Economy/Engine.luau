@@ -56,8 +56,9 @@ function E:Action(id,action,args,request)
   local p=v[pk(id)];self:Authorize(p,id);R.Normalize(p,id,now)
   if action=='BuyPlotSkin'or action=='ClaimPlotSkin'then require(script.Parent.PlotDevelopment).VisitShop(game.Players:GetPlayerByUserId(id))end
   if action=='Upgrade'then require(script.Parent.YardCommerce).UpgradeVisit(game.Players:GetPlayerByUserId(id),args.Kind)end
-  local message=R.Action(p,action,args,now,self.Random);Offline.Checkpoint(p,now);R.Validate(p)
+  local message,extra=R.Action(p,action,args,now,self.Random);Offline.Checkpoint(p,now);R.Validate(p)
   local result={Message=message}
+  if type(extra)=='table'then for k,x in pairs(extra)do if k~='Message'then result[k]=x end end end
   if action:sub(1,6)=='Mining'then result.MiningState=R.Copy(p.Mining);result.Cash=p.Cash;result.XP=p.XP;result.Level=p.Level end
   if action=='SellLoot'then
    local pending,lootCount=0,0

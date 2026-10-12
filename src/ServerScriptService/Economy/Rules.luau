@@ -15,7 +15,8 @@ local LuckRules=require(script.Parent.LuckRules)
 local Pricing=require(game.ReplicatedStorage.DogEconomy.BoostPricing)
 local Onboarding=require(script.Parent.OnboardingRules)
 local MiningRules=require(game:GetService('ReplicatedStorage'):WaitForChild('Mining'):WaitForChild('MiningRules'))
-local R={Items=I}
+local Features=require(script.Parent.FeatureRegistry)
+local R={Items=I,Features=Features}
 function R.Copy(v) if type(v)~="table" then return v end local r={};for k,x in pairs(v) do r[k]=R.Copy(x) end;return r end
 function R.Int(n,min,max) return type(n)=="number" and n==n and n%1==0 and n>=min and n<=max end
 function R.Check(ok,msg) if not ok then error(msg,0) end end
@@ -74,6 +75,7 @@ function R.Normalize(p,uid,now)
  Display.Normalize(p)
  LabState.Normalize(p)
  p.Mining=MiningRules.Normalize(p.Mining,C.Mining)
+ Features.Normalize(R,p,now)
  R.UpdateLevel(p)
  return p
 end
@@ -303,6 +305,8 @@ local function quoted(price,quote)
 end
 function R.Action(p,action,a,now,random)
  local plotMessage=PlotRules.Action(p,action,a);if plotMessage then return plotMessage end
+ local featureMessage,featureExtra=Features.Action(R,p,action,a,now,random)
+ if featureMessage~=nil then return featureMessage,featureExtra end
  if action=="DisplayDog"then return Display.Assign(p,a)end
  if type(action)=="string"and action:sub(1,6)=="Mining"then return R.MiningAction(p,action,a,now,random,{Targets={}},0)end
  local itemMessage,itemCash=I.Action(p,action,a)
@@ -409,6 +413,7 @@ function R.Validate(p)
  LabState.Validate(p)
  Display.Normalize(p)
  I.Validate(p)
+ Features.Validate(R,p)
  R.Check(R.Int(p.Cash,0,C.MaxCash) and R.Int(p.Bones,0,C.MaxCash),"Invalid wallet")
  R.Check(R.Count(p.Dogs)<=C.MaxDogs,"Inventory hard cap")
  local slots={}
