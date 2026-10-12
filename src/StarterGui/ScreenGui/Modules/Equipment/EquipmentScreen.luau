@@ -264,12 +264,16 @@ local function slotTile(parent: Instance, slot: string, z: number): any
 		tile.Stat.Position = UDim2.new(0, 4, 1, -(stat + 3))
 		tile.Stat.Size = UDim2.new(1, -8, 0, stat)
 	end
-	Kit.LongPress(button, function()
+	local press = Kit.LongPress(button, function()
 		if tile.Entry then
 			M.ShowPiece(tile.Entry)
 		end
 	end)
 	button.Activated:Connect(function()
+		-- The release of a long press that already opened the details is not a second tap.
+		if press.Consumed() then
+			return
+		end
 		if tile.Entry then
 			M.ShowPiece(tile.Entry)
 		else
