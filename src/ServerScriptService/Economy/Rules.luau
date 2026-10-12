@@ -16,7 +16,9 @@ local Pricing=require(game.ReplicatedStorage.DogEconomy.BoostPricing)
 local Onboarding=require(script.Parent.OnboardingRules)
 local MiningRules=require(game:GetService('ReplicatedStorage'):WaitForChild('Mining'):WaitForChild('MiningRules'))
 local Features=require(script.Parent.FeatureRegistry)
-local R={Items=I,Features=Features}
+local Bonuses=require(game:GetService('ReplicatedStorage').DogEconomy.Bonuses)
+local IncomeModel=require(script.Parent.IncomeModel)
+local R={Items=I,Features=Features,Bonuses=Bonuses}
 function R.Copy(v) if type(v)~="table" then return v end local r={};for k,x in pairs(v) do r[k]=R.Copy(x) end;return r end
 function R.Int(n,min,max) return type(n)=="number" and n==n and n%1==0 and n>=min and n<=max end
 function R.Check(ok,msg) if not ok then error(msg,0) end end
@@ -149,10 +151,50 @@ function R.Available(def,now,layer)
  if def.SupplyType=="Limited" then return def.ReleaseEnd==0 or now<def.ReleaseEnd end
  return true
 end
-function R.Variant(random)
- local roll=random()*10000;local total=0
- for _,v in ipairs(WorldModifiers.MutationRows(C.Variants,'Name','Weight',os.time())) do total+=v.Weight;if roll<total then return v.Name end end
+R.VariantNames={};for _,v in ipairs(C.Variants)do R.VariantNames[v.Name]=true end
+-- The rows a new dog's variant is rolled on: Config.Variants with the active world event folded in
+-- and, when a profile is given, its DogMutation bonus (Bonuses pipeline) growing every mutated row
+-- (Normal is the remainder and keeps at least half). Weights are relative: they are summed here.
+function R.VariantRows(p,now)
+ now=now or os.time()
+ local rows=WorldModifiers.MutationRows(C.Variants,'Name','Weight',now)
+ local bonus=p and math.max(0,Bonuses.Global(p,now).DogMutation)or 0
+ if bonus<=0 then return rows end
+ local total,mutated=0,0
+ for i,v in ipairs(rows)do total+=v.Weight;if i>1 then mutated+=v.Weight end end
+ if mutated<=0 then return rows end
+ local scale=math.max(1,math.min(1+bonus,total*.5/mutated))
+ local out={}
+ for i,v in ipairs(rows)do out[i]={Name=v.Name,Weight=i>1 and v.Weight*scale or v.Weight-mutated*(scale-1),Bonus=v.Bonus}end
+ return out
+end
+-- p (optional): the profile whose DogMutation bonus applies.
+function R.Variant(random,p,now)
+ local rows=R.VariantRows(p,now);local total=0
+ for _,v in ipairs(rows)do total+=math.max(0,v.Weight)end
+ if total<=0 then return "Normal" end
+ local roll=random()*total
+ for _,v in ipairs(rows)do roll-=math.max(0,v.Weight);if roll<0 then return v.Name end end
  return "Normal"
+end
+-- A conveyor dog's variant is rolled for everyone when it spawns (DogLineSpawner). The buyer's own
+-- DogMutation bonus then gives a Normal dog its fair extra chance, so the bought dog follows exactly
+-- the bonus-scaled odds of R.VariantRows(p).
+function R.VariantUpgrade(random,p,variant,now)
+ if variant~="Normal"then return variant end
+ local base,boosted=R.VariantRows(nil,now),R.VariantRows(p,now)
+ if boosted==base then return variant end
+ local bt,ot=0,0
+ for i=1,#base do bt+=base[i].Weight;ot+=boosted[i].Weight end
+ if bt<=0 or ot<=0 or base[1].Weight<=0 then return variant end
+ local n0,n1=base[1].Weight/bt,boosted[1].Weight/ot
+ if n1>=n0 or random()>=1-n1/n0 then return variant end
+ local gains,total={},0
+ for i=2,#base do gains[i]=math.max(0,boosted[i].Weight/ot-base[i].Weight/bt);total+=gains[i]end
+ if total<=0 then return variant end
+ local roll=random()*total
+ for i=2,#base do roll-=gains[i];if roll<0 then return base[i].Name end end
+ return base[#base].Name
 end
 function R.Discover(p,d)
  p.DogDex[d.DogId]=true;p.VariantDex=p.VariantDex or {};p.VariantDex[d.DogId]=p.VariantDex[d.DogId] or {}
@@ -163,8 +205,15 @@ function R.Mint(p,id,uid,supply,now,random,origin,variantOverride,frozenReward)
  R.Check(R.Free(p) and not p.Dogs[uid],"Dog storage full or duplicate DogUid")
  supply.Minted=supply.Minted or 0
  R.Check(def.LimitedSupply==0 or supply.Minted<def.LimitedSupply,"Limited supply exhausted")
+ -- A forced variant (conveyor roll, Lucky Block frozen odds, lab recipe) must be a real one. Only
+ -- conveyor dogs get the buyer's DogMutation bonus; paid random rewards keep their disclosed odds.
+ local variant=variantOverride
+ if variant~=nil then
+  R.Check(type(variant)=="string"and R.VariantNames[variant]==true,"Invalid variant")
+  if origin=="DogLine"and not frozenReward then variant=R.VariantUpgrade(random,p,variant,now)end
+ else variant=R.Variant(random,origin=="DogLine"and p or nil,now)end
  supply.Minted+=1
- local d={DogUid=uid,DogId=id,DisplayName=def.DisplayName,Rarity=def.Rarity,Variant=variantOverride or R.Variant(random),
+ local d={DogUid=uid,DogId=id,DisplayName=def.DisplayName,Rarity=def.Rarity,Variant=variant,
   SerialNumber=(def.Rank>=3 or def.SupplyType~="Permanent") and supply.Minted or 0,
   Edition=(def.FirstEditionLimit>0 and supply.Minted<=def.FirstEditionLimit) and "First Edition" or "Standard",
   OG=def.OG==true,Origin=origin or "DogLine",CreatedAt=now,Mastery=0,MasteryXP=0,AscensionLevel=0,
@@ -196,21 +245,101 @@ function R.Team(p,now)
  e.SetBonus=math.min(.06,e.SetBonus)
  return WorldModifiers.Resolve(p,e,now,D)
 end
-function R.Cooldown(p,d,e)
+-- Seconds a dog rests between digs, and its overflow: the part of its speed the rest cannot express.
+-- Speed = legacy speed (Dig upgrade, team auras, signatures, Energy Snack) x (1+DigSpeed) from the
+-- Bonuses pipeline. The rest is clamped to [MinCooldown, MaxCooldown] and speed to Work.MaxSpeed;
+-- what those limits swallow comes back as extra loot rolls (overflow >= 1, at most Work.MaxOverflow),
+-- so speed bonuses never become useless. b: Bonuses.For(p,d,now) (computed when nil).
+function R.Cooldown(p,d,e,b)
  local now=p.LastDig or 0;e=e or R.Team(p,now)
- local base=C.Work.BaseCooldown-math.clamp(d.Mastery or 0,0,100)*C.Work.MasteryReduction
- local speed=(1+.04*(p.Upgrades.Dig or 0)+(e.Cooldown or 0)+(e.Recovery or 0)+(e.DigSpeed or 0))*Signatures.Speed(p,d,now)
- if (p.Supplies.EnergySnack or 0)>now then speed+=C.Supplies.EnergySnack.Magnitude end
- return math.clamp(base/math.min(2,speed),C.Work.MinCooldown,C.Work.MaxCooldown)
+ b=b or Bonuses.For(p,d,now)
+ local work=C.Work
+ local base=work.BaseCooldown-math.clamp(d.Mastery or 0,0,100)*work.MasteryReduction
+ local speed=(1+.04*((p.Upgrades or {}).Dig or 0)+(e.Cooldown or 0)+(e.Recovery or 0)+(e.DigSpeed or 0))*Signatures.Speed(p,d,now)
+ if ((p.Supplies or {}).EnergySnack or 0)>now then speed+=C.Supplies.EnergySnack.Magnitude end
+ speed*=math.max(.1,1+(b.DigSpeed or 0))
+ local cooldown=math.clamp(base/math.min(work.MaxSpeed or 2,speed),work.MinCooldown,work.MaxCooldown)
+ local ideal=base/math.max(.01,speed)
+ local overflow=1
+ if cooldown>ideal then overflow=math.min(work.MaxOverflow or 3,(cooldown+work.Duration)/(ideal+work.Duration))end
+ return cooldown,overflow
+end
+-- Loot rolls (or item attempts) of one dig: the dog's count x overflow, the fraction rolled.
+function R.RollCount(rolls,overflow,random)
+ if overflow<=1 or rolls<=0 then return rolls end
+ local exact=rolls*overflow;local whole=math.floor(exact)
+ if random()<exact-whole then whole+=1 end
+ return whole
+end
+-- Rare-loot luck of a roll: Artifact, Treasure, Rare and Space weights are multiplied by it.
+R.RareCategories={Artifact=true,Treasure=true,Rare=true,Space=true}
+function R.LootLuck(p,e,now,boostLuck,b)
+ local luck=1+(e.Luck or 0)+(e.Artifact or 0)+(e.TreasureMap or 0)+(e.SetBonus or 0)
+ if ((p.Supplies or {}).LuckyTreat or 0)>now then luck+=C.Supplies.LuckyTreat.Magnitude end
+ return luck+(boostLuck or 0)+math.max(0,b and b.Luck or 0)
+end
+function R.LootWeight(item,luck,ctx,e,p)
+ local rare=R.RareCategories[item[2]]==true
+ local weight=item[3]*(rare and luck or 1)*(ctx.CategoryLuck[item[2]]or 1)
+ if rare and (e.Protection or 0)>0 and (p.Pity or 0)>=30 then weight*=2 end
+ return weight,rare
+end
+-- Black Hole Pug lands its orbital cache every fourth dig with this bonus.
+R.OrbitBonus=.25
+-- What every loot roll of this dig is multiplied by, apart from the roll's own signature and
+-- category factors. New bonuses (Bonuses.ValueFactor) multiply outside the capped legacy bracket.
+function R.RollMultiplier(p,d,def,e,b,biscuit,ctx)
+ local up=p.Upgrades or {}
+ local power=def.PowerBudget or C.Power[def.Rank]or 1
+ local mult=R.Bonus(d)*power*(1+(e.SetBonus or 0)+.025*(up.Plot or 0)+.015*(up.Kennel or 0)+math.min(.5,e.SellValue or 0))
+ if biscuit then mult*=1+C.Supplies.GoldenBiscuit.Magnitude end
+ -- Auto-deposit signatures (Skatehound, Taxi Dachshund, Cyber Corgi) used to bank part of their
+ -- loot straight into the wallet. Every dog does that now, so they earn that share as extra value.
+ if ctx and ctx.AutoDeposit and not ctx.Orbit then mult*=1+math.clamp(ctx.AutoDeposit,0,.5)end
+ return mult*Bonuses.ValueFactor(b)
+end
+-- The per-dog copy of the team effects one item attempt rolls with (ItemRules.Pick / Mint).
+function R.ItemEffects(p,d,e,ctx,b,boostLuck,capacity)
+ local up=p.Upgrades or {}
+ local effects=R.Copy(e);effects.SourceDogUid=d.DogUid
+ effects.WeightLuck=ctx.WeightLuck;effects.SignatureMutation=ctx.Mutation;effects.SignatureMutationChance=ctx.MutationChance
+ effects.SignatureMutationValue=ctx.MutationValue;effects.DiscoveryScale=ctx.ItemScale
+ effects.SellValue=math.min(.5,(effects.SellValue or 0)+.025*(up.Plot or 0)+.015*(up.Kennel or 0)+math.max(0,ctx.Value-1)*.20)
+ effects.Artifact=(effects.Artifact or 0)+math.max(0,(ctx.CategoryLuck.Artifact or 1)-1)*.10
+ effects.DigitalLuck=(effects.DigitalLuck or 0)+math.max(0,(ctx.CategoryLuck.Digital or 1)-1)*.10
+ effects.BoostLuck=boostLuck
+ effects.RareFind=b.RareFind;effects.ItemMutation=b.ItemMutation;effects.BonusLuck=b.Luck
+ effects.IncomeMult=Bonuses.ValueFactor(b);effects.ItemCapacity=capacity
+ return effects
+end
+-- Dog income is paid straight into the wallet as it is dug (R.Credit: Lifetime TotalCoinsEarned).
+-- The old manual loot sale gave XP per sale; dog income keeps the pace of one sale per minute
+-- (p.DogIncome, created with the first income).
+local function payIncome(p,coins,now)
+ coins=math.min(math.floor(coins),math.max(0,C.MaxCash-p.Cash))
+ if coins<=0 then return 0 end
+ R.Credit(p,coins)
+ local book=p.DogIncome
+ if type(book)~="table"then book={};p.DogIncome=book end
+ book.Total=(tonumber(book.Total)or 0)+coins
+ book.XPCoins=(tonumber(book.XPCoins)or 0)+coins
+ book.XPAt=tonumber(book.XPAt)or now
+ return coins
+end
+local function incomeXP(p,now,bonus)
+ local book=p.DogIncome
+ if type(book)~="table"or(tonumber(book.XPCoins)or 0)<=0 or now-(tonumber(book.XPAt)or now)<60 then return end
+ R.AddXP(p,math.clamp(math.floor(math.sqrt(book.XPCoins)*2),5,250)*(1+math.max(-.9,bonus or 0)))
+ book.XPCoins=0;book.XPAt=now
 end
 function R.Dig(p,now,random)
  I.Normalize(p);p.LastDig=now;p.SpecialDiscoveries=p.SpecialDiscoveries or {}
- local e=R.Team(p,now);local units=0
+ local e=R.Team(p,now)
+ -- Bonuses pipeline: player-wide totals once per pass; each dog adds its own (Bonuses.For).
+ local global=Bonuses.Global(p,now)
  -- Bought boosts: the active luck tier and the Golden Biscuit.
  local boostLuck=LuckRules.Bonus(p,now);local biscuit=(p.Supplies.GoldenBiscuit or 0)>now
- for _,s in pairs(p.Loot)do units+=s.Count end
- local capacity=50+25*(p.Upgrades.Storage or 0)+math.floor(100*(e.Storage or 0))
- if (p.Supplies.StorageCrate or 0)>now then capacity+=C.Supplies.StorageCrate.Magnitude end
+ local itemCapacity=I.Capacity(p,I.CapacityExtra(p,now,global))
  local contributed=0;local ordered={}
  for _,d in pairs(p.Dogs)do table.insert(ordered,d)end
  table.sort(ordered,function(a,b)return a.DogUid<b.DogUid end)
@@ -220,75 +349,60 @@ function R.Dig(p,now,random)
    if not def then continue end
    d.WorkSequence=(d.WorkSequence or 0)+1;Stats.Dig(p,now)
    p.TotalExcavations=(p.TotalExcavations or 0)+1
+   local b=Bonuses.For(p,d,now,global)
    local ctx=Signatures.Context(p,d,e,now,random)
    -- Defense in depth: no ability may reach a layer the player has not unlocked.
    ctx.Depth=math.min(ctx.Depth,R.MaxUnlockedLayer(p))
    ctx.Value*=1+C.UpgradeEffects.Ability*(p.Upgrades.Ability or 0)
-   d.NextWorkAt=now+R.Cooldown(p,d,e)+C.Work.Duration
+   local cooldown,overflow=R.Cooldown(p,d,e,b)
+   d.NextWorkAt=now+cooldown+C.Work.Duration
    d.LastAbility=def.Ability;d.LastAbilityAt=now
    if ctx.Genesis then d.LastAbility='Genesis'elseif ctx.Missing then d.LastAbility='MISSING ITEM'elseif ctx.Triplicate then d.LastAbility='ITEM DUPLICATED x3'elseif ctx.Critical then d.LastAbility='Critical Dig x5'end
    local layer=C.Layers[ctx.Depth]
-   local power=def.PowerBudget or C.Power[def.Rank]or 1
-   local produced=0
-   -- Auto-deposit signatures only work shortly after a manual sale. Storage therefore
-   -- stops true AFK farming while active players keep the signature's identity.
-   local activeAutoDeposit=ctx.AutoDeposit and now-(p.LastSaleAt or 0)<=120
-   for rollIndex=1,ctx.Rolls do
-    if units>=capacity and not activeAutoDeposit then break end
-    local luck=1+(e.Luck or 0)+(e.Artifact or 0)+(e.TreasureMap or 0)+e.SetBonus
-    if (p.Supplies.LuckyTreat or 0)>now then luck+=C.Supplies.LuckyTreat.Magnitude end
-    luck+=boostLuck
-    if ctx.BadLuckGuard and (d.DryStreak or 0)>=12 then luck+=3 end
+   local base=R.RollMultiplier(p,d,def,e,b,biscuit,ctx)
+   local luck=R.LootLuck(p,e,now,boostLuck,b)
+   local xpBonus=1+math.max(-.9,b.XP)
+   local produced,yield=0,0
+   -- Ordinary loot is paid into the wallet after the rolls (dog income); it never fills storage.
+   for rollIndex=1,R.RollCount(ctx.Rolls,overflow,random)do
+    local rollLuck=luck
+    if ctx.BadLuckGuard and (d.DryStreak or 0)>=12 then rollLuck+=3 end
     local candidates,total={},0
     for index,item in ipairs(layer.Loot)do
-     local rare=item[2]=='Artifact'or item[2]=='Treasure'or item[2]=='Rare'or item[2]=='Space'
-     local weight=item[3]*(rare and luck or 1)*(ctx.CategoryLuck[item[2]]or 1)
-     if rare and (e.Protection or 0)>0 and p.Pity>=30 then weight*=2 end
+     local weight,rare=R.LootWeight(item,rollLuck,ctx,e,p)
      total+=weight;table.insert(candidates,{Item=item,Ceiling=total,Index=index,Rare=rare})
     end
     local pick=random()*total;local chosen=candidates[#candidates]
     for _,candidate in ipairs(candidates)do if pick<candidate.Ceiling then chosen=candidate;break end end
-    local item=chosen.Item;local name,category,signatureMult,mutation=Signatures.Modify(ctx,item,d,random,e)
-    local mult=R.Bonus(d)*power*signatureMult*(1+e.SetBonus+.025*(p.Upgrades.Plot or 0)+.015*(p.Upgrades.Kennel or 0)+math.min(.5,e.SellValue or 0))
+    local item=chosen.Item;local _,category,signatureMult=Signatures.Modify(ctx,item,d,random,e)
+    local mult=base*signatureMult
     if category=='Corrupted'then mult*=1-math.max(0,.15-(e.Cleanse or 0)-(ctx.Protection or 0))end
-    if biscuit then mult*=1+C.Supplies.GoldenBiscuit.Magnitude end
     local value=math.max(1,math.floor(item[4]*mult))
-    local key=ctx.Depth..':'..chosen.Index..':'..name
-    local stack=p.Loot[key]or {Name=name,Category=category,Count=0,Value=0,Layer=ctx.Depth,Mutation=mutation}
     if ctx.Orbit then
      d.OrbitValue=(d.OrbitValue or 0)+value;d.OrbitCount=(d.OrbitCount or 0)+1
-    elseif activeAutoDeposit and (units>=capacity or random()<ctx.AutoDeposit)then
-     R.Credit(p,value)
-    else stack.Count+=1;stack.Value+=value;p.Loot[key]=stack;units+=1 end
+    else yield+=value end
     produced+=1;p.Pity=chosen.Rare and 0 or math.min(100,p.Pity+1)
     d.DryStreak=chosen.Rare and 0 or math.min(100,(d.DryStreak or 0)+1)
-    R.AddXP(p,math.max(1,math.floor((4+2*ctx.Depth)*ctx.XP*(1+(e.XPBonus or 0)))))
+    R.AddXP(p,math.max(1,math.floor((4+2*ctx.Depth)*ctx.XP*(1+(e.XPBonus or 0))*xpBonus)))
     d.MasteryXP=(d.MasteryXP or 0)+2;d.Mastery=math.min(100,math.floor(math.sqrt(d.MasteryXP/5)))
     contributed+=1+math.floor((e.Event or 0)*10)
     if category=='Bone'then p.Bones+=1 end
     if ctx.HatchChance and random()<ctx.HatchChance then p.Bones+=2 end
     if random()<math.min(.25,e.BoneBonus or 0)then p.Bones+=1 end
    end
-   if ctx.Orbit and d.WorkSequence%4==0 and (d.OrbitValue or 0)>0 and units<capacity then
-    local held=math.max(1,d.OrbitCount or 1);local take=math.min(held,capacity-units)
-    local average=math.max(1,math.floor((d.OrbitValue or 0)/held));local value=math.min(d.OrbitValue,take*average)
-    local key=ctx.Depth..':orbit:'..d.DogUid
-    local stack=p.Loot[key]or{Name='Orbital Cache',Category='Digital',Count=0,Value=0,Layer=ctx.Depth,Mutation='NORMAL'}
-    stack.Count+=take;stack.Value+=value;p.Loot[key]=stack;units+=take
-    d.OrbitCount=math.max(0,held-take);d.OrbitValue=math.max(0,(d.OrbitValue or 0)-value)
+   -- Black Hole Pug keeps its loot in orbit and lands it every fourth dig, with a bonus.
+   if ctx.Orbit and d.WorkSequence%4==0 and (d.OrbitValue or 0)>0 then
+    yield+=math.floor(d.OrbitValue*(1+R.OrbitBonus));d.OrbitValue=0;d.OrbitCount=0
    end
+   -- LastYield (mirrored to DogInventory attributes) drives the client's "+$" popups.
+   d.LastYield=payIncome(p,yield,now)
    if ctx.TreatChance and produced>0 and random()<ctx.TreatChance then p.Supplies.LuckyTreat=math.min(now+3600,math.max(now,p.Supplies.LuckyTreat or 0)+30)end
-   for attempt=1,ctx.ItemAttempts do
-    if not I.Free(p)then break end
-    local effects=R.Copy(e);effects.SourceDogUid=d.DogUid
-    effects.WeightLuck=ctx.WeightLuck;effects.SignatureMutation=ctx.Mutation;effects.SignatureMutationChance=ctx.MutationChance
-    effects.SignatureMutationValue=ctx.MutationValue;effects.DiscoveryScale=ctx.ItemScale
-    effects.SellValue=math.min(.5,(effects.SellValue or 0)+.025*(p.Upgrades.Plot or 0)+.015*(p.Upgrades.Kennel or 0)+math.max(0,ctx.Value-1)*.20)
-    effects.Artifact=(effects.Artifact or 0)+math.max(0,(ctx.CategoryLuck.Artifact or 1)-1)*.10
-    effects.DigitalLuck=(effects.DigitalLuck or 0)+math.max(0,(ctx.CategoryLuck.Digital or 1)-1)*.10
-    effects.BoostLuck=boostLuck
+   -- Overflow speed also brings extra item attempts: past the floor a dog earns as if it dug faster.
+   for attempt=1,R.RollCount(ctx.ItemAttempts,overflow,random)do
+    if not I.Free(p,itemCapacity)then break end
+    local effects=R.ItemEffects(p,d,e,ctx,b,boostLuck,itemCapacity)
     local found,chance=I.Pick(ctx.Depth,random,effects)
-    if found then I.Mint(p,found,chance,d.DogUid..':'..d.WorkSequence..':'..attempt,now,random,effects);R.AddXP(p,4+2*ctx.Depth)end
+    if found then I.Mint(p,found,chance,d.DogUid..':'..d.WorkSequence..':'..attempt,now,random,effects);R.AddXP(p,math.floor((4+2*ctx.Depth)*xpBonus))end
    end
    local special=C.SpecialDiscovery or {LongDogChance=1/20000,LongDogMinLayer=4}
    if produced>0 and p.CurrentLayer>=special.LongDogMinLayer and not p.DogDex.LongDog and not p.SpecialDiscoveries.LongDogPending and random()<special.LongDogChance then
@@ -296,10 +410,25 @@ function R.Dig(p,now,random)
    end
   end
  end
+ incomeXP(p,now,global.XP)
  R.UpdateLevel(p)
  p.Event.Contribution+=contributed;p.EventTokens+=contributed;Lifetime.Add(p,'GlobalDigContribution',contributed)
  return contributed
 end
+-- Storage for the UI and dog animations. Ordinary loot is paid into the wallet as it is dug, so it
+-- never fills: LootFull is always false (LootUnits/LootCapacity describe old unsold stacks, still
+-- sellable at the collector). Discoveries need free slots: ItemFull means dogs find no items.
+function R.Storage(p,now)
+ now=now or os.time()
+ local units=0;for _,s in pairs(p.Loot or {})do units+=tonumber(s.Count)or 0 end
+ local capacity=I.Capacity(p,I.CapacityExtra(p,now))
+ local items=I.Count(p.Items)
+ return {LootUnits=units,LootCapacity=50+25*((p.Upgrades or {}).Storage or 0),ItemCount=items,ItemCapacity=capacity,
+  LootFull=false,ItemFull=items+I.Count(p.ItemReservations)>=capacity}
+end
+-- Expected income of the team and of every dog (Economy.IncomeModel). The one function behind the
+-- HUD income, Snapshot.DogStats and OfflineEarnings.Estimate (offline coins, boost prices, Robux packs).
+function R.IncomeModel(p,now,options)return IncomeModel.Compute(R,p,now,options)end
 
 function R.Assign(p,uid,slot,now)
  PlotRules.Assign(p,slot)

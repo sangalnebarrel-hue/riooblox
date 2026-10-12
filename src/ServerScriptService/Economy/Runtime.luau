@@ -145,7 +145,13 @@ function Runtime.Project(player,p)
  player:SetAttribute('TutorialActive',tutorial.Active);player:SetAttribute('TutorialStatus',tutorial.Status)
  player:SetAttribute('TutorialReadyAt',tutorial.ReadyAt)
  local value,count=0,0;for _,s in pairs(p.Loot)do value+=s.Value;count+=s.Count end
- player:SetAttribute('PendingCash',value);player:SetAttribute('LootCount',count);player:SetAttribute('ItemCount',I.Count(p.Items));player:SetAttribute('ItemCapacity',I.Capacity(p))
+ player:SetAttribute('PendingCash',value);player:SetAttribute('LootCount',count)
+ -- Dog income (HUD chip, Yard card) and storage state (HUD, kennel labels): one model, Rules.IncomeModel.
+ local now=os.time();local storage=Rules.Storage(p,now)
+ player:SetAttribute('ItemCount',storage.ItemCount);player:SetAttribute('ItemCapacity',storage.ItemCapacity)
+ player:SetAttribute('ItemFull',storage.ItemFull);player:SetAttribute('LootFull',storage.LootFull);player:SetAttribute('LootCapacity',storage.LootCapacity)
+ local okIncome,income=pcall(Rules.IncomeModel,p,now,{AssignedOnly=true})
+ if okIncome then player:SetAttribute('IncomePerMinute',math.floor(income.PerMinute+.5))else warn('DOGROTS income estimate failed:',income)end
  local available,active=0,0
  for _,b in pairs(p.OwnedBlocks or{})do if b.State=='Placed'or b.State=='Ready'then active+=1 else available+=1 end end
  for _,count in pairs(p.LuckyCredits or{})do available+=math.max(0,count)end
@@ -343,16 +349,20 @@ function Runtime.Snapshot(player)
  local trade=tradeId and Runtime.Engine.Trades[tradeId]
  if trade and trade.Expires<=os.time() then Runtime.Engine:CancelTrade(player.UserId);trade=nil end
  local online={};for _,other in ipairs(Players:GetPlayers())do if other~=player and Runtime.Ready(other) then table.insert(online,{Id=other.UserId,Name=other.DisplayName,Username=other.Name,Level=other:GetAttribute('Level')or 1,Status=Runtime.Engine.TradeByUser[other.UserId]and 'Trading'or 'Online',Trades=Runtime.Views[other.UserId].Stats.CompletedTrades,Listings=Rules.Count(Runtime.Views[other.UserId].Listings)})end end
- local dogStats={};local team=Rules.Team(p,os.time());local income=0
- for uid,d in pairs(p.Dogs)do
-  local cooldown=Rules.Cooldown(p,d,team);dogStats[uid]={Cooldown=cooldown,Cycle=cooldown+Config.Work.Duration,Luck=team.DigitalLuck or 0,MaxDepth=p.CurrentLayer}
-  if d.AssignedSlot~=''then local layer=Config.Layers[p.CurrentLayer];local value,weight=0,0;for _,v in ipairs(layer.Loot)do value+=v[3]*v[4];weight+=v[3]end;income+=2*value/weight/(cooldown+Config.Work.Duration)*Rules.Bonus(d)*(Definitions[d.DogId].PowerBudget or 1)*(1+(team.SellValue or 0))end
+ -- Per-dog stats and team income from the shared model (Rules.IncomeModel), the same numbers the
+ -- HUD shows and offline earnings use. Luck is the real rare-loot luck (fraction, +0.25 = +25%).
+ local okModel,model=pcall(Rules.IncomeModel,p,os.time())
+ if not okModel then warn('DOGROTS income model failed:',model);model={PerMinute=0,Dogs={}}end
+ local dogStats={};local income=model.PerMinute/60
+ for uid,m in pairs(model.Dogs)do
+  dogStats[uid]={Cooldown=m.Cooldown,Cycle=m.Cycle,Luck=m.LuckPct/100,LuckPct=m.LuckPct,MaxDepth=p.CurrentLayer,CoinsPerMin=m.CoinsPerMin,
+   DigsPerMin=m.DigsPerMin,Efficiency=m.Efficiency,LootPerMin=m.LootPerMin,ItemsPerMin=m.ItemsPerMin,ItemFindsPerMin=m.ItemFindsPerMin,Rolls=m.Rolls,Working=m.Assigned}
  end
  local features={};Rules.Features.Snapshot(Rules,p,features,os.time())
  local tradeView=trade and Rules.Copy(trade)
  if tradeView then tradeView.Details={};for _,offer in pairs(tradeView.Offers)do for uid,dog in pairs(offer.Details or {})do tradeView.Details[uid]=dog end end end
  return {Features=features,Profile=view,OfflineEarnings=Offline.Report(view),Meta=Rules.Meta(os.time()),Week=Rules.Week(os.time()),EventTotal=Runtime.EventTotal or 0,
-  SellableItems=sellable,DogStats=dogStats,IncomeEstimate=income,EventEnds=345600+(Rules.Week(os.time())+1)*604800,Trade=tradeView,Players=online,Preview=memory,Now=os.time(),Dex=dex,GlobalRecords=Runtime.GlobalRecords or {},ServerRecords=Runtime.ServerRecords or {}}
+  SellableItems=sellable,DogStats=dogStats,IncomeEstimate=income,IncomePerMinute=model.PerMinute,Storage=Rules.Storage(p,os.time()),EventEnds=345600+(Rules.Week(os.time())+1)*604800,Trade=tradeView,Players=online,Preview=memory,Now=os.time(),Dex=dex,GlobalRecords=Runtime.GlobalRecords or {},ServerRecords=Runtime.ServerRecords or {}}
 end
 function Runtime.Request(player,action,a,requestId)
  local requestCost=action=='MarketQuery'and 3 or action=='MiningHit'and .25 or action=='MiningTrain'and .5 or 1
@@ -458,9 +468,10 @@ function Runtime.Request(player,action,a,requestId)
  end
  return success,result
 end
-function Runtime.BuyLine(player,dogId,uid)
+-- variant: the conveyor dog's server-rolled Variant attribute (DogLineSpawner), never a client value.
+function Runtime.BuyLine(player,dogId,uid,variant)
  if not Runtime.Ready(player) or not allow(player,2)then return false,'Please wait' end
- local ok,result=Runtime.Engine:BuyLine(player.UserId,dogId,uid)
+ local ok,result=Runtime.Engine:BuyLine(player.UserId,dogId,uid,nil,variant)
  if ok then
   Runtime.Refresh(player)
   local previous=type(result)=='table'and result.PreviousOwner

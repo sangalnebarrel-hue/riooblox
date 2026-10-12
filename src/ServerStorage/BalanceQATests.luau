@@ -15,7 +15,12 @@ function QA.Run()
   check(type(def.Signature)=='string'and #def.Signature>10,'missing signature '..id)
  end
  check(#ids==101,'101 dogs');for i,n in ipairs({20,30,15,15,10,11})do check(counts[i]==n,'rarity count '..i)end
- check(C.StartingCash==750,'starter cash');check(C.StartingCash>=C.Prices[1],'starter affordability')
+ check(C.StartingCash>=C.Prices[1],'starter affordability')
+ -- Dog mutations: relative weights (Rules.Variant sums them), Normal first, ~23% mutated.
+ local variantTotal,mutated=0,0
+ for i,v in ipairs(C.Variants)do variantTotal+=v.Weight;if i>1 then mutated+=v.Weight end;check(R.VariantNames[v.Name],'variant name '..v.Name)end
+ check(C.Variants[1].Name=='Normal'and variantTotal>0 and mutated/variantTotal>=.2 and mutated/variantTotal<=.25,'variant odds')
+ check(C.Power[6]/C.Power[1]>=10,'rarity power curve')
  for i=1,5 do local sum=0;for _,item in ipairs(C.Layers[i].Loot)do sum+=item[3];check(item[4]>0,'loot value')end;check(math.abs(sum-100)<1e-8,'layer weights')end
  local p=R.Profile(900001,2000000000)
  for _,tier in ipairs(B.Rarities)do
@@ -62,11 +67,16 @@ function QA.Run()
   R.Assign(profile,d.DogUid,'DigSlot_1',now)
   for cycle=1,80 do
    now+=35;d.NextWorkAt=now;profile.Loot={};profile.Items={};profile.RecordJobs={}
+   -- Ordinary loot is paid straight into the wallet (dog income); nothing piles up in storage.
+   local cash=profile.Cash
    local count=R.Dig(profile,now,random);check(count>=0 and count<=24,'bounded contributions '..id)
-   local value=0;for _,loot in pairs(profile.Loot)do value+=loot.Value;check(loot.Value==loot.Value and loot.Value>=0,'finite value')end
+   local value=profile.Cash-cash;check(value==value and value>=0 and value==(d.LastYield or 0),'finite credited income '..id)
+   check(next(profile.Loot)==nil,'no loot stacks '..id)
    sumIncome[def.Rarity]=(sumIncome[def.Rarity]or 0)+value
    R.Validate(profile)
   end
+  local storage=R.Storage(profile,now)
+  check(storage.LootFull==false and type(storage.ItemCapacity)=='number'and type(storage.ItemFull)=='boolean','storage contract '..id)
   check(d.WorkSequence==80,'all dogs complete work '..id)
   d.Rarity='Uncommon';local oldCash=profile.Cash;local uid=d.DogUid
   R.Normalize(profile,profile.UserId,now)
@@ -82,6 +92,10 @@ function QA.Run()
  local probabilities={};local n=100000
  for _=1,n do local m,chance=I.Mutation(random,{SignatureMutation='Glitched',SignatureMutationChance=.02});probabilities[m.Name]=(probabilities[m.Name]or 0)+1;check(chance>0 and chance<=1,'mutation probability')end
  check(math.abs((probabilities.GLITCHED or 0)/n-(.02+.98*.0013))<.003,'merged mutation probability')
+ -- The shared income model (HUD, Snapshot, offline earnings) agrees with itself and stays finite.
+ local model=R.IncomeModel(q,now)
+ check(model.PerMinute==model.PerMinute and model.PerMinute>0,'income model')
+ for _,stats in pairs(model.Dogs)do check(stats.CoinsPerMin>=0 and stats.LuckPct>=0 and stats.Efficiency>0,'dog stats')end
  print('DOGROTS_BALANCE_QA_PASS',checks,'checks;101 dogs;6 pools;line odds;8000 work cycles;100000 mutation rolls')
  return {Checks=checks,Dogs=#ids,Counts=counts,IncomeSample=sumIncome,MutationCounts=probabilities}
 end

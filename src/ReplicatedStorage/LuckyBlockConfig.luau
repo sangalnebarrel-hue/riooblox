@@ -1,5 +1,6 @@
 -- Six public block tiers. Every reward row is a rarity probability, not a per-dog weight.
-local C={Version=4}
+-- Version 5: dog mutation (variant) odds changed (Config.Variants); blocks frozen earlier keep theirs.
+local C={Version=5}
 C.Rarities={'Common','Rare','Epic','Legendary','Mythic','Secret'}
 C.LegacyAliases={Uncommon='Rare',['Brainrot God']='Mythic'}
 C.Stream={SlotLength=12,EmptySlots=3,Speed=6,BlockChance=.25,MaxActive=8}

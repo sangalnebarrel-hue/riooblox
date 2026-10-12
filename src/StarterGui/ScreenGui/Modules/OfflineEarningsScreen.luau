@@ -1,4 +1,5 @@
 local S={}
+local IncomeText=require(game:GetService('ReplicatedStorage').DogEconomy.IncomeText)
 local function duration(seconds)
  seconds=math.max(0,math.floor(tonumber(seconds)or 0))
  local hours=math.floor(seconds/3600);local minutes=math.floor(seconds/60)%60
@@ -21,7 +22,7 @@ function S.Build(c)
  local y=bannerH+96
  local seconds=tonumber(report.PendingSeconds)or 0
  U.Text(sc,'WORK TIME: '..duration(seconds)..'   ·   LAST TIME AWAY: '..duration(report.AwaySeconds),12,y,W-32,45,18,P.text,true);y+=53
- U.Text(sc,string.format('Assigned dogs earn %.0f%% of their base income for up to %s. Claim whenever you are ready.',(report.Efficiency or .35)*100,duration(report.CapSeconds or 28800)),12,y,W-32,63,18,P.muted);y+=71
+ U.Text(sc,string.format('Assigned dogs earn %.0f%% of their income for up to %s while you are away. Claim whenever you are ready.',(report.Efficiency or .2)*100,duration(report.CapSeconds or 7200)),12,y,W-32,63,18,P.muted);y+=71
  if report.WasCapped then U.Text(sc,'Your offline earning limit was reached. Your saved coins are safe.',12,y,W-32,48,17,P.purple);y+=54 end
  local dogs=amount>0 and(report.Dogs or{})or(report.CurrentDogs or{})
  U.Text(sc,amount>0 and'YOUR HARD-WORKING DOGS'or'YOUR ASSIGNED DOGS',12,y,W-32,31,23,P.text,true);y+=41
@@ -30,7 +31,8 @@ function S.Build(c)
   local card=U.Panel(sc,'OfflineDog_'..tostring(dog.Uid or i),8+(i-1)%cols*(cw+12),y+math.floor((i-1)/cols)*226,cw,214,true)
   require(script.Parent.PreviewRenderer).Dog(card,dog.DogId,7,5,cw-14,108)
   U.Center(card,dog.Name or dog.DogId,8,116,cw-16,54,20,P.text,true)
-  U.Center(card,amount>0 and('+'..U.Fmt(dog.Coins or 0)..' COINS')or string.format('%.2f COINS / SEC',dog.Rate or 0),8,177,cw-16,30,17,P.text,true)
+  -- Offline rate per minute (OfflineEarnings: the shared income model x offline efficiency).
+  U.Center(card,amount>0 and('+'..U.Fmt(dog.Coins or 0)..' COINS')or IncomeText.PerMinuteLabel((dog.Rate or 0)*60),8,177,cw-16,30,17,P.text,true)
  end
  if #dogs==0 then U.Center(sc,'No assigned dogs yet. Choose your team in MY DOGS.',16,y+15,W-40,100,22,P.muted)end
 end
