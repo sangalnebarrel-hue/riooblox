@@ -341,6 +341,44 @@ test("Theme covers every variant, mutation and item rarity", function()
 	eq(Theme.OnColor(Theme.Colors.edge), Theme.White)
 end)
 
+test("Theme scales are additive and ordered", function()
+	-- The original tokens keep their values.
+	local radius = { Window = 18, Card = 14, Button = 12, Field = 10, Small = 8 }
+	for key, value in radius do
+		eq(Theme.Radius[key], value, "Radius." .. key)
+	end
+	local motion = { Press = 0.09, Fast = 0.12, Open = 0.18, Close = 0.14, Slide = 0.22, Fill = 0.25 }
+	for key, value in motion do
+		eq(Theme.Motion[key], value, "Motion." .. key)
+	end
+	local function ascending(scale, order, label)
+		for i = 2, #order do
+			truthy(scale[order[i]] > scale[order[i - 1]], label .. "." .. order[i] .. " > " .. order[i - 1])
+		end
+	end
+	ascending(Theme.Space, { "XXS", "XS", "S", "M", "L", "XL", "XXL" }, "Space")
+	ascending(Theme.Radius, { "XS", "S", "M", "L", "XL" }, "Radius")
+	ascending(Theme.IconSize, { "XS", "S", "M", "L", "XL", "Hero" }, "IconSize")
+	eq(Theme.Radius.S, Theme.Radius.Small)
+	eq(Theme.Radius.M, Theme.Radius.Button)
+	eq(Theme.Radius.L, Theme.Radius.Card)
+	eq(Theme.Radius.XL, Theme.Radius.Window)
+	for _, key in { "Hover", "Pop", "Toast", "Stagger", "Celebrate" } do
+		truthy(Theme.Motion[key] > 0 and Theme.Motion[key] <= 1, "Motion." .. key)
+	end
+	for name, easing in Theme.Easing do
+		truthy(typeof(easing.Style) == "EnumItem" and typeof(easing.Direction) == "EnumItem", "Easing." .. name)
+	end
+	local last = -1
+	for _, level in { "Flat", "Low", "Mid", "High" } do
+		local e = Theme.Elevation[level]
+		truthy(e.Offset > last or (level == "Flat" and e.Offset == 0), "Elevation." .. level .. " offset grows")
+		truthy(e.Transparency >= 0 and e.Transparency <= 1, "Elevation." .. level .. " transparency")
+		last = e.Offset
+	end
+	eq(Theme.ShadowColor, Theme.Colors.edge)
+end)
+
 -- LOCALIZATION ------------------------------------------------------------------------------------
 test("every kit word has exactly one Russian translation", function()
 	local base = {}

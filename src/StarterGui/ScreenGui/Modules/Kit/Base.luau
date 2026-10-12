@@ -157,8 +157,22 @@ function Base.Text(parent: Instance?, props: TextProps?): any
 	return label
 end
 
--- Image for an icon key: an asset URL as is, a HUD icon (Theme.Icons) or a GameIcons key.
 local gameIcons: any = nil
+local function gameIconsModule(): any
+	if gameIcons == nil then
+		gameIcons = false
+		local module = ReplicatedStorage:FindFirstChild("GameIcons")
+		if module and module:IsA("ModuleScript") then
+			local ok, value = pcall(require, module)
+			if ok and type(value) == "table" then
+				gameIcons = value
+			end
+		end
+	end
+	return gameIcons
+end
+
+-- Image for an icon key: an asset URL as is, a HUD icon (Theme.Icons) or a GameIcons key.
 function Base.IconImage(key: string?): string?
 	if type(key) ~= "string" or key == "" then
 		return nil
@@ -170,16 +184,7 @@ function Base.IconImage(key: string?): string?
 	if own then
 		return own
 	end
-	if gameIcons == nil then
-		gameIcons = false
-		local module = ReplicatedStorage:FindFirstChild("GameIcons")
-		if module and module:IsA("ModuleScript") then
-			local ok, value = pcall(require, module)
-			if ok and type(value) == "table" then
-				gameIcons = value
-			end
-		end
-	end
+	gameIconsModule()
 	if gameIcons and type(gameIcons.Resolve) == "function" then
 		local ok, url = pcall(gameIcons.Resolve, key)
 		if ok and type(url) == "string" then
@@ -190,6 +195,23 @@ function Base.IconImage(key: string?): string?
 end
 
 local GLYPHS = { Coins = "$", Star = "★", Lock = "🔒", Check = "✓", Info = "i", Warning = "!", Search = "⌕" }
+
+-- Text glyph for a key without an image: the kit's own, then GameIcons.Glyph (rarities, actions,
+-- places), then a star.
+local function glyphFor(key: string?): string
+	local own = key and (GLYPHS :: any)[key]
+	if own then
+		return own
+	end
+	local icons = gameIconsModule()
+	if key and icons and type(icons.Glyph) == "function" then
+		local ok, glyph = pcall(icons.Glyph, key)
+		if ok and type(glyph) == "string" and glyph ~= icons.GlyphFallback then
+			return glyph
+		end
+	end
+	return "★"
+end
 
 -- An icon: ImageLabel when the key resolves to an image, otherwise a text glyph.
 function Base.Icon(parent: Instance?, key: string?, props: { Size: UDim2?, Position: UDim2?, AnchorPoint: Vector2?, ZIndex: number?, Color: Color3?, Glyph: string? }?): any
@@ -207,7 +229,7 @@ function Base.Icon(parent: Instance?, key: string?, props: { Size: UDim2?, Posit
 	else
 		icon = Base.Text(nil, {
 			Name = "Icon",
-			Text = p.Glyph or (key and (GLYPHS :: any)[key]) or "★",
+			Text = p.Glyph or glyphFor(key),
 			TextSize = 18,
 			Scaled = true,
 			MinTextSize = 8,

@@ -123,15 +123,45 @@ Theme.Icons = {
 	Trade = "rbxassetid://137537596011172",
 }
 
-Theme.Radius = { Window = 18, Card = 14, Button = 12, Field = 10, Small = 8 }
+-- Corner radii: the semantic names, then a plain scale (XS..XL) for new screens. Kit.Corner also
+-- takes "pill".
+Theme.Radius = { Window = 18, Card = 14, Button = 12, Field = 10, Small = 8, XS = 4, S = 8, M = 12, L = 14, XL = 18 }
 Theme.StrokeWidth = { Window = 3, Card = 2, Button = 2, Field = 2 }
 
 -- Text sizes in pixels: desktop and compact (phones).
 Theme.TextSize = { Title = 30, Subtitle = 16, Heading = 21, Body = 17, Small = 14, Tiny = 12, Button = 19 }
 Theme.TextSizeCompact = { Title = 23, Subtitle = 13, Heading = 18, Body = 15, Small = 13, Tiny = 11, Button = 17 }
 
--- Durations in seconds. Spec: open/close 0.15-0.25 s, never slow.
-Theme.Motion = { Press = 0.09, Fast = 0.12, Open = 0.18, Close = 0.14, Slide = 0.22, Fill = 0.25 }
+-- Durations in seconds. Spec: open/close 0.15-0.25 s, never slow. Hover / Pop / Toast / Stagger
+-- (delay between items of a list reveal) / Celebrate (reward bursts) are for new screens.
+Theme.Motion = {
+	Press = 0.09, Fast = 0.12, Open = 0.18, Close = 0.14, Slide = 0.22, Fill = 0.25,
+	Hover = 0.08, Pop = 0.16, Toast = 0.2, Stagger = 0.03, Celebrate = 0.6,
+}
+
+-- Easings for Kit.Motion.Tween(inst, Theme.Motion.Open, goals, e.Style, e.Direction).
+Theme.Easing = {
+	Standard = { Style = Enum.EasingStyle.Quad, Direction = Enum.EasingDirection.Out }, -- most UI changes
+	Enter = { Style = Enum.EasingStyle.Back, Direction = Enum.EasingDirection.Out }, -- windows, cards appearing
+	Exit = { Style = Enum.EasingStyle.Quad, Direction = Enum.EasingDirection.In }, -- leaving the screen
+	Emphasis = { Style = Enum.EasingStyle.Elastic, Direction = Enum.EasingDirection.Out }, -- rewards, rare reveals
+	Linear = { Style = Enum.EasingStyle.Linear, Direction = Enum.EasingDirection.InOut }, -- timers, progress fills
+}
+
+-- Spacing scale in pixels (paddings, gaps, margins).
+Theme.Space = { XXS = 2, XS = 4, S = 8, M = 12, L = 16, XL = 24, XXL = 32 }
+
+-- Icon sizes in pixels (square).
+Theme.IconSize = { XS = 14, S = 18, M = 24, L = 32, XL = 48, Hero = 72 }
+
+-- Elevation: a drop shadow drawn as a ShadowColor frame Offset pixels under the element.
+Theme.ShadowColor = P.edge
+Theme.Elevation = {
+	Flat = { Offset = 0, Transparency = 1 },
+	Low = { Offset = 2, Transparency = 0.82 },
+	Mid = { Offset = 4, Transparency = 0.74 },
+	High = { Offset = 8, Transparency = 0.66 },
+}
 
 -- ScreenGui DisplayOrder of the kit layers. The main ScreenGui is 0, MiningGui 40,
 -- CommunityServices / MiningShop 70.

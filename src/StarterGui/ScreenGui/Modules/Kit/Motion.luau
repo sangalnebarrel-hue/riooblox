@@ -1,21 +1,57 @@
--- Tween helpers. Every kit animation goes through Motion.Tween so ReducedMotion (the Roblox
--- accessibility setting, or Motion.Override) makes it instant.
+-- Tween helpers. Every kit animation goes through Motion.Tween so reduced motion makes it instant.
+-- Reduced motion is on when any of these says so: Motion.Override (tests, tools), Perf.Quality
+-- (Roblox's accessibility setting, the saved Setting_ReducedMotion, PAWPAD's Motion toggle), or,
+-- if Perf.Quality cannot be loaded, the ReducedMotion / Setting_ReducedMotion player attributes and
+-- GuiService.ReducedMotionEnabled read directly.
 local TweenService = game:GetService("TweenService")
 local GuiService = game:GetService("GuiService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Motion = {}
 
--- true / false forces reduced motion on / off (tests, an in-game setting); nil follows Roblox.
+-- true / false forces reduced motion on / off (tests, an in-game setting); nil follows the game.
 Motion.Override = nil :: boolean?
 
-function Motion.Reduced(): boolean
-	if Motion.Override ~= nil then
-		return Motion.Override == true
+local quality: any = nil
+local function qualityModule(): any
+	if quality == nil then
+		quality = false
+		local perf = ReplicatedStorage:FindFirstChild("Perf")
+		local module = perf and perf:FindFirstChild("Quality")
+		if module and module:IsA("ModuleScript") then
+			local ok, value = pcall(require, module)
+			if ok and type(value) == "table" then
+				quality = value
+			end
+		end
+	end
+	return quality
+end
+
+local function fallback(): boolean
+	local player = Players.LocalPlayer
+	if player and (player:GetAttribute("ReducedMotion") == true or player:GetAttribute("Setting_ReducedMotion") == true) then
+		return true
 	end
 	local ok, value = pcall(function()
 		return (GuiService :: any).ReducedMotionEnabled
 	end)
 	return ok and value == true
+end
+
+function Motion.Reduced(): boolean
+	if Motion.Override ~= nil then
+		return Motion.Override == true
+	end
+	local q = qualityModule()
+	if q then
+		local ok, value = pcall(q.Reduced)
+		if ok then
+			return value == true
+		end
+	end
+	return fallback()
 end
 
 -- Tweens `goals` over `time` seconds (Quad Out by default). With reduced motion (or time <= 0)

@@ -5,6 +5,7 @@ local Motion = require(script.Parent.Motion)
 local Maid = require(script.Parent.Maid)
 local Lang = require(script.Parent.Lang)
 local Overlay = require(script.Parent.Overlay)
+local Sound = require(script.Parent.Sound)
 
 local Controls = {}
 
@@ -82,6 +83,7 @@ function Tabs.SetTabs(self: any, tabs: { any }, selected: string?)
 		badge.Visible = tab.Badge ~= nil and tostring(tab.Badge) ~= ""
 		Base.Corner(badge, "pill")
 		Base.Press(button, nil, self.Maid)
+		Sound.Bind(button, self.Maid, { Press = false }) -- Select plays Tab
 		self.Maid:Give(button.Activated:Connect(function()
 			self:Select(tab.Id)
 		end))
@@ -122,8 +124,11 @@ function Tabs.Select(self: any, id: string, silent: boolean?)
 	self.Selected = id
 	self:_paint(false)
 	Base.Reveal(self.Instance, self.Buttons[id].Button)
-	if changed and not silent and self.Props.OnChange then
-		task.spawn(self.Props.OnChange, id)
+	if changed and not silent then
+		Sound.Play("Tab", self.Instance)
+		if self.Props.OnChange then
+			task.spawn(self.Props.OnChange, id)
+		end
 	end
 end
 

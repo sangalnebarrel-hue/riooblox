@@ -90,6 +90,7 @@ local win = Kit.Window.new({
 	Tab = "offer",             -- initial tab
 	MaxSize = Vector2.new(1040, 760),  -- desktop card limit (default)
 	Stack = false, NoNavigation = false,
+	Sound = true,              -- false: no open / close / button sounds in this window (UISoundOff)
 	OnOpen = function(win) end, OnClose = function(win, reason) end,
 })
 local page = win:Page("offer")      -- a frame visible only on that tab (or win.Body without tabs)
@@ -105,8 +106,9 @@ Fields and signals: `win.Body`, `win.IsOpen`, `win.Tab`, `win.Maid` (cleaned on 
 `win.Opened`, `win.Closed(reason)`, `win.Resized(layout)`, `win.TabChanged(id)`.
 Module: `Kit.Window.Top()`, `Kit.Window.Count()`, `Kit.Window.CloseAll(reason)`.
 The window animates in about 0.18 s: the backdrop fades, the card scales up from 0.94 and fades
-in. It closes in 0.14 s. With Roblox Reduced Motion (or `Kit.Motion.Override = true`) both
-are instant.
+in. It closes in 0.14 s. With reduced motion (Roblox's setting, the in-game setting or PAWPAD's
+Motion toggle through `Perf.Quality`, or `Kit.Motion.Override = true`) both are instant.
+Opening and closing play the `Open` / `Close` interface sounds (see Sounds below).
 
 ## Controls
 
@@ -120,6 +122,8 @@ local buy = Kit.Button(page, { Text = "BUY", Style = "success", Price = 125000, 
 -- Style: "primary" | "secondary" | "danger" | "ghost" | "success" | "gold"; Color overrides.
 -- Icon = "Shop" (icon key or asset id), PriceIcon = "Bones", PriceText = "FREE", Disabled = true,
 -- Hold = 1 (seconds to hold before OnClick: hold-to-confirm).
+-- Sound = true / nil (default cues), false (silent) or { Hover = "Hover", Press = "Press" }
+-- (UISound cue names or false; a hold button plays its Press cue when the hold starts).
 buy:SetBusy(true)   -- pulsing dots, clicks ignored (use while a request is in flight)
 buy:SetDisabled(true); buy:SetText("OWNED"); buy:SetStyle("secondary"); buy:SetPrice(nil)
 
@@ -259,7 +263,12 @@ end, function(spec) return spec.DecorId end)
 * `Kit.Theme`: `Font` (FredokaOne), `FontNumeric` (BuilderSans Bold), `Colors` (same keys as
   `UITheme.U.Colors`), `Surface`, `Backdrop`, `Ink`, `InkMuted`, `Accent`, `Success`, `Danger`,
   `Warning`, `Rarity`, `ItemRarity`, `RarityGradient`, `Variant`, `Mutation`, `Icons`, `Radius`,
-  `TextSize` / `TextSizeCompact`, `Motion` (durations), `Layer`. Functions: `RarityColor(r)`,
+  `TextSize` / `TextSizeCompact`, `Motion` (durations), `Layer`, and the scales `Space`
+  (XXS 2 … XXL 32), `Radius` XS…XL (4 / 8 / 12 / 14 / 18, the same values as Small / Button /
+  Card / Window), `IconSize` (XS 14 … Hero 72), `Elevation` (Flat / Low / Mid / High: shadow
+  `Offset`, `Transparency`) with `ShadowColor`, extra `Motion` durations (Hover, Pop, Toast,
+  Stagger, Celebrate) and `Easing` (Standard, Enter, Exit, Emphasis, Linear: `{Style, Direction}`
+  for `Kit.Motion.Tween`). Existing values never change. Functions: `RarityColor(r)`,
   `RarityOrder(r)` (sorting: Common 1 … Secret 7), `VariantColor(v)`, `MutationColor(m)`,
   `OnColor(bg)` (readable text colour), `Lighten`, `Darken`, `Hex` (RichText), `Size(name, phone)`.
   Colours mirror UITheme and LabConfig; `tests/uikit.luau` fails if they drift apart.
@@ -271,15 +280,33 @@ end, function(spec) return spec.DecorId end)
   `VisibleRange`, `CanvasHeight`, `CellPosition`, `MaxCells`, `ClampScroll`, `ScrollToReveal`).
 * `Kit.Lang()` → `"ru"` / `"en"` (same rule as AutoTranslate), `Kit.T(en, ru)`, `Kit.Word(key)`,
   `Kit.Now()` (server unix time from `workspace:GetServerTimeNow()`).
-* `Kit.Maid.new()` (`:Give(connection | instance | function | thread | object)`, `:Clean()`),
-  `Kit.Signal.new()` (`:Connect`, `:Once`, `:Fire`, `:DisconnectAll`).
+* `Kit.Maid.new()` (`:Give(connection | instance | function | thread | object)`,
+  `:Connect(signal, fn)`, `:Set(key, item)` keyed slot, `:Clean()`), `Kit.Signal.new()`
+  (`:Connect`, `:Once`, `:Fire`, `:DisconnectAll`). Both are `ReplicatedStorage.Perf.Maid` /
+  `Perf.Signal`, shared with non-UI code.
 * `Kit.Motion.Tween(inst, seconds, goals, style?, direction?)`: use it for your own animations so
-  Reduced Motion applies (`Kit.Motion.Reduced()`, `Kit.Motion.Override`).
+  reduced motion applies (`Kit.Motion.Reduced()` follows `Perf.Quality.Reduced()`;
+  `Kit.Motion.Override` wins).
 * `Kit.Text(parent, props)` (kit label: `Text`, `TextSize`, `Color`, `Font = "numeric"`,
-  `AlignX`, `Wrap`, `Scaled`, `Stroke`, `Rich`, `NoTranslate`...), `Kit.Icon(parent, key, props)`,
+  `AlignX`, `Wrap`, `Scaled`, `Stroke`, `Rich`, `NoTranslate`...), `Kit.Icon(parent, key, props)`
+  (an image when the key has one, otherwise a text glyph: kit glyphs, then
+  `ReplicatedStorage.GameIcons.Glyph(key)` for rarities, actions and places),
   `Kit.New(class, props, parent)`, `Kit.Corner`, `Kit.Stroke`, `Kit.Padding`.
 * `Kit.Stats()`: counts of windows, modals, toasts, countdowns and preview cache numbers (debug).
 * `Kit.SetNavigation(N | false, mainGui)`: override the navigation owner (tools, tests).
+
+## Sounds
+
+Kit controls play `ReplicatedStorage.UISound` cues: `Kit.Button` hover and press (hold buttons:
+press when the hold starts, `Success` when it completes), `Kit.Window` open / close, `Kit.Tabs`
+hover and `Tab` on a change. `Sound = false` on a button silences it, `{Hover = false}` drops
+only the hover sound (hold buttons too); on a window it sets the
+`UISoundOff` attribute on the window root, which silences everything inside (any GUI subtree can
+use that attribute). For your own feedback call `UISound.Play("Success")` (cues: Hover, Press,
+Open, Close, Tab, Toggle, Success, Error, Reward, Coin, Whoosh, Pop, Rare, Epic, Legendary,
+Countdown, Lock) or `UISound.Bind(button)`. Sounds go through the `DOGROTS_AUDIO/UI` bus, whose
+volume follows `Setting_UIVolume` from join on (`UISound.Start()`, called by PerfBootstrap; the
+`SFX` bus follows `Setting_SFXVolume`); at most 6 play at once and hover spam is throttled.
 
 ## Data refresh pattern
 

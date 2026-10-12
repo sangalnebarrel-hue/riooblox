@@ -1,0 +1,10 @@
+{
+  "name": "dogrots-preview",
+  "private": true,
+  "description": "Renders World.Spec layouts and place regions to PNG (three.js in headless Chromium).",
+  "type": "module",
+  "dependencies": {
+    "playwright-core": "1.56.1",
+    "three": "0.170.0"
+  }
+}

@@ -2,6 +2,7 @@
 local Run=game:GetService('RunService')
 local Players=game:GetService('Players')
 local RS=game:GetService('ReplicatedStorage')
+local Quality=require(RS:WaitForChild('Perf'):WaitForChild('Quality'))
 local player=Players.LocalPlayer
 local site=workspace:WaitForChild('DOGROTS_District'):WaitForChild('13_TheVoid')
 local core=site:WaitForChild('Core')
@@ -36,7 +37,7 @@ Run.Heartbeat:Connect(function(dt)
  local weight=overridden and 0 or near
  grade.Enabled=weight>.005;grade.TintColor=Color3.new(1,1,1):Lerp(Color3.fromRGB(211,193,242),weight*.38)
  grade.Saturation=-weight*.08;grade.Contrast=weight*.045
- local low=player:GetAttribute('WorldEventFX')=='Low'or player:GetAttribute('LowFX')or player:GetAttribute('ReducedMotion')or (player:GetAttribute('WorldEventFX')==nil and game:GetService('UserInputService').TouchEnabled)
+ local low=Quality.Tier()=='Low'or Quality.Reduced()
  local distance=(position-portal.Position).Magnitude
  local beacon=portal:FindFirstChild('DistantPortalEmission')
  if beacon then

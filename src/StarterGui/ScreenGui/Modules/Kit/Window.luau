@@ -19,6 +19,7 @@ local Overlay = require(script.Parent.Overlay)
 local Nav = require(script.Parent.Nav)
 local Button = require(script.Parent.Button)
 local Controls = require(script.Parent.Controls)
+local Sound = require(script.Parent.Sound)
 
 local Window = {}
 Window.__index = Window
@@ -41,6 +42,7 @@ export type Props = {
 	OnClose: ((window: any, reason: string) -> ())?,
 	Name: string?,
 	NoTranslate: boolean?, -- Title/Subtitle are self-localized
+	Sound: boolean?, -- false = no interface sounds for this window and everything inside it
 }
 
 local function closeTop(allowBase: boolean): boolean
@@ -87,6 +89,9 @@ function Window.new(props: Props): any
 	}, gui)
 	self.Root = root
 	self.Maid:Give(root)
+	if p.Sound == false then
+		root:SetAttribute("UISoundOff", true) -- Kit.Sound / UISound skip this subtree
+	end
 	-- The backdrop sinks clicks behind the card (it does not close the window).
 	self.Backdrop = Base.New("TextButton", {
 		Name = "Backdrop",
@@ -152,6 +157,7 @@ function Window.new(props: Props): any
 		AnchorPoint = Vector2.new(1, 0.5),
 		ZIndex = 5,
 		NoTranslate = true,
+		Sound = { Press = false }, -- the window plays Close itself
 		OnClick = function()
 			self:Close("button")
 		end,
@@ -411,6 +417,7 @@ function Window.Open(self: any)
 		end
 	end
 	Base.GamepadFocus(self.CloseButton.Instance)
+	Sound.Play("Open", self.Root)
 	self.Opened:Fire()
 	if self.Props.OnOpen then
 		task.spawn(self.Props.OnOpen, self)
@@ -459,6 +466,9 @@ function Window._close(self: any, reason: string, silent: boolean)
 				self.Cover.Visible = false
 			end
 		end)
+	end
+	if not silent then
+		Sound.Play("Close", self.Root)
 	end
 	self.Closed:Fire(reason)
 	if self.Props.OnClose then
