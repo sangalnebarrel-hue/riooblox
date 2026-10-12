@@ -34,8 +34,10 @@ function E:Join(id)
   R.Validate(p);return "Loaded"
  end)
 end
-function E:Leave(id)
- self:CancelTrade(id)
+-- options (optional) go to Tx:Run, e.g. {Timeout=30}: PlayerRemoving waits longer for a
+-- receipt that holds the profile lock, so the session is released instead of left to expire.
+function E:Leave(id,options)
+ pcall(self.CancelTrade,self,id)
  local ok,result=self.Tx:Run({pk(id)},function(v)
   local p=v[pk(id)];if p and p.Session and p.Session.Id==self.Session then
     local now=self.Now();local play=p.PlaytimeRewards
@@ -45,7 +47,7 @@ function E:Leave(id)
     Lifetime.Checkpoint(p,now);Offline.Checkpoint(p,now);p.Session=nil
    end
   return "Saved"
- end)
+ end,nil,options)
  if ok and self.OnProfileReleased then pcall(self.OnProfileReleased,id)end
  return ok,result
 end
@@ -100,8 +102,11 @@ function E:Tick(id)
 end
 function E:TickAll(ids)
  -- One RAM transaction per player: a single broken profile can no longer stop
- -- digging (and session renewal) for everybody else on the server.
- local now=self.Now();local contribution,failed=0,{}
+ -- digging (and session renewal) for everybody else on the server. A profile whose lock
+ -- is held (a Robux receipt or another durable transaction waiting on DataStore) is
+ -- skipped this second (Timeout=0) instead of stalling or killing the server loop.
+ local now=self.Now();local contribution,failed,skipped=0,{},{}
+ local busy=self.Tx.BusyMessage or "Account is busy; retry shortly"
  for _,id in ipairs(ids) do
   local ok,result=self.Tx:Run({pk(id)},function(v)
    local p=v[pk(id)]
@@ -111,10 +116,12 @@ function E:TickAll(ids)
    R.Normalize(p,id,now);Lifetime.Checkpoint(p,now);p.Session.Expires=now+C.SessionSeconds
    local amount=R.Dig(p,now,self.Random);Offline.Checkpoint(p,now);R.Validate(p)
    return amount
-  end)
-  if ok then contribution+=tonumber(result)or 0 else failed[id]=tostring(result)end
+  end,nil,{Timeout=0})
+  if ok then contribution+=tonumber(result)or 0
+  elseif result==busy then skipped[id]=true
+  else failed[id]=tostring(result)end
  end
- return true,{Contribution=contribution,Week=R.Week(now),Failed=failed}
+ return true,{Contribution=contribution,Week=R.Week(now),Failed=failed,Skipped=skipped}
 end
 function E:EventClaim(id,a,request)
  if require(game.ReplicatedStorage.GlobalDigConfig).Enabled==false then return false,'Global Dig is coming soon'end

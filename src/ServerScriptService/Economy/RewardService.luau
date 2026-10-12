@@ -3,12 +3,8 @@ local C=require(RS.LuckyBlockConfig);local D=require(script.Parent.DogDefinition
 local S={Blocks={},Policies={},PresentedReceipts={},Offers={}};local rng=Random.new();local Runtime
 local function rt()Runtime=Runtime or require(script.Parent.Runtime);return Runtime end
 local function normalize(p)p.LuckyCredits=p.LuckyCredits or {};p.LuckyOpened=p.LuckyOpened or {};p.LuckyPity=p.LuckyPity or {};p.RewardHistory=p.RewardHistory or {} end
-function S.Policy(player)
- local old=S.Policies[player.UserId];if old and os.clock()-old.At<120 then return old.Allowed end
- local ok,result=pcall(function()return Policy:GetPolicyInfoForPlayerAsync(player)end)
- local allowed=ok and result.ArePaidRandomItemsRestricted==false
- S.Policies[player.UserId]={At=os.clock(),Allowed=allowed};return allowed
-end
+-- Paid random items (Robux Lucky Blocks): one shared, cached PolicyService answer.
+function S.Policy(player)return require(script.Parent.PaidRandomPolicy).Allowed(player)end
 function S.Pool(p,tier)
  local weights=C.RewardPools[tier];R.Check(weights,'Unknown block rarity');local pool,total,groups={},0,{}
  for id,def in pairs(D)do

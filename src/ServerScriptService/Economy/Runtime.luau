@@ -577,6 +577,23 @@ function Runtime.Start()
   local data=message.Data;local id=type(data)=='table'and tonumber(data.UserId)
   local player=id and Players:GetPlayerByUserId(id);if player then task.spawn(Runtime.DrainInbox,player)end
  end)end)end
+ -- Releases a profile when its player leaves or the server closes: Leave clears the session
+ -- and checkpoints playtime, FlushProfile saves. A save that found committed writes in
+ -- DataStore ("Resynced": RAM re-read them) dropped the leave mutation, so it is applied and
+ -- saved again. Every step is protected so cleanup always runs. Returns saveOK, message.
+ function Runtime.ReleaseProfile(uid,closing,timeout)
+  local released,releaseError=pcall(require(script.Parent.ServerLuck).Release,Runtime,uid,closing)
+  if not released then warn('DOGROTS server luck release failed:',uid,releaseError)end
+  local saveOK,saveResult=false,'Profile was not saved'
+  for _=1,3 do
+   local alive,leaveOK,leaveResult=pcall(Runtime.Engine.Leave,Runtime.Engine,uid,{Timeout=timeout})
+   if not alive or not leaveOK then warn('DOGROTS leave mutation failed:',uid,alive and leaveResult or leaveOK)end
+   local called,flushOK,flushResult=pcall(Runtime.Tx.FlushProfile,Runtime.Tx,uid)
+   if called then saveOK,saveResult=flushOK,flushResult else saveOK,saveResult=false,flushOK end
+   if not(saveOK and saveResult=='Resynced')then break end
+  end
+  return saveOK,saveResult
+ end
  local function added(player)
   player:SetAttribute('EconomyReady',false)
   local ok,result
@@ -586,29 +603,32 @@ function Runtime.Start()
    if ok or not player.Parent or not tostring(result):lower():find('another server',1,true)then break end
    task.wait(2.5)
   end
-  if not player.Parent then if ok then Runtime.Engine:Leave(player.UserId);Runtime.Tx:FlushProfile(player.UserId)end;return end
+  if not player.Parent then if ok then pcall(Runtime.ReleaseProfile,player.UserId,Runtime.Closing,10)end;return end
   if not ok then player:Kick('Your data is protected. Please rejoin shortly. '..tostring(result));return end
-  Runtime.Loaded[player.UserId]=true;Runtime.Refresh(player)
+  Runtime.Loaded[player.UserId]=true
+  local shown,showError=pcall(Runtime.Refresh,player)
+  if not shown then warn('DOGROTS first refresh failed:',player.UserId,showError)end
   task.spawn(Runtime.DrainInbox,player)
  end
  Players.PlayerAdded:Connect(added)
  for _,p in ipairs(Players:GetPlayers())do task.spawn(added,p)end
  Players.PlayerRemoving:Connect(function(p)
   p:SetAttribute('EconomyLeaving',true)
-  if Runtime.Loaded[p.UserId] then
-   local leaveOK,leaveResult=Runtime.Engine:Leave(p.UserId)
-   local saveOK,saveResult=Runtime.Tx:FlushProfile(p.UserId)
-   if not leaveOK then warn('DOGROTS leave mutation failed:',leaveResult)end
-   if saveOK then Runtime.Tx:UnloadProfile(p.UserId)else warn('DOGROTS final profile save deferred:',saveResult)end
+  local uid=p.UserId
+  if Runtime.Loaded[uid] then
+   -- A receipt may hold the profile lock while it waits on DataStore: give Leave time.
+   local called,saveOK,saveResult=pcall(Runtime.ReleaseProfile,uid,Runtime.Closing,30)
+   if called and saveOK then Runtime.Tx:UnloadProfile(uid)else warn('DOGROTS final profile save deferred:',uid,called and saveResult or saveOK)end
   end
-  Runtime.Loaded[p.UserId]=nil;Runtime.Views[p.UserId]=nil;if Runtime.SeenFinds then Runtime.SeenFinds[p.UserId]=nil end;buckets[p]=nil;marketQueries[p]=nil
-  Runtime.Draining[p.UserId]=nil;if Runtime.TickWarnings then Runtime.TickWarnings[p.UserId]=nil end
+  Runtime.Loaded[uid]=nil;Runtime.Views[uid]=nil;if Runtime.SeenFinds then Runtime.SeenFinds[uid]=nil end;buckets[p]=nil;marketQueries[p]=nil
+  Runtime.Draining[uid]=nil;if Runtime.TickWarnings then Runtime.TickWarnings[uid]=nil end
  end)
  game:BindToClose(function()
   Runtime.Closing=true;local remaining=0
   for _,p in ipairs(Players:GetPlayers())do if Runtime.Loaded[p.UserId]then
    remaining+=1;task.spawn(function()
-    Runtime.Engine:Leave(p.UserId);local ok,err=Runtime.Tx:FlushProfile(p.UserId);if not ok then warn('DOGROTS shutdown save failed:',err)end
+    local called,ok,err=pcall(Runtime.ReleaseProfile,p.UserId,true,10)
+    if not called or not ok then warn('DOGROTS shutdown save failed:',p.UserId,called and err or ok)end
     remaining-=1
    end)
   end end
@@ -620,66 +640,111 @@ function Runtime.Start()
   if not ok then warn('DOGROTS final shutdown flush failed:',summary)
   elseif summary and next(summary.Failed or{})then for key,err in pairs(summary.Failed)do warn('DOGROTS final profile save deferred:',key,err)end end
  end)
+ -- The economy loop renews sessions, autosaves and drives every timed system, and Robux
+ -- receipts need a live session. Every step runs in its own pcall (errors are logged at
+ -- most every 30 s per step) so one exception can never stop it again, and a watchdog
+ -- starts a fresh loop if this one stops beating (a step that yields forever).
+ local stepWarnings,lastServerLuckSync={},0
+ local function step(name,fn,...)
+  local result=table.pack(pcall(fn,...))
+  if not result[1]and os.clock()-(stepWarnings[name]or -60)>=30 then
+   stepWarnings[name]=os.clock();warn('DOGROTS economy step "'..name..'" failed:',result[2])
+  end
+  return table.unpack(result,1,result.n)
+ end
+ local function isDue(id)
+  local p=Runtime.Views[id];if not p then return false end
+  local due=not p.Session or (tonumber(p.Session.Expires)or 0)-os.time()<90
+  for _,dog in pairs(p.Dogs or {})do if dog.AssignedSlot~='' and os.time()>=(dog.NextWorkAt or math.huge)then due=true end end
+  return due
+ end
+ local function loopOnce()
+  local ids={};for id in pairs(Runtime.Loaded)do table.insert(ids,id)end
+  if Runtime.Kennels then step('work visuals',Runtime.Kennels.UpdateWorkVisuals)end
+  local tickIds={}
+  for _,id in ipairs(ids)do
+   -- A view that cannot be read is ticked anyway: TickAll renews its session.
+   local known,due=step('schedule',isDue,id)
+   if not known or due then table.insert(tickIds,id)end
+  end
+  if #tickIds>0 then
+   local called,ok,result=step('tick',Runtime.Engine.TickAll,Runtime.Engine,tickIds)
+   if called and ok and type(result)=='table'then
+    Runtime.LastTick=os.time();step('global dig',Runtime.AccumulateEvent,result.Contribution or 0)
+    Runtime.TickWarnings=Runtime.TickWarnings or {}
+    local failed,skipped=result.Failed or {},result.Skipped or {}
+    for id,err in pairs(failed)do
+     if os.clock()-(Runtime.TickWarnings[id]or -60)>=60 then Runtime.TickWarnings[id]=os.clock();warn('DOGROTS tick deferred for',id,err)end
+    end
+    for _,id in ipairs(tickIds)do local p=Players:GetPlayerByUserId(id);if p and not failed[id]and not skipped[id]then step('refresh',Runtime.Refresh,p)end end
+   elseif called then warn('DOGROTS tick deferred:',result)end
+  end
+  -- Global Dig is one shared key for every server: batch it every 30 seconds.
+  if os.time()-(Runtime.LastEventFlush or 0)>=30 then Runtime.LastEventFlush=os.time();task.spawn(Runtime.FlushEvents)end
+  if os.time()-(Runtime.LastInboxPoll or 0)>=120 then
+   Runtime.LastInboxPoll=os.time()
+   task.spawn(function()for _,player in ipairs(Players:GetPlayers())do Runtime.DrainInbox(player)end end)
+  end
+  if os.time()-(Runtime.LastAutosave or 0)>=60 then
+   Runtime.LastAutosave=os.time();task.spawn(function()
+    local ok,summary=pcall(function()return Runtime.Tx:FlushAllProfiles()end)
+    if not ok then warn('DOGROTS autosave failed:',summary)
+    elseif summary and next(summary.Failed or{})then for key,err in pairs(summary.Failed)do warn('DOGROTS profile autosave deferred:',key,err)end end
+    -- Profiles whose PlayerRemoving save had to be retried can leave RAM once
+    -- a later autosave succeeds. Active profiles stay resident.
+    local unload={}
+    for key in pairs(Runtime.Tx.Loaded)do
+     if type(key)=='string'and key:sub(1,2)=='p:'and not Runtime.Tx.Dirty[key]then
+      local uid=tonumber(key:sub(3));if uid and not Runtime.Loaded[uid]then table.insert(unload,key)end
+     end
+    end
+    for _,key in ipairs(unload)do pcall(Runtime.Tx.UnloadProfile,Runtime.Tx,key)end
+   end)
+  end
+  if os.time()-(Runtime.LastSpecial or 0)>=10 then
+   Runtime.LastSpecial=os.time();step('special discoveries',Runtime.SpecialTick,os.time())
+  end
+  -- Record checks are RAM-only now; items leave "record check pending" within ~5 s.
+  if os.time()-(Runtime.LastRecords or 0)>=5 then
+   Runtime.LastRecords=os.time()
+   for _,id in ipairs(ids)do
+    local called,count=step('records',Runtime.CollectRecords,id)
+    if called and (tonumber(count)or 0)>0 then local player=Players:GetPlayerByUserId(id);if player then step('refresh',Runtime.Refresh,player)end end
+   end
+  end
+  if os.time()-(Runtime.LastRecordFlush or 0)>=60 then Runtime.LastRecordFlush=os.time();task.spawn(Runtime.FlushRecords)end
+  step('announcements',Runtime.PumpAnnouncements)
+  if os.time()-(Runtime.LastRecordRead or 0)>=30 then Runtime.LastRecordRead=os.time();task.spawn(Runtime.ReadNextRecordDepth)end
+  if os.time()-(Runtime.LastSettlement or 0)>=20 then
+   Runtime.LastSettlement=os.time();local ok,count=pcall(function()return Runtime.Engine.Market:Due()end)
+   if not ok then warn('DOGROTS settlement deferred:',count)elseif (count or 0)>0 then step('refresh all',Runtime.RefreshAll)end
+  end
+  -- Paid server luck lives in each buyer's profile as a credit: keep the saved remainder in
+  -- step with this server's timer and start queued time when there is room.
+  if os.time()-lastServerLuckSync>=30 then
+   lastServerLuckSync=os.time();task.spawn(step,'server luck credits',require(script.Parent.ServerLuck).SyncAll,Runtime)
+  end
+ end
+ Runtime.LoopGeneration=0
+ local function startLoop()
+  Runtime.LoopGeneration+=1;local generation=Runtime.LoopGeneration;Runtime.LoopBeat=os.clock()
+  task.spawn(function()
+   while not Runtime.Closing and Runtime.LoopGeneration==generation do
+    task.wait(Config.TickSeconds)
+    if Runtime.Closing or Runtime.LoopGeneration~=generation then break end
+    Runtime.LoopBeat=os.clock()
+    step('loop',loopOnce)
+   end
+  end)
+ end
+ startLoop()
  task.spawn(function()
   while not Runtime.Closing do
-   task.wait(Config.TickSeconds)
-   local ids={};for id in pairs(Runtime.Loaded)do table.insert(ids,id)end
-   if Runtime.Kennels then Runtime.Kennels.UpdateWorkVisuals()end
-   local tickIds={}
-   for _,id in ipairs(ids)do local p=Runtime.Views[id];if p then
-    local due=not p.Session or p.Session.Expires-os.time()<90
-    for _,dog in pairs(p.Dogs)do if dog.AssignedSlot~='' and os.time()>=(dog.NextWorkAt or math.huge)then due=true end end
-    if due then table.insert(tickIds,id)end
-   end end
-   if #tickIds>0 then
-    local ok,result=Runtime.Engine:TickAll(tickIds)
-    if ok then
-     Runtime.LastTick=os.time();Runtime.AccumulateEvent(result.Contribution or 0)
-     Runtime.TickWarnings=Runtime.TickWarnings or {}
-     for id,err in pairs(result.Failed or {})do
-      if os.clock()-(Runtime.TickWarnings[id]or -60)>=60 then Runtime.TickWarnings[id]=os.clock();warn('DOGROTS tick deferred for',id,err)end
-     end
-     for _,id in ipairs(tickIds)do local p=Players:GetPlayerByUserId(id);if p and not (result.Failed or {})[id] then Runtime.Refresh(p)end end
-    else warn('DOGROTS tick deferred:',result)end
-   end
-   -- Global Dig is one shared key for every server: batch it every 30 seconds.
-   if os.time()-(Runtime.LastEventFlush or 0)>=30 then Runtime.LastEventFlush=os.time();task.spawn(Runtime.FlushEvents)end
-   if os.time()-(Runtime.LastInboxPoll or 0)>=120 then
-    Runtime.LastInboxPoll=os.time()
-    task.spawn(function()for _,player in ipairs(Players:GetPlayers())do Runtime.DrainInbox(player)end end)
-   end
-   if os.time()-(Runtime.LastAutosave or 0)>=60 then
-    Runtime.LastAutosave=os.time();task.spawn(function()
-     local ok,summary=pcall(function()return Runtime.Tx:FlushAllProfiles()end)
-     if not ok then warn('DOGROTS autosave failed:',summary)
-     elseif summary and next(summary.Failed or{})then for key,err in pairs(summary.Failed)do warn('DOGROTS profile autosave deferred:',key,err)end end
-     -- Profiles whose PlayerRemoving save had to be retried can leave RAM once
-     -- a later autosave succeeds. Active profiles stay resident.
-     local unload={}
-     for key in pairs(Runtime.Tx.Loaded)do
-      if type(key)=='string'and key:sub(1,2)=='p:'and not Runtime.Tx.Dirty[key]then
-       local uid=tonumber(key:sub(3));if uid and not Runtime.Loaded[uid]then table.insert(unload,key)end
-      end
-     end
-     for _,key in ipairs(unload)do Runtime.Tx:UnloadProfile(key)end
-    end)
-   end
-   if os.time()-(Runtime.LastSpecial or 0)>=10 then
-    Runtime.LastSpecial=os.time();Runtime.SpecialTick(os.time())
-   end
-   -- Record checks are RAM-only now; items leave "record check pending" within ~5 s.
-   if os.time()-(Runtime.LastRecords or 0)>=5 then
-    Runtime.LastRecords=os.time()
-    for _,id in ipairs(ids)do
-     if Runtime.CollectRecords(id)>0 then local player=Players:GetPlayerByUserId(id);if player then Runtime.Refresh(player)end end
-    end
-   end
-   if os.time()-(Runtime.LastRecordFlush or 0)>=60 then Runtime.LastRecordFlush=os.time();task.spawn(Runtime.FlushRecords)end
-   Runtime.PumpAnnouncements()
-   if os.time()-(Runtime.LastRecordRead or 0)>=30 then Runtime.LastRecordRead=os.time();task.spawn(Runtime.ReadNextRecordDepth)end
-   if os.time()-(Runtime.LastSettlement or 0)>=20 then
-    Runtime.LastSettlement=os.time();local ok,count=pcall(function()return Runtime.Engine.Market:Due()end)
-    if not ok then warn('DOGROTS settlement deferred:',count)elseif (count or 0)>0 then Runtime.RefreshAll()end
+   task.wait(5)
+   local silent=os.clock()-(Runtime.LoopBeat or 0)
+   if not Runtime.Closing and silent>20 then
+    warn('DOGROTS economy loop silent for',math.floor(silent),'s; starting a fresh loop')
+    startLoop()
    end
   end
  end)
