@@ -533,6 +533,19 @@ test("Quality FPS watchdog steps down on Auto only", function()
 	eq(scheduler.Shared:Count(), 0, "the watchdog job stops off Auto")
 end)
 
+test("Kit.Motion follows Perf.Quality reduced motion", function()
+	local _, player = freshClient()
+	local Motion = L.Require("StarterGui.ScreenGui.Modules.Kit.Motion")
+	eq(Motion.Reduced(), false)
+	player:SetAttribute("ReducedMotion", true) -- PAWPAD's toggle
+	eq(Motion.Reduced(), true)
+	Motion.Override = false
+	eq(Motion.Reduced(), false, "Override still wins")
+	Motion.Override = nil
+	player:SetAttribute("Setting_ReducedMotion", false)
+	eq(Motion.Reduced(), false, "the saved setting turned it off again")
+end)
+
 -- LOD ------------------------------------------------------------------------------------------------
 test("Lod.LevelFor thresholds and hysteresis", function()
 	L.Reset()

@@ -298,7 +298,7 @@ local function updateWatchdog()
 	local wanted = state.Preference == "Auto"
 	if wanted and not watchJob then
 		lastFrames, lastTime = Scheduler.FrameCounter()
-		watchJob = Scheduler.Every(1, "Perf.Quality", function()
+		watchJob = Scheduler.Every(1, "Quality.Watchdog", function()
 			local frames, time = Scheduler.FrameCounter()
 			local df, dtime = frames - lastFrames, time - lastTime
 			lastFrames, lastTime = frames, time

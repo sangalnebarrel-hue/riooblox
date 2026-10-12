@@ -234,7 +234,7 @@ function Lod.Register(target: any, options: any?): any
 	table.insert(entries, entry)
 	if not job then
 		cursor = 1
-		job = Scheduler.Every(Lod.Rate, "Perf.Lod", step)
+		job = Scheduler.Every(Lod.Rate, "Lod", step)
 	end
 	return entry
 end
