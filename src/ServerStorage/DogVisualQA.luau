@@ -34,8 +34,9 @@ local function gap(a,b,excluded)
 end
 function QA.Run()
     assert(game:GetService("RunService"):IsStudio(),"Studio only")
-    local results={Dogs=0,Clips=0,Bones=0,Failures={},RecoveredWorkLoops={},FittedWorkClips={},MissingRoles={}}
-    local workDuration=require(Rep.DogEconomy.Config).Work.Duration
+    local results={Dogs=0,Clips=0,Bones=0,Failures={},RecoveredWorkLoops={},FittedWorkClips={},MissingRoles={},Chains={}}
+    local work=require(Rep.DogEconomy.Config).Work
+    local minCycle=work.MinCooldown+work.Duration
     for _,entry in ipairs(ordered()) do
         local clone,player
         local ok,err=pcall(function()
@@ -55,21 +56,35 @@ function QA.Run()
                 for _,fraction in ipairs({0,.17,.51,.91,1}) do player:Sample(player.Clip.Duration*fraction) end
                 results.Clips+=1
             end
-            local work=Animation.ResolveName(entry.Id,"Work")
-            if work then
-                local speed=Animation.GetWorkSpeed(entry.Id,work,workDuration)
-                assert(player:Play(work,{Looped=true,FadeTime=0,Speed=speed}),"work cannot play")
+            -- Kennel dogs dig continuously: the work loop plays at x1.0 for as long as the dog
+            -- produces (nothing is squeezed into a 4 s window any more), a one-shot loop
+            -- recovers to its first frame unless its seam is already closed.
+            local workClip=Animation.ResolveName(entry.Id,"Work")
+            if workClip then
+                assert(player:Play(workClip,{Looped=true,FadeTime=0,Speed=1}),"work cannot play")
                 if player.Recovery>0 then
                     local completionSeconds=(player.Clip.Duration+player.Recovery)/player.Speed
-                    assert(completionSeconds<=workDuration+.0001,"authored work action is interrupted before recovery")
                     table.insert(results.FittedWorkClips,{Dog=entry.Id,Speed=player.Speed,CompletionSeconds=completionSeconds})
                     player:Sample(.0001);local first=pose(player)
                     player:Sample(player.Clip.Duration+player.Recovery-.0001)
                     local p,a=gap(first,pose(player))
                     assert(p<.015 and a<.015,"work loop teleports at seam")
-                    table.insert(results.RecoveredWorkLoops,{Dog=entry.Id,Clip=work,PositionGap=p,AngleGap=a})
+                    table.insert(results.RecoveredWorkLoops,{Dog=entry.Id,Clip=workClip,PositionGap=p,AngleGap=a})
                 end
             end
+            -- The whole kennel chain (DogDigProfiles > folder attributes > candidates) plays,
+            -- and accents fit between two finds at x1.0.
+            local chain=assert(Animation.Chain(entry.Id),"no dig chain")
+            assert(chain.Idle and chain.Loop,"dig chain without Idle/Loop")
+            local names={chain.Idle,chain.Loop}
+            for _,list in ipairs({chain.Start or {},chain.End or {},chain.Accent or {}}) do
+                for _,name in ipairs(list) do table.insert(names,name) end
+            end
+            for _,name in ipairs(names) do assert(player:Play(name,{FadeTime=0}),"chain clip cannot play "..name) end
+            local accent=chain.Accent and assert(Animation.SequenceDuration(entry.Id,chain.Accent),"accent cannot load")
+            if accent then assert(accent<=minCycle+.0001,"accent longer than the shortest work cycle") end
+            table.insert(results.Chains,{Dog=entry.Id,Idle=chain.Idle,Loop=chain.Loop,Start=chain.Start and table.concat(chain.Start,"+"),
+                End=chain.End and table.concat(chain.End,"+"),Accent=chain.Accent and table.concat(chain.Accent,"+"),AccentSeconds=accent,Repeat=chain.Repeat})
             -- A state change must preserve the current pose at the start of its fade.
             local walk=assert(Animation.ResolveName(entry.Id,"Walk"),"walk unavailable")
             player:Play(walk,{FadeTime=0});player:Sample(player.Clip.Duration*.3)
@@ -120,6 +135,39 @@ function QA.Gallery(ids,role)
         cameras[entry.Id]=CFrame.lookAt(point+Vector3.new(8,5,-12),point+Vector3.new(0,2.5,0))
     end
     return cameras
+end
+-- Visual review of the kennel dig chains (Studio, Run mode): the gallery dogs work through
+-- DogAnimationPlayer:UpdateKennel exactly like kennel dogs on clients: DigStart, the loop,
+-- an accent landing on every find (every `cycle` seconds), then storage "fills up" for
+-- `rest` seconds (DigEnd -> Idle) and they start again. Returns a function that stops it.
+--   require(game.ServerStorage.DogVisualQA).KennelPreview({"CoffeeDog","404Dog","MechaBark"},12)
+function QA.KennelPreview(ids,cycle,rest,workSeconds)
+    cycle=math.max(tonumber(cycle) or 12,4);rest=tonumber(rest) or 10;workSeconds=tonumber(workSeconds) or cycle*3
+    local cameras=QA.Gallery(ids,"Idle")
+    local states={}
+    local started=workspace:GetServerTimeNow()
+    for id,player in pairs(players) do
+        player.Kennel=nil
+        states[id]={Working=true,AssignedAt=started,NextWorkAt=started+4,WorkSequence=0,WorkCycle=cycle}
+    end
+    local connection
+    connection=game:GetService("RunService").Heartbeat:Connect(function()
+        if not gallery or not gallery.Parent then connection:Disconnect();return end
+        local now=workspace:GetServerTimeNow()
+        local phase=(now-started)%(workSeconds+rest)
+        for id,player in pairs(players) do
+            local info=states[id]
+            local working=phase<workSeconds
+            if working and not info.Working then info.NextWorkAt=now+4 end
+            info.Working=working
+            if working and now>=info.NextWorkAt then
+                info.WorkSequence+=1;info.NextWorkAt+=cycle
+            end
+            player:UpdateKennel(info,now,true)
+            player:Step(now)
+        end
+    end)
+    return function() if connection then connection:Disconnect() end end,cameras
 end
 function QA.Sample(seconds,role)
     for id,player in pairs(players) do
