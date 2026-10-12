@@ -1,6 +1,6 @@
 local C={}
 C.Version=4
-C.BalanceVersion="2026-10-11.MINING_V2"
+C.BalanceVersion="2026-10-12.OVERHAUL_F11"
 C.StartingCash=4200
 C.MaxCash=9000000000000000
 C.MaxDogs=250

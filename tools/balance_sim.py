@@ -108,6 +108,13 @@ def hit_damage(M, pick, strength, quality, combo, crit):
     return max(1, int(pick["Damage"] * mult + 0.5))
 
 
+def short(n):
+    for div, suf in ((1e9, "B"), (1e6, "M"), (1e3, "K")):
+        if n >= div:
+            return ("%.1f" % (n / div)).rstrip("0").rstrip(".") + suf
+    return str(int(n))
+
+
 def simulate(M, level, strength, skill, minutes, rng, layer=1):
     """Event simulation of the server-issued timing circles.
 
@@ -213,14 +220,32 @@ def main():
         print("  %d %-12s price %12s  str %4d | %9s coins/min (%9s +150str)  %5.1f ores/min  %5.1f hits/ore  %5.1f hits/s" % (
             i, p["Id"], f"{int(p['Price']):,}", p["Strength"], f"{int(cpm):,}", f"{int(cpm2):,}", opm, hpm / max(opm, 1e-9), hpm / 60))
     print()
-    print("COINS/MIN by pickaxe x deepest layer (dog income refs: L1 1 Common 1.1k | L2 9k | L3 23-76k | L4 250-420k | L5 0.93-1.4M)")
+    # Dog income per minute by stage (Rules.IncomeModel, docs/ECONOMY.md and OVERHAUL_AUDIT economy section):
+    # old-style upgrades / full upgrade tree. Mining should stay ~0.5-1x of the first column.
+    dog_refs = {1: (6600, 178000), 2: (37300, 773000), 3: (122000, 1840000), 4: (1160000, 13600000), 5: (4520000, 45400000)}
+    print("COINS/MIN by pickaxe x deepest layer (dog team refs, old upgrades | full tree: " + " | ".join(
+        "L%d %s/%s" % (L, short(a), short(b)) for L, (a, b) in dog_refs.items()) + ")")
     print("  %-12s" % "" + "".join("%12s" % ("L%d" % L) for L in range(1, 6)))
+    table = {}
     for i, p in enumerate(M["Pickaxes"], 1):
         row = []
         for L in range(1, 6):
             cpm, _, _ = simulate(M, i, p["Strength"] + 50, args.skill, args.minutes / 4, rng, L)
             row.append(cpm)
+        table[i] = row
         print("  %-12s" % p["Id"] + "".join("%12s" % f"{int(c):,}" for c in row))
+    print()
+    # Payback: minutes to earn a pickaxe's price at the layer where players usually buy it,
+    # by mining with the previous pickaxe alone and with mining + the dog team (old upgrades / full tree).
+    stage = {1: 1, 2: 1, 3: 2, 4: 2, 5: 3, 6: 4, 7: 5}
+    print("PICKAXE PAYBACK (minutes) at the usual buying layer: mining only (previous pickaxe) | + dogs old upgrades | + dogs full tree")
+    for i, p in enumerate(M["Pickaxes"], 1):
+        L = stage.get(i, 5)
+        prev = table[max(1, i - 1)][L - 1]
+        a, b = dog_refs[L]
+        price = p["Price"]
+        print("  %-12s L%d price %12s  %9.1f | %9.1f | %9.1f" % (
+            p["Id"], L, f"{int(price):,}", price / max(prev, 1), price / max(prev + a, 1), price / max(prev + b, 1)))
     print()
     print("WEIGHTS (time to fill cap from previous requirement, continuous reps)")
     for i, w in enumerate(M["Weights"], 1):
