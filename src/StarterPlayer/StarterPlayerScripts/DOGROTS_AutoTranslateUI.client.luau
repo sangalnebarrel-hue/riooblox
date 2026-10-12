@@ -2693,6 +2693,8 @@ local function _startDogrotsRussianUI()
             end)
             if ok then translator = obj end
         end
+        -- Labels that changed while the translator was loading were cached without it.
+        results.clear()
         for obj in pairs(originals) do
             if obj.Parent then retranslate(obj) end
         end
