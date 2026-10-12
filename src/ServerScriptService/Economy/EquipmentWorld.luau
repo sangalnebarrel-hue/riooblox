@@ -137,7 +137,8 @@ function W.Apply(player: Player, force: boolean?)
 			end
 		end
 	end
-	W.Applied[player] = { Character = character, Signature = signature }
+	-- Keep the watcher's connections (watch): PlayerRemoving disconnects them from this entry.
+	W.Applied[player] = { Character = character, Signature = signature, Connections = applied and applied.Connections or nil }
 end
 
 -- Signs of the Paw Market UPGRADES building (relative path -> text). AutoTranslate translates
@@ -236,6 +237,9 @@ function W.Dress(shop: Instance): Instance?
 end
 
 local function watch(player: Player)
+	if W.Applied[player] and W.Applied[player].Connections then
+		return -- already watched (PlayerAdded and the GetPlayers loop of Start can both see a player)
+	end
 	local connections = {}
 	local function apply()
 		task.defer(function()

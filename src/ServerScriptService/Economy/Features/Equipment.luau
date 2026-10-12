@@ -645,9 +645,11 @@ function F.Snapshot(_R, p, out, now)
 	local allowed, known = paidAllowedNow(p.UserId)
 	local cases = {}
 	for _, case in ipairs(E.Cases) do
+		-- Robux key packs are offered only where Roblox allows paid random items (an unknown
+		-- policy counts as not allowed): restricted accounts never see a BUY KEY button.
 		local products = {}
 		for _, product in ipairs(E.Products) do
-			if product.Case == case.Id and product.Enabled == true and int(product.Id, 1, MAX_INT) then
+			if allowed and product.Case == case.Id and product.Enabled == true and int(product.Id, 1, MAX_INT) then
 				table.insert(products, { Key = product.Key, Count = product.Count, ProductId = product.Id, Name = product.Name, Robux = product.Robux })
 			end
 		end
