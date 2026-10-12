@@ -202,6 +202,7 @@ local UI={
 	['Choose a recipe below']='Выбери рецепт ниже',
 	['Already discovered (one-time recipe)']='Уже открыт (рецепт на один раз)',
 	['Unknown result · the recipe DNA is taken automatically']='Результат неизвестен · ДНК рецепта спишется автоматически',
+	['Unknown result · its coins, bones and DNA are shown before you confirm']='Результат неизвестен · монеты, кости и ДНК покажем перед подтверждением',
 	['Tap EXPERIMENT and choose the dogs and catalysts']='Нажми ЭКСПЕРИМЕНТ и выбери собак и катализаторы',
 	['Something is missing']='Чего-то не хватает',
 	['CATALYST']='КАТАЛИЗАТОР',

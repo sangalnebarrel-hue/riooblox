@@ -736,6 +736,33 @@ test("lab dictionary never overrides the base dictionary with a different text",
 	end
 end)
 
+-- A commit can be refused by the transaction layer ("Account is busy; retry shortly", "Saving your progress;
+-- retry shortly"): those replies have their Russian in other dictionaries, so the lab's toasts of server
+-- replies must stay translatable (no NoTranslate) instead of showing English to Russian players.
+test("server replies in lab toasts stay translatable by DOGROTS_AutoTranslateUI", function()
+	local source = fs.readFile("src/StarterGui/ScreenGui/Modules/LabScreen.luau")
+	local calls, bad = 0, {}
+	for call in string.gmatch(source, "toast%(said%b()[^)]*%)") do
+		calls += 1
+		if not string.find(call, ",true%)$") then
+			table.insert(bad, call)
+		end
+	end
+	truthy(calls >= 4, "server-reply toasts found: " .. calls)
+	truthy(#bad == 0, "toast without the server flag: " .. table.concat(bad, " | "))
+	truthy(string.find(source, "NoTranslate=server~=true", 1, true), "toast() keeps NoTranslate for the window's own texts only")
+	local known = {}
+	for _, name in ipairs(fs.readDir("src/ReplicatedStorage/Localization")) do
+		local dict = L.Require("ReplicatedStorage.Localization." .. string.gsub(name, "%.luau$", ""))
+		for en in pairs(type(dict) == "table" and dict.Exact or {}) do
+			known[en] = true
+		end
+	end
+	for _, reply in { "Account is busy; retry shortly", "Saving your progress; retry shortly", "Profile save is busy; retry shortly" } do
+		truthy(known[reply], "shared reply has a Russian entry: " .. reply)
+	end
+end)
+
 test("every lab sound cue the presentation and the window play exists", function()
 	for _, cue in { "Console", "Lock", "Scan", "Charge", "Pulse", "Reveal", "Rare", "Select", "Step", "Confirm", "Deny", "Extract" } do
 		truthy(Audio.Has(cue), cue)
