@@ -606,6 +606,57 @@ test("a save whose reply was lost is not mistaken for a foreign write", function
 	eq(W.Tx.Dirty["p:1"], nil, "clean")
 end)
 
+test("a suspect profile is re-read in the background while ticks skip it", function()
+	local W = world()
+	W.AddPlayer(1)
+	W.Join(1)
+	local record = W.Store.Raw.Data["p:1"]
+	record.Value.Bones += 321
+	record.Revision += 1
+	W.Tx.Suspect["p:1"] = true
+	local _, ok, result = pcall(W.Engine.TickAll, W.Engine, { 1 })
+	truthy(ok == true and result.Skipped[1] == true, "tick skipped while suspect")
+	local deadline = os.clock() + 2
+	while W.Tx.Suspect["p:1"] and os.clock() < deadline do
+		task.wait(0.02)
+	end
+	eq(W.Tx.Suspect["p:1"], nil, "resynced in the background")
+	eq(W.Profile(1).Bones, W.Stored(1).Bones, "RAM has the saved content")
+	local _, ok2, result2 = pcall(W.Engine.TickAll, W.Engine, { 1 })
+	truthy(ok2 == true and not result2.Skipped[1] and next(result2.Failed) == nil, "ticks resume")
+end)
+
+test("an autosave racing a receipt never loses the grant", function()
+	local W = world()
+	W.AddPlayer(1)
+	W.Join(1)
+	W.PS.Start(W.Runtime)
+	W.Store.Raw.Latency = 0.02
+	for round = 1, 3 do
+		W.Tx:Run({ "p:1" }, function(v)
+			v["p:1"].Cash += 1
+			return true
+		end)
+		local saved, decision
+		task.spawn(function()
+			saved = { W.Tx:FlushProfile(1) }
+		end)
+		task.spawn(function()
+			decision = W.PS.HandleReceipt(W.Receipt(1, 3717465311, "RACE-" .. round))
+		end)
+		while saved == nil or decision == nil do
+			task.wait(0.02)
+		end
+		truthy(saved[1], "autosave ok: " .. tostring(saved[2]))
+		eq(decision, GRANTED, "receipt " .. round)
+	end
+	W.Store.Raw.Latency = 0
+	truthy(W.Tx:FlushProfile(1), "final save")
+	eq(W.Profile(1).PaidRouletteTickets, 3, "3 tokens in RAM")
+	eq(W.Stored(1).PaidRouletteTickets, 3, "3 tokens saved")
+	eq(W.Tx.Suspect["p:1"], nil, "no needless resync")
+end)
+
 -- ===== 8. Paid luck reserve =====
 test("paid luck beyond the active cap waits in LuckReserve and is never cut", function()
 	local W = world()
