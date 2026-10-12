@@ -14,8 +14,10 @@ local Accessories = require(RS.DogEconomy.BonusSources.Accessories)
 
 local W = { Started = false, Applied = {}, Views = nil :: any }
 W.Prefix = "DOGROTS_Accessory_"
--- Most parts one worn set may use (four slots).
+-- Most parts one worn set may use (four slots), and most point lights (Legendary / Mythic pieces
+-- each bring one; four of them on every player of a full server is too much for phones).
 W.MaxParts = 28
+W.MaxLights = 2
 
 -- The profile view of a player (Runtime.Views by default; tests inject their own).
 local function profileOf(player: Player): any
@@ -126,7 +128,7 @@ function W.Apply(player: Player, force: boolean?)
 	end
 	W.Clear(character)
 	local worn = Accessories.Equipped(p)
-	local parts = 0
+	local parts, lights = 0, 0
 	for _, slot in ipairs(E.Slots) do
 		local a = worn[slot]
 		local def = a and E.AccessoryById[a.Id]
@@ -134,6 +136,15 @@ function W.Apply(player: Player, force: boolean?)
 			local model = W.Wear(character, slot, def)
 			if model then
 				parts += #def.Look.Parts
+				for _, light in ipairs(model:GetDescendants()) do
+					if light:IsA("PointLight") then
+						if lights >= W.MaxLights then
+							light:Destroy()
+						else
+							lights += 1
+						end
+					end
+				end
 			end
 		end
 	end

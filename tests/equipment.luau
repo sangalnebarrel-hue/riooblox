@@ -736,6 +736,39 @@ test("worn accessories: the player watcher's connections are disconnected when t
 	if not ok then error(err, 0) end
 end)
 
+test("worn accessories: a full Mythic set is worn with at most W.MaxParts parts and W.MaxLights lights", function()
+	local roblox = require("@lune/roblox")
+	local World = L.Require("ServerScriptService.Economy.EquipmentWorld")
+	local best = {}
+	for _, def in ipairs(E.Accessories) do
+		if not best[def.Slot] or E.RarityIndex[def.Rarity] > E.RarityIndex[best[def.Slot].Rarity] then best[def.Slot] = def end
+	end
+	local character = roblox.Instance.new("Model")
+	for name, size in pairs({ HumanoidRootPart = roblox.Vector3.new(2, 2, 1), UpperTorso = roblox.Vector3.new(2, 1.6, 1), Head = roblox.Vector3.new(1.2, 1.2, 1.2) }) do
+		local part = roblox.Instance.new("Part")
+		part.Name, part.Size = name, size
+		part.Parent = character
+	end
+	roblox.Instance.new("Humanoid").Parent = character
+	character.Parent = roblox.Instance.new("Folder")
+	local p = { UserId = 9, Equipment = { Accessories = {} } }
+	for slot, def in pairs(best) do
+		eq(def.Rarity, "Mythic", "a Mythic piece for " .. slot)
+		p.Equipment.Accessories["E9-" .. slot] = { Uid = "E9-" .. slot, Id = def.Id, Rarity = def.Rarity, Roll = 1, Slot = slot }
+	end
+	World.Views = { [9] = p }
+	World.Apply({ UserId = 9, Character = character, Parent = true }, true)
+	local models, parts, lights = 0, 0, 0
+	for _, d in ipairs(character:GetDescendants()) do
+		if d:IsA("Model") and string.sub(d.Name, 1, #World.Prefix) == World.Prefix then models += 1 end
+		if d:IsA("BasePart") and d.Name == "Piece" then parts += 1 end
+		if d:IsA("PointLight") then lights += 1 end
+	end
+	eq(models, 4, "all four slots worn")
+	truthy(parts <= World.MaxParts, "parts " .. parts)
+	eq(lights, World.MaxLights, "light budget")
+end)
+
 test("localization: every server message of the feature has a Russian entry", function()
 	local messages = {
 		"Unknown case", "Choose how to pay", "Your artifact bag is full: salvage some artifacts first",
