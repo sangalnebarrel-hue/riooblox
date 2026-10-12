@@ -21,7 +21,10 @@
  "created": [
   "ServerScriptService/MiningStudioTest (Script)",
   "ServerScriptService/MiningWorld (Script)",
+  "ReplicatedStorage/DogEconomy/Bonuses (ModuleScript)",
   "ReplicatedStorage/DogEconomy/MiningConfig (ModuleScript)",
+  "ReplicatedStorage/Localization (Folder)",
+  "ReplicatedStorage/Localization/Core (ModuleScript)",
   "ReplicatedStorage/Lucky (Folder)",
   "ReplicatedStorage/Lucky/LuckyAudio (ModuleScript)",
   "ReplicatedStorage/Lucky/LuckyShow (ModuleScript)",
@@ -30,6 +33,7 @@
   "ReplicatedStorage/Mining/MiningModels (ModuleScript)",
   "ReplicatedStorage/Mining/MiningRules (ModuleScript)",
   "ReplicatedStorage/Mining/MiningText (ModuleScript)",
+  "ServerScriptService/Economy/FeatureRegistry (ModuleScript)",
   "ServerScriptService/Economy/MiningSessions (ModuleScript)",
   "StarterPlayer/StarterPlayerScripts/LuckyArrivalFX (LocalScript)",
   "StarterPlayer/StarterPlayerScripts/MiningClient (LocalScript)",
