@@ -165,6 +165,7 @@ function Runtime.Project(player,p)
  require(script.Parent.PlotDevelopment).Reconcile(player,p)
  if Runtime.Kennels then Runtime.Kennels.Reconcile(player,p)end
  require(script.Parent.PlotShowcase).Reconcile(player,p)
+ Rules.Features.Project(player,p,Runtime)
 end
 function Runtime.Refresh(player)
  if not player or not Runtime.Loaded[player.UserId] then return end
@@ -364,8 +365,21 @@ function Runtime.Snapshot(player)
  return {Features=features,Profile=view,OfflineEarnings=Offline.Report(view),Meta=Rules.Meta(os.time()),Week=Rules.Week(os.time()),EventTotal=Runtime.EventTotal or 0,
   SellableItems=sellable,DogStats=dogStats,IncomeEstimate=income,IncomePerMinute=model.PerMinute,Storage=Rules.Storage(p,os.time()),EventEnds=345600+(Rules.Week(os.time())+1)*604800,Trade=tradeView,Players=online,Preview=memory,Now=os.time(),Dex=dex,GlobalRecords=Runtime.GlobalRecords or {},ServerRecords=Runtime.ServerRecords or {}}
 end
+-- Actions owned by a feature (FeatureRegistry Actions) take the hook path: Cost, Gate, then the
+-- feature's Request or Engine:Action, then the Reply mode. Everything else is the legacy path below.
+local function featureReply(player,action,success,result)
+ if not success then return false,result end
+ Runtime.Refresh(player)
+ local mode=Rules.Features.Reply(action)
+ if type(result)=='table'and mode~='None'then
+  local patch=mode=='Patch'and Rules.Features.Patch(player,action,result,Runtime.Views[player.UserId])
+  if patch then result.StatePatch=patch else result.StateSnapshot=Runtime.Snapshot(player)end
+ end
+ return success,result
+end
 function Runtime.Request(player,action,a,requestId)
- local requestCost=action=='MarketQuery'and 3 or action=='MiningHit'and .25 or action=='MiningTrain'and .5 or 1
+ local feature=Rules.Features.Owner(action)
+ local requestCost=feature and Rules.Features.Cost(action)or action=='MarketQuery'and 3 or action=='MiningHit'and .25 or action=='MiningTrain'and .5 or 1
  if not allow(player,requestCost)then return false,'Please wait a moment' end
  if not Runtime.Ready(player)then return false,'Your saved profile is still loading' end
  local validArgs=action=='BulkSell'and require(script.Parent.YardCommerce).ValidBulkArgs(a)or action~='BulkSell'and clean(a or {},0)
@@ -380,6 +394,11 @@ function Runtime.Request(player,action,a,requestId)
   end
   Rules.Check(type(requestId)=='string' and requestId:match('^[a-fA-F0-9]+$') and #requestId==32,'Invalid request ID')
   local receiptId=tostring(player.UserId)..':'..requestId:sub(1,26)
+  if feature then
+   Rules.Features.Gate(player,action,a,Runtime)
+   if feature.Request then return feature.Request(player,action,a,receiptId,Runtime)end
+   return Runtime.Engine:Action(player.UserId,action,a,receiptId)
+  end
   if action=='DistrictTravel'then return require(script.Parent.DistrictTravel).Request(player,a)end
   if action=='Tutorial'then return require(script.Parent.OnboardingService).Request(Runtime,player,a,receiptId)end
   if action=='LabInfo'or action=='LabPreview'or action=='LabCommit'then return require(script.Parent.LabService).Request(player,action,a,receiptId)end
@@ -439,6 +458,7 @@ function Runtime.Request(player,action,a,requestId)
   else return engine:Action(id,action,a,receiptId)end
  end)
  if not ok then return false,tostring(success)end
+ if feature then return featureReply(player,action,success,result)end
  if action~='Snapshot' and action~='MarketQuery' then
   local fastSale=action=='BulkSell'or action=='SellLoot'
   local miningAction=type(action)=='string'and action:sub(1,6)=='Mining'

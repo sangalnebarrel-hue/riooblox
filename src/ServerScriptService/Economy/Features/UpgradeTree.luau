@@ -11,6 +11,7 @@ local Tree = require(ReplicatedStorage:WaitForChild("DogEconomy"):WaitForChild("
 local PlotCatalog = require(ReplicatedStorage:WaitForChild("PlotCatalog"))
 
 local F = { Name = "UpgradeTree", Order = 20 }
+F.Actions = { TreeUpgrade = true, Upgrade = true }
 
 -- Keys of nodes this build does not define (a node added by a later build, then a rollback) are kept
 -- as they are when they look like a level.
