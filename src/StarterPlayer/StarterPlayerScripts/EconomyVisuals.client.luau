@@ -10,6 +10,7 @@ local tint=Instance.new('ColorCorrectionEffect');tint.Name='DogrotsLayerTint';ti
 local MiningAudio=require(Replicated:WaitForChild('Mining'):WaitForChild('MiningAudio'))
 local SoundConfig=require(Replicated:WaitForChild('WorldSoundConfig'))
 local IncomeText=require(Replicated.DogEconomy:WaitForChild('IncomeText'))
+local DexRewards=require(Replicated.DogEconomy:WaitForChild('DexRewards')) -- Dogdex title names ("Dex30" -> DOG COLLECTOR)
 local function layer()
  local i=player:GetAttribute('CurrentLayer')or 1;local c=Config.Layers[i].Color
  tint.TintColor=Color3.new(1,1,1):Lerp(Color3.fromRGB(c[1],c[2],c[3]),.06)
@@ -30,7 +31,7 @@ local function decorate(dog)
   if name and name~='' and root then
    local b=Instance.new('BillboardGui');b.Name='EconomyCosmetic';b.Adornee=root;b.StudsOffsetWorldSpace=Vector3.new(0,5.6,0);b.Size=UDim2.fromOffset(170,28);b.MaxDistance=40;b.Parent=dog
    local t=Instance.new('TextLabel');t.Size=UDim2.fromScale(1,1);t.BackgroundColor3=name=='VoidAura' and colors.Void or name=='CyberKennel' and colors.Glitched or colors.Golden
-   t.BackgroundTransparency=.2;t.Text=name;t.Font=Enum.Font.GothamBold;t.TextSize=14;t.TextColor3=Color3.new(1,1,1);t.TextStrokeTransparency=.4;t.Parent=b
+   t.BackgroundTransparency=.2;t.Text=DexRewards.TitleName(name)or name;t.Font=Enum.Font.GothamBold;t.TextSize=14;t.TextColor3=Color3.new(1,1,1);t.TextStrokeTransparency=.4;t.Parent=b
   end
  end
  cosmetic();dog:GetAttributeChangedSignal('EquippedCosmetic'):Connect(cosmetic)

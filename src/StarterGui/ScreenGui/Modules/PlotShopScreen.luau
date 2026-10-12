@@ -71,7 +71,7 @@ function Screen.Build(c)
  if #titles>0 then
   U.Text(body,'YOUR COLLECTION TITLES',8,y,bodyW-16,30,19,P.gold,true);y+=37
   for _,id in ipairs(titles)do
-   U.Button(body,'Title_'..id,id..(p.EquippedCosmetic==id and ' / EQUIPPED'or ''),8,y,bodyW-16,38,function()c.Send('Cosmetic',{Kind=id})end,P.nav);y+=46
+   U.Button(body,'Title_'..id,(require(RS.DogEconomy.DexRewards).TitleName(id)or id)..(p.EquippedCosmetic==id and ' / EQUIPPED'or ''),8,y,bodyW-16,38,function()c.Send('Cosmetic',{Kind=id})end,P.nav);y+=46
   end
  end
 end

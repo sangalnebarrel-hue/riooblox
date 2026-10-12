@@ -572,6 +572,61 @@ test("every self-localized string of DogsScreen / DogdexScreen has a Russian ent
 	truthy(pattern("Breadog placed in display 2"), "display pattern")
 end)
 
+-- Dog names on the cards, panels and in the Russian search come from DOGROTS_AutoTranslateUI: every
+-- catalogue DisplayName needs an exact entry there or in a ReplicatedStorage.Localization dictionary.
+test("every dog name of the catalogue has a Russian translation", function()
+	local base = fs.readFile("src/StarterPlayer/StarterPlayerScripts/DOGROTS_AutoTranslateUI.client.luau")
+	local known = {}
+	for key in string.gmatch(base, '%["(.-)"%]%s*=') do
+		known[key] = true
+	end
+	for _, name in ipairs(fs.readDir("src/ReplicatedStorage/Localization")) do
+		local dict = L.Require("ReplicatedStorage.Localization." .. string.gsub(name, "%.luau$", ""))
+		for en in pairs(type(dict) == "table" and dict.Exact or {}) do
+			known[en] = true
+		end
+	end
+	local missing = {}
+	for id, def in pairs(D) do
+		if type(def) == "table" and type(def.DisplayName) == "string" and not known[def.DisplayName] then
+			table.insert(missing, id .. " (" .. def.DisplayName .. ")")
+		end
+	end
+	table.sort(missing)
+	truthy(#missing == 0, "no Russian name: " .. table.concat(missing, ", "))
+end)
+
+-- The Dogdex promises named titles ("DOG COLLECTOR"); the COSMETICS list and the title over the dogs
+-- show them by name (DexRewards.TitleName), in Russian too (Exact for the label, an anchored pattern for the
+-- list's "<title> / EQUIPPED": base phrases would rewrite "COLLECT" inside "DOG COLLECTOR").
+test("Dogdex titles are shown by name, never as the raw Dex<n> id", function()
+	local Dict = L.Require("ReplicatedStorage.Localization.Dogs")
+	local function patterned(text)
+		for _, rule in ipairs(Dict.Patterns) do
+			local out, n = string.gsub(text, rule[1], rule[2])
+			if n > 0 then
+				return out
+			end
+		end
+		return text
+	end
+	local titled = 0
+	for _, tier in ipairs(Rewards.Tiers) do
+		if tier.Title then
+			titled += 1
+			eq(Rewards.TitleName(tier.Title), tier.TitleName, "title name of " .. tier.Title)
+			truthy(Dict.Exact[tier.TitleName], "Russian title " .. tier.TitleName)
+			eq(patterned(tier.TitleName .. " / EQUIPPED"), Dict.Exact[tier.TitleName] .. " / НАДЕТО", "equipped title row")
+		end
+	end
+	truthy(titled >= 6, "titles found: " .. titled)
+	eq(Rewards.TitleName("Dex25"), nil, "an old-only title keeps its id")
+	eq(Rewards.TitleName(nil), nil)
+	for _, file in ipairs({ "src/StarterGui/ScreenGui/Modules/PlotShopScreen.luau", "src/StarterPlayer/StarterPlayerScripts/EconomyVisuals.client.luau" }) do
+		truthy(string.find(fs.readFile(file), "TitleName(", 1, true), file .. " shows titles through DexRewards.TitleName")
+	end
+end)
+
 print(string.format("dogdex: %d passed, %d failed", passed, failed))
 if failed > 0 then
 	error("dogdex tests failed")
