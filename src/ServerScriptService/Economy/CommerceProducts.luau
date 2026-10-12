@@ -53,7 +53,12 @@ function P.Grant(p,product,context)
  else
   local rewards=assert(product.Rewards,'Missing rewards')
   -- A paid receipt never fails on a full wallet: the coins fill it to the brim instead.
-  local coins=math.clamp(P.Coins(product,p,now),0,Config.MaxCash-p.Cash)
+  -- An unusable income figure (NaN/inf in old saves) falls back to the fixed minimum.
+  local coins=P.Coins(product,p,now)
+  if type(coins)~='number'or coins~=coins or coins==math.huge then
+   coins=(rewards.Cash or 0)+(type(rewards.Coins)=='table'and tonumber(rewards.Coins.MinCash)or 0)
+  end
+  coins=math.floor(math.clamp(coins,0,math.max(0,Config.MaxCash-(tonumber(p.Cash)or 0))))
   R.Check(R.Int(coins,0,Config.MaxCash)and R.Int(rewards.Bones or 0,0,1000000),'Invalid bundle')
   if coins>0 then R.Credit(p,coins,false)end
   p.Bones+=(rewards.Bones or 0)

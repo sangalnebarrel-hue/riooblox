@@ -185,6 +185,9 @@ end
 function S.SyncFor(runtime,player,timeout)
  local uid=player.UserId;local key='p:'..uid
  if not(runtime.Tx.Loaded and runtime.Tx.Loaded[key])then return false,'Profile not loaded'end
+ -- Most players never bought server luck: no transaction (and no extra save) for them.
+ local cached=runtime.Tx.Cache and runtime.Tx.Cache[key]
+ if type(cached)=='table'and(type(cached.ServerLuckCredits)~='table'or next(cached.ServerLuckCredits)==nil)then return true,0 end
  local session=runtime.Engine.Session;local now=os.time();local name=player.DisplayName
  return runtime.Tx:Run({key},function(v)
   local p=v[key]

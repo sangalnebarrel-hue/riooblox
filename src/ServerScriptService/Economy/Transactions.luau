@@ -275,6 +275,7 @@ function Transactions:_flushProfileUnlocked(key)
  self.Flushing[key]=true
  local ok,saved,message=pcall(function()
   local snapshot=copy(self.Cache[key]);local version=self.Versions[key]or 0;local expected=self.Owners[key]
+  if type(snapshot)~="table"then error("Refusing to save an empty profile",0)end
   local expectedRevision=self.DurableRevisions[key]
   local token=self.Guid()
   for _=1,5 do
@@ -442,7 +443,11 @@ function Transactions:_runFast(sorted,transform,id,timeout)
  if not token then return self:_busy(sorted,timeout,id)end
  local ok,a,b=pcall(function()
   if id and self.Receipts[id]~=nil then return true,copy(self.Receipts[id])end
-  for _,k in ipairs(sorted)do if isProfile(k)and self.Suspect[k]then self:_resyncLocked(k)end end
+  for _,k in ipairs(sorted)do if isProfile(k)then
+   -- The profile may have been unloaded while this call waited for the lock.
+   if not self.Loaded[k]or type(self.Cache[k])~="table"then error("Profile is not loaded; retry",0)end
+   if self.Suspect[k]then self:_resyncLocked(k)end
+  end end
   local values={};local initialSupply={};local hasLiveLine=false
   for _,k in ipairs(sorted)do if isEphemeral(k)and isLine(k)and self.Cache[k]~=nil then hasLiveLine=true end end
   for _,k in ipairs(sorted)do
@@ -462,6 +467,9 @@ function Transactions:_runFast(sorted,transform,id,timeout)
     if not pool or after<before or after>pool.Limit then error("Supply reservation exhausted; retry",0)end
    end
   end end
+  for _,k in ipairs(sorted)do
+   if isProfile(k)and type(values[k])~="table"then error("A transaction cannot remove a player profile",0)end
+  end
   for _,k in ipairs(sorted)do
    if isProfile(k)then self:_captureProfile(k,values[k],true)
    elseif isEphemeral(k)then self.Cache[k]=copy(values[k]);self.Loaded[k]=true
