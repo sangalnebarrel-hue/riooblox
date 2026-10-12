@@ -1,0 +1,119 @@
+local Marketplace=game:GetService('MarketplaceService');local Players=game:GetService('Players')
+local Definitions=require(script.Parent.ShopDefinitions);local R=require(script.Parent.Rules)
+local Support=require(script.Parent.SupportReceipts)
+local TicketPurchases=require(script.Parent.RoulettePurchases)
+local Service={};local function grant(p,product)
+ local reward=product.Rewards
+ -- This catalog grants guaranteed cosmetics; ticket receipts use their own grant.
+ R.Check(reward and type(reward.Cosmetic)=='string','Invalid product reward');p.Cosmetics[reward.Cosmetic]=true
+end
+function Service.Start(runtime)
+ if Service.Started then return end;Service.Started=true
+ local function find(id,kind)for _,p in ipairs(Definitions)do if p.Id>0 and p.Id==id and p.Kind==kind then return p end end end
+ local function fulfill(user,product,key)
+  return runtime.Tx:Run({'p:'..user,key},function(v)
+   if v[key]then R.Check(v[key].User==user and v[key].Product==product.Id,'Receipt mismatch');return 'Already granted'end
+   local p=v['p:'..user];runtime.Engine:Authorize(p,user);grant(p,product);R.Validate(p);v[key]={User=user,Product=product.Id,At=os.time()};return 'Purchase granted'
+  end)
+ end
+ -- One receipt callback owns every developer product in this experience.
+ Marketplace.ProcessReceipt=function(receipt)
+  local pending=Enum.ProductPurchaseDecision.NotProcessedYet
+  if type(receipt)~='table'or not R.Int(receipt.PlayerId,1,9007199254740990)
+   or not R.Int(receipt.ProductId,1,9007199254740990)
+   or type(receipt.PurchaseId)~='string'or #receipt.PurchaseId==0 or #receipt.PurchaseId>100
+   or receipt.CurrencyType~=Enum.CurrencyType.Robux or not R.Int(receipt.CurrencySpent,0,9000000000000000)then return pending end
+  local player=Players:GetPlayerByUserId(receipt.PlayerId)
+  if not player or not runtime.Ready(player)then return pending end
+  local product,kind,matches=nil,nil,0
+  local function consider(row,rowKind)
+   if row.Id>0 and row.Id==receipt.ProductId then product,kind=row,rowKind;matches+=1 end
+  end
+  for _,row in ipairs(Definitions)do if row.Kind=='Product'then consider(row,'Cosmetic')end end
+  for _,row in ipairs(require(game.ReplicatedStorage.CommerceConfig).Products)do consider(row,'Commerce')end
+  for _,row in ipairs(require(game.ReplicatedStorage.LuckyBlockConfig).RobuxProducts)do consider(row,'Block')end
+  for _,row in ipairs(require(game.ReplicatedStorage.RewardMachineConfig).TicketProducts or{})do consider(row,'Tickets')end
+  -- An ID accidentally assigned to two catalogs must never deliver the wrong thing.
+  if matches~=1 then return pending end
+  local transport,ok=pcall(function()
+   if kind=='Commerce'then return require(script.Parent.CommerceProducts).Receipt(runtime,player,product,receipt)
+   elseif kind=='Tickets'then return TicketPurchases.Receipt(runtime,player,product,receipt)
+   elseif kind=='Block'then return require(script.Parent.RewardService).Receipt(runtime,player,product,receipt)
+   else return fulfill(receipt.PlayerId,product,'purchase:'..receipt.PurchaseId)end
+  end)
+  if not transport or not ok or not Support.Record(runtime,receipt) then return Enum.ProductPurchaseDecision.NotProcessedYet end
+  runtime.Refresh(player);return Enum.ProductPurchaseDecision.PurchaseGranted
+ end
+ local function passes(player)
+  for _,p in ipairs(Definitions)do if p.Kind=='Pass'and p.Id>0 then
+   local ok,owns=pcall(function()return Marketplace:UserOwnsGamePassAsync(player.UserId,p.Id)end)
+   if ok and owns then local transport,success=pcall(function()return fulfill(player.UserId,p,'pass:'..player.UserId..':'..p.Id)end);if transport and success then runtime.Refresh(player)end end
+  end end
+ end
+ Marketplace.PromptGamePassPurchaseFinished:Connect(function(player,_,purchased)if purchased then passes(player)end end)
+ local function added(player)task.spawn(function()for _=1,60 do if not player.Parent then return end;if runtime.Ready(player)then passes(player);return end;task.wait(1)end end)end
+ Players.PlayerAdded:Connect(added);for _,p in ipairs(Players:GetPlayers())do added(p)end
+ task.spawn(Service.Audit)
+end
+-- Startup self-check (Output only): every sold product ID must exist, be on sale and appear once.
+function Service.Audit()
+ local rows,seen,bad={},{},0
+ local function add(list,source,on)
+  for _,row in ipairs(list or {})do
+   if R.Int(row.Id,1,9007199254740990)and on(row)then table.insert(rows,{Row=row,Source=source})end
+  end
+ end
+ add(require(game.ReplicatedStorage.CommerceConfig).Products,'CommerceConfig',function(r)return r.Enabled==true end)
+ add(require(game.ReplicatedStorage.RewardMachineConfig).TicketProducts,'RewardMachineConfig',function(r)return r.Enabled==true end)
+ add(require(game.ReplicatedStorage.LuckyBlockConfig).RobuxProducts,'LuckyBlockConfig',function()return true end)
+ add(Definitions,'ShopDefinitions',function(r)return r.Kind=='Product'end)
+ -- GetProductInfoAsync alone does not prove that the product belongs to THIS game.
+ -- GetDeveloperProductsAsync lists products registered to the current experience.
+ local owned=nil
+ do
+  local pageOk,pages=pcall(function()return Marketplace:GetDeveloperProductsAsync()end)
+  if pageOk then
+   local found={}
+   local scanOk,scanError=pcall(function()
+    while true do
+     for _,item in ipairs(pages:GetCurrentPage())do
+      local id=tonumber(item.ProductId or item.Id)
+      if id then found[id]=true end
+     end
+     if pages.IsFinished then break end
+     pages:AdvanceToNextPageAsync()
+    end
+   end)
+   if scanOk then owned=found
+   else warn('[DOGROTS commerce] Could not scan Developer Products of this experience: '..tostring(scanError))end
+  else warn('[DOGROTS commerce] Could not list Developer Products of this experience: '..tostring(pages))end
+ end
+ for _,e in ipairs(rows)do
+  local id,key=e.Row.Id,e.Source..'.'..tostring(e.Row.Key)
+  local invalid=false
+  if seen[id]then
+   invalid=true
+   warn(('[DOGROTS commerce] %s and %s share product ID %d'):format(seen[id],key,id))
+  end
+  seen[id]=key
+  if owned and not owned[id]then
+   invalid=true
+   warn(('[DOGROTS commerce] %s: product %d is NOT registered in this Experience. Create or copy the right Developer Product ID in Creator Hub.'):format(key,id))
+  end
+  local ok,info=pcall(function()return Marketplace:GetProductInfoAsync(id,Enum.InfoType.Product)end)
+  if not ok or type(info)~='table'then
+   invalid=true
+   warn(('[DOGROTS commerce] %s: product %d not found or lookup failed (%s)'):format(key,id,tostring(info)))
+  elseif info.IsForSale==false then
+   invalid=true
+   warn(('[DOGROTS commerce] %s: product %d (%s) is not for sale'):format(key,id,tostring(info.Name)))
+  elseif type(e.Row.Robux)=='number'and info.PriceInRobux~=e.Row.Robux then
+   print(('[DOGROTS commerce] %s: Roblox price R$%s (config note says %d); buyers pay the Roblox price'):format(key,tostring(info.PriceInRobux),e.Row.Robux))
+  end
+  if invalid then bad+=1 end
+  task.wait(.2)
+ end
+ print(('[DOGROTS commerce] %d/%d products passed available checks'):format(#rows-bad,#rows))
+ if not owned then warn('[DOGROTS commerce] Experience ownership was NOT verified: review Creator Hub > Monetization > Developer Products')end
+end
+return Service
