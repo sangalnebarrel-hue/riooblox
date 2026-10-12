@@ -13,6 +13,9 @@ local main=gui:WaitForChild('MainWindow');local pages=main.Content.PageContainer
 local staticPages={Yard=true,Dogs=true,DogDex=true,Trade=true,Shop=true,Events=true,Discoveries=true,Inventory=true}
 local aliases={Pawpad='Yard',Economy='Yard',ItemSets='Yard',['Your yard']='Yard',['Global dig']='Events',Coins='Shop',Level='Upgrades',SlotDogs='Dogs',OwnedBlocks='Inventory',LuckyBlocks='Inventory'}
 local services={DogTraining='DogTraining',Upgrades='Upgrades',Layers='Layers',Collector='Seller',Seller='Seller'}
+-- UPGRADE TREE: DogTraining, Upgrades, Level, UpgradeTree and Estate all open Modules.UpgradeTreeScreen
+-- (ServiceMenusController.open routes them; Estate focuses the yard-stage node).
+services.UpgradeTree='UpgradeTree';services.Estate='Estate'
 local connections={}
 local function connect(event,fn)local c=event:Connect(fn);table.insert(connections,c);return c end
 local function ready()return screens and switchPage and serviceOpen and inventoryReward end

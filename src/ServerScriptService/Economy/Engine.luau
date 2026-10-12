@@ -62,7 +62,6 @@ function E:Action(id,action,args,request)
  return self.Tx:Run({pk(id)},function(v)
   local p=v[pk(id)];self:Authorize(p,id);R.Normalize(p,id,now)
   if action=='BuyPlotSkin'or action=='ClaimPlotSkin'then require(script.Parent.PlotDevelopment).VisitShop(game.Players:GetPlayerByUserId(id))end
-  if action=='Upgrade'then require(script.Parent.YardCommerce).UpgradeVisit(game.Players:GetPlayerByUserId(id),args.Kind)end
   local message,extra=R.Action(p,action,args,now,self.Random);Offline.Checkpoint(p,now);R.Validate(p)
   local result={Message=message}
   if type(extra)=='table'then for k,x in pairs(extra)do if k~='Message'then result[k]=x end end end

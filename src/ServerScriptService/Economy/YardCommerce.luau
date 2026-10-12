@@ -18,15 +18,12 @@ end
 function S.StorageVisit(player)
  local yard=S.Yard(player);R.Check(yard and Access.CanUse(player,yard,yard:FindFirstChild('StorageAnchor')),'Visit DOG STORAGE in your own yard');return yard
 end
-function S.UpgradeVisit(player,kind)
- local training=kind=='Dig'or kind=='Kennel'or kind=='Ability'or kind=='Storage'or kind=='DogStorage'
- if training then
-  local yard=S.Yard(player)
-  R.Check(yard and Access.CanUse(player,yard,yard:FindFirstChild('UpgradeAnchor')),'Visit DOG TRAINING in your own yard for dog improvements')
- else
-  local shop=workspace.DOGROTS_District['11_Shops'].UPGRADES
-  R.Check(require(script.Parent.ShopInteriorAccess).Eligible(player,shop),'Visit the terminal inside UPGRADES to develop your estate')
- end
+-- UPGRADE TREE purchases (Features.UpgradeTree: TreeUpgrade and the old Upgrade action) work
+-- anywhere: the tree replaced the yard DOG TRAINING counter and the Paw Market estate terminal, so
+-- no visit is required. Kept for old callers; it only checks that the node exists.
+function S.UpgradeVisit(_player,kind)
+ R.Check(type(kind)=='string'and require(RS.DogEconomy.UpgradeTree).Nodes[kind]~=nil,'Unknown upgrade')
+ return true
 end
 -- Inventory discoveries are unique ItemUid entries, not client-controlled quantities.
 function S.ValidBulkArgs(a)
@@ -125,7 +122,11 @@ function S.Start()
  end
  for _,yard in workspace.DOGROTS_District['04_PlayerYards']:GetChildren()do if yard:GetAttribute('YardId')then
   prompt(yard,yard:FindFirstChild('SellAnchor'),'SELL · YOUR FINDS','Collector','SELL FINDS')
-  prompt(yard,yard:FindFirstChild('UpgradeAnchor'),'DOG TRAINING','DogTraining','TRAIN DOGS')
+  -- The yard workshop opens the UPGRADE TREE (its sign is relabelled to match).
+  prompt(yard,yard:FindFirstChild('UpgradeAnchor'),'UPGRADE TREE','UpgradeTree','OPEN UPGRADES')
+  local workshop=yard:FindFirstChild('Workshop');local sign=workshop and workshop:FindFirstChild('ServiceTitle')
+  local lettering=sign and sign:FindFirstChild('Lettering');local text=lettering and lettering:FindFirstChildWhichIsA('TextLabel')
+  if text then text.Text='UPGRADE TREE'end
   prompt(yard,yard:FindFirstChild('StorageAnchor'),'DOG STORAGE','Storage','MANAGE DOGS')
  end end
  game.Players.PlayerRemoving:Connect(function(p)S.Quotes[p.UserId]=nil end)

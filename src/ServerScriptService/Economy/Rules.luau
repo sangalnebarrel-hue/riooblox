@@ -1,5 +1,4 @@
 local PlotRules=require(script.Parent.PlotRules)
-local PlotCatalog=require(game.ReplicatedStorage.PlotCatalog)
 local WorldModifiers=require(game.ReplicatedStorage.WorldEvents.WorldEventModifiers)
 local C=require(script.Parent.Config)
 local D=require(script.Parent.DogDefinitions)
@@ -476,12 +475,7 @@ function R.Action(p,action,a,now,random)
   local total=0
   for key,s in pairs(p.Loot) do if not a.Key or key==a.Key then total+=s.Value;p.Loot[key]=nil end end
   R.Check(total>0,"No loot selected");R.Credit(p,total);R.AddXP(p,math.clamp(math.floor(math.sqrt(total)*2),5,250));Stats.Sale(p,total);p.LastSaleAt=now;return "Sold loot for "..total
- elseif action=="Upgrade" then
-  local def=C.Upgrades[a.Kind];R.Check(def,"Unknown upgrade")
-  local level=p.Upgrades[a.Kind] or 0;R.Check(level<def.Max,"Already at maximum")
-  local levelReq=R.UpgradeLevelReq(a.Kind,level);R.Check(p.Level>=levelReq,"Reach level "..levelReq.." for this upgrade")
-  R.Pay(p,math.floor(def.Base*def.Factor^level));p.Upgrades[a.Kind]=level+1;R.AddXP(p,25+(level+1)*10)
-  if a.Kind=="Plot"then return "Yard expanded: "..PlotCatalog.Stages[level+2].Name end;return "Upgrade purchased"
+ -- "Upgrade" (and "TreeUpgrade") are answered by Features.UpgradeTree above: UPGRADE TREE rules.
  elseif action=="Layer" then
   R.Check(R.Int(a.Layer,1,5),"Invalid layer");local def=C.Layers[a.Layer]
   if not p.UnlockedLayers[tostring(a.Layer)] then
