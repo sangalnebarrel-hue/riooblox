@@ -264,12 +264,16 @@ local function slotTile(parent: Instance, slot: string, z: number): any
 		tile.Stat.Position = UDim2.new(0, 4, 1, -(stat + 3))
 		tile.Stat.Size = UDim2.new(1, -8, 0, stat)
 	end
-	Kit.LongPress(button, function()
+	local press = Kit.LongPress(button, function()
 		if tile.Entry then
 			M.ShowPiece(tile.Entry)
 		end
 	end)
 	button.Activated:Connect(function()
+		-- The release of a long press that already opened the details is not a second tap.
+		if press.Consumed() then
+			return
+		end
 		if tile.Entry then
 			M.ShowPiece(tile.Entry)
 		else
@@ -563,9 +567,14 @@ local function layoutPage(page: any, l: any)
 	page.Bag.Position = UDim2.fromOffset(bagX, y)
 	page.Bag.Size = UDim2.fromOffset(bagW, contentH)
 	-- Inside the bag: the equipped strip (left column on landscape phones), toolbar, grid, bar.
-	local barH = M.State.Selecting and 56 or 0
 	local rowH = phone and 34 or 38
+	local bw = phone and 92 or 120
 	local stripX, stripW, stripH, gridX, gridW, top
+	-- Salvage bar: [summary][CANCEL][SELECT SHOWN][SALVAGE] on one row, or the summary on its own
+	-- row above the buttons where the grid is too narrow for both (portrait phones, narrow windows).
+	local barGridW = landscape and (bagW - math.floor(math.clamp(bagW * 0.3, 170, 240)) - gap) or bagW
+	local barTwoRows = barGridW - (bw * 3 + 40) < 160
+	local barH = M.State.Selecting and (barTwoRows and 100 or 56) or 0
 	if landscape then
 		stripW = math.floor(math.clamp(bagW * 0.3, 170, 240))
 		stripX, stripH = 0, contentH - barH
@@ -629,15 +638,25 @@ local function layoutPage(page: any, l: any)
 	page.Bar.Visible = barH > 0
 	page.Bar.Position = UDim2.fromOffset(gridX, contentH - barH)
 	page.Bar.Size = UDim2.fromOffset(gridW, math.max(1, barH))
-	local bw = phone and 92 or 120
-	page.BarCancel.Instance.Position = UDim2.new(1, -(bw * 3 + 24), 0.5, -21)
-	page.BarCancel.Instance.Size = UDim2.fromOffset(bw, 42)
-	page.BarAll.Instance.Position = UDim2.new(1, -(bw * 2 + 16), 0.5, -21)
-	page.BarAll.Instance.Size = UDim2.fromOffset(bw, 42)
-	page.BarGo.Instance.Position = UDim2.new(1, -(bw + 8), 0.5, -21)
-	page.BarGo.Instance.Size = UDim2.fromOffset(bw, 42)
-	page.BarText.Position = UDim2.fromOffset(10, 4)
-	page.BarText.Size = UDim2.new(1, -(bw * 3 + 40), 1, -8)
+	if barTwoRows then
+		-- Summary across the top, the three buttons share the row under it.
+		local w3 = math.floor((gridW - 32) / 3)
+		for i, button in ipairs({ page.BarCancel, page.BarAll, page.BarGo }) do
+			button.Instance.Position = UDim2.new(0, 8 + (i - 1) * (w3 + 8), 1, -50)
+			button.Instance.Size = UDim2.fromOffset(w3, 42)
+		end
+		page.BarText.Position = UDim2.fromOffset(10, 6)
+		page.BarText.Size = UDim2.new(1, -20, 1, -62)
+	else
+		page.BarCancel.Instance.Position = UDim2.new(1, -(bw * 3 + 24), 0.5, -21)
+		page.BarCancel.Instance.Size = UDim2.fromOffset(bw, 42)
+		page.BarAll.Instance.Position = UDim2.new(1, -(bw * 2 + 16), 0.5, -21)
+		page.BarAll.Instance.Size = UDim2.fromOffset(bw, 42)
+		page.BarGo.Instance.Position = UDim2.new(1, -(bw + 8), 0.5, -21)
+		page.BarGo.Instance.Size = UDim2.fromOffset(bw, 42)
+		page.BarText.Position = UDim2.fromOffset(10, 4)
+		page.BarText.Size = UDim2.new(1, -(bw * 3 + 40), 1, -8)
+	end
 end
 
 ------------------------------------------------------------------------------------------------

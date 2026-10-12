@@ -640,6 +640,135 @@ test("Robux keys: catalog registration and receipt grant (credits only)", functi
 	R.Validate(p)
 end)
 
+test("Robux key packs are offered only where paid random items are allowed (unknown = not allowed)", function()
+	local Players = L.Stubs.Players
+	local player = { UserId = 1, Parent = Players }
+	local savedGet = Players.GetPlayerByUserId
+	Players.GetPlayerByUserId = function(_, id) return id == 1 and player or nil end
+	local Policy = L.Require("ServerScriptService.Economy.PaidRandomPolicy")
+	local product = E.ProductByKey.MythicVault1
+	local savedId, savedEnabled = product.Id, product.Enabled
+	product.Id, product.Enabled = 990001, true
+	local function vaultProducts(p)
+		local view = {}
+		R.Features.Snapshot(R, p, view, NOW)
+		for _, row in ipairs(view.Equipment.Cases) do
+			if row.Id == "MythicVault" then return #row.Products, view.Equipment end
+		end
+		return -1
+	end
+	local ok, err = pcall(function()
+		local p = profile()
+		Policy.Cache[1] = nil
+		local n, s = vaultProducts(p)
+		eq(s.PaidKnown, false, "policy not known yet")
+		eq(n, 0, "unknown policy: nothing offered")
+		Policy.Cache[1] = { At = os.clock(), Ok = true, PaidRandom = false, Trading = false }
+		n, s = vaultProducts(p)
+		eq(s.PaidAllowed, false)
+		eq(n, 0, "restricted account: no key pack offered")
+		Policy.Cache[1] = { At = os.clock(), Ok = true, PaidRandom = true, Trading = false }
+		n, s = vaultProducts(p)
+		eq(s.PaidAllowed, true)
+		eq(n, 1, "allowed account: the enabled key pack is offered")
+	end)
+	Players.GetPlayerByUserId = savedGet
+	Policy.Cache[1] = nil
+	product.Id, product.Enabled = savedId, savedEnabled
+	if not ok then error(err, 0) end
+end)
+
+test("worn accessories: the player watcher's connections are disconnected when the player leaves", function()
+	local Players = L.Stubs.Players
+	local function signal()
+		local s = { Handlers = {} }
+		function s:Connect(fn)
+			local c = { Connected = true }
+			function c:Disconnect() self.Connected = false end
+			table.insert(s.Handlers, { Fn = fn, C = c })
+			return c
+		end
+		function s:Fire(...)
+			for _, h in ipairs(s.Handlers) do
+				if h.C.Connected then h.Fn(...) end
+			end
+		end
+		return s
+	end
+	local savedAdded, savedRemoving = Players.PlayerAdded, Players.PlayerRemoving
+	local added, removing = signal(), signal()
+	Players.PlayerAdded, Players.PlayerRemoving = added, removing
+	local ok, err = pcall(function()
+		local World = L.Require("ServerScriptService.Economy.EquipmentWorld")
+		World.Views = { [7] = profile(), [8] = profile() }
+		local function makePlayer(userId)
+			local attribute, characterAdded = signal(), signal()
+			local character = { Parent = true }
+			function character:GetChildren() return {} end
+			local player = { UserId = userId, Parent = Players, Character = character, CharacterAdded = characterAdded, Attribute = attribute }
+			function player:GetAttributeChangedSignal() return attribute end
+			return player
+		end
+		local function connections(player)
+			local list = {}
+			for _, h in ipairs(player.Attribute.Handlers) do table.insert(list, h.C) end
+			for _, h in ipairs(player.CharacterAdded.Handlers) do table.insert(list, h.C) end
+			return list
+		end
+		World.Start()
+		local player = makePlayer(7)
+		added:Fire(player)
+		World.Apply(player) -- the first dress (deferred in the game)
+		World.Apply(player, true) -- a respawn
+		removing:Fire(player)
+		eq(World.Applied[player], nil, "entry dropped")
+		eq(#connections(player), 2, "watcher connections")
+		for _, c in ipairs(connections(player)) do eq(c.Connected, false, "watcher disconnected on leave") end
+		-- A player seen twice (PlayerAdded and Start's GetPlayers loop) gets one watcher only.
+		local other = makePlayer(8)
+		added:Fire(other)
+		added:Fire(other)
+		eq(#connections(other), 2, "one watcher")
+		removing:Fire(other)
+		for _, c in ipairs(connections(other)) do eq(c.Connected, false, "second player's watcher disconnected") end
+	end)
+	Players.PlayerAdded, Players.PlayerRemoving = savedAdded, savedRemoving
+	if not ok then error(err, 0) end
+end)
+
+test("worn accessories: a full Mythic set is worn with at most W.MaxParts parts and W.MaxLights lights", function()
+	local roblox = require("@lune/roblox")
+	local World = L.Require("ServerScriptService.Economy.EquipmentWorld")
+	local best = {}
+	for _, def in ipairs(E.Accessories) do
+		if not best[def.Slot] or E.RarityIndex[def.Rarity] > E.RarityIndex[best[def.Slot].Rarity] then best[def.Slot] = def end
+	end
+	local character = roblox.Instance.new("Model")
+	for name, size in pairs({ HumanoidRootPart = roblox.Vector3.new(2, 2, 1), UpperTorso = roblox.Vector3.new(2, 1.6, 1), Head = roblox.Vector3.new(1.2, 1.2, 1.2) }) do
+		local part = roblox.Instance.new("Part")
+		part.Name, part.Size = name, size
+		part.Parent = character
+	end
+	roblox.Instance.new("Humanoid").Parent = character
+	character.Parent = roblox.Instance.new("Folder")
+	local p = { UserId = 9, Equipment = { Accessories = {} } }
+	for slot, def in pairs(best) do
+		eq(def.Rarity, "Mythic", "a Mythic piece for " .. slot)
+		p.Equipment.Accessories["E9-" .. slot] = { Uid = "E9-" .. slot, Id = def.Id, Rarity = def.Rarity, Roll = 1, Slot = slot }
+	end
+	World.Views = { [9] = p }
+	World.Apply({ UserId = 9, Character = character, Parent = true }, true)
+	local models, parts, lights = 0, 0, 0
+	for _, d in ipairs(character:GetDescendants()) do
+		if d:IsA("Model") and string.sub(d.Name, 1, #World.Prefix) == World.Prefix then models += 1 end
+		if d:IsA("BasePart") and d.Name == "Piece" then parts += 1 end
+		if d:IsA("PointLight") then lights += 1 end
+	end
+	eq(models, 4, "all four slots worn")
+	truthy(parts <= World.MaxParts, "parts " .. parts)
+	eq(lights, World.MaxLights, "light budget")
+end)
+
 test("localization: every server message of the feature has a Russian entry", function()
 	local messages = {
 		"Unknown case", "Choose how to pay", "Your artifact bag is full: salvage some artifacts first",
