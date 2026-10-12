@@ -1,17 +1,20 @@
-local RS=game.ReplicatedStorage;local Run=game:GetService('RunService');local Sounds=game:GetService('SoundService')
+local RS=game.ReplicatedStorage;local Run=game:GetService('RunService')
+-- The chamber cinematic after a committed experiment (camera, ring, light traces, the dog before and
+-- after). LabScreen hides the window (N.BeginReward) while it plays and shows the result card after it.
+-- P.Skip() ends it early. Colours: LabConfig.Colors through LabGenetics (the lab's one variant palette).
 local C=require(RS.LabConfig);local AC=require(RS.LabAudioConfig);local Access=require(RS.LabAccess)
+local G=require(RS.LabGenetics)
 local Definitions=require(RS.DogEconomy.DogDefinitions)
-local P={Seen={}}
+local P={Seen={},Playing=false}
 local function activeEvent()
  local state=RS.WorldEvents.State;local value=state:GetAttribute('State');return value=='ACTIVE'or value=='ENDING'or value=='WARNING'
 end
+-- Lab sound cue (LabAudioConfig); quieter while a world event plays its own soundtrack.
 function P.Cue(key,parent)
- local a=AC[key];if not a then return end
- local uri=require(RS.AudioSource).Resolve(a.Id,'sounds/dogrots-lab2/'..a.File,false)
- if not uri then return end
- local s=Instance.new('Sound');s.Name='Genetics_'..key;s.SoundId=uri;s.Volume=a.Volume*(activeEvent()and .2 or 1);s.RollOffMinDistance=5;s.RollOffMaxDistance=40
- local group=Sounds:FindFirstChild('DOGROTS_AUDIO');s.SoundGroup=group and group:FindFirstChild('SFX');s.Parent=parent or Sounds;s:Play();game:GetService('Debris'):AddItem(s,8);return s
+ local ok,err=pcall(AC.Play,key,parent,activeEvent()and .2 or 1)
+ if not ok then warn('Lab cue '..tostring(key)..': '..tostring(err))end
 end
+function P.Skip()P.SkipRequested=true end
 local function display(d,anchor)
  local models=RS:FindFirstChild('MenuModels');local source=d and models and models:FindFirstChild(Definitions[d.DogId] and Definitions[d.DogId].VisualAsset or d.DogId)
  if not source then return end
@@ -30,7 +33,7 @@ local function display(d,anchor)
  local lo,hi=bounds();local size=hi-lo
  m:ScaleTo(m:GetScale()*math.min(9/size.Y,8.5/size.X,8.5/size.Z));lo,hi=bounds()
  m:PivotTo(anchor.CFrame*CFrame.new(-(lo.X+hi.X)/2,-lo.Y,-(lo.Z+hi.Z)/2))
- local tint=C.Colors[d.Variant]
+ local tint=G.VariantColor(d.Variant)
  if d.Variant~='Normal'and tint then
   for _,o in m:GetDescendants()do
    if o:IsA('BasePart')then o.Color=o.Color:Lerp(tint,.6)
@@ -46,6 +49,7 @@ function P.Play(result)
  if not anchor then return end
  local player=game.Players.LocalPlayer;local reduced=player:GetAttribute('ReducedMotion')==true
  local low=reduced or player:GetAttribute('LowFX')or player:GetAttribute('WorldEventFX')=='Low'
+ P.Playing=true;P.SkipRequested=false
  local camera=workspace.CurrentCamera;local oldType,oldSubject,oldCF,oldFocus,oldFov=camera.CameraType,camera.CameraSubject,camera.CFrame,camera.Focus,camera:GetAttribute('SecretZoom')or camera.FieldOfView
  local model,ring;local original={};local localFX=Instance.new('Folder');localFX.Name='LocalGeneticsFX';localFX.Parent=workspace
  local status=chamber:FindFirstChild('StatusText',true);local oldStatus=status and status.Text
@@ -76,15 +80,15 @@ function P.Play(result)
   if not reduced then Run:BindToRenderStep('GeneticsCamera',Enum.RenderPriority.Camera.Value+10,function()
    camera.CameraType=Enum.CameraType.Scriptable;camera.FieldOfView=60;camera.CFrame=CFrame.lookAt(lab.PresentationCamera.Position,anchor.Position+Vector3.new(0,5,0));camera.Focus=CFrame.new(anchor.Position)
   end)end
-  while os.clock()-start<duration do
-   local t=(os.clock()-start)/duration;local suppress=activeEvent();local outcome=result.Dog and result.Dog.Variant or'Normal';local color=t>.65 and(C.Colors[outcome]or C.Colors.Normal)or C.Colors.Normal
+  while os.clock()-start<duration and not P.SkipRequested do
+   local t=(os.clock()-start)/duration;local suppress=activeEvent();local outcome=result.Dog and result.Dog.Variant or'Normal';local color=t>.65 and G.VariantColor(outcome)or C.Colors.Normal
    if status then status.Text=t<.18 and'CHAMBER SEALED'or t<.45 and'ANALYSING DNA'or t<.72 and'GENETIC SEQUENCE'or'RESULT COMMITTED'end
    if t>.18 and not phases.Scan then phases.Scan=true;P.Cue('Scan',lab.AudioAnchor)end
    if t>.35 and not phases.Charge then phases.Charge=true;P.Cue('Charge',lab.AudioAnchor)end
    if t>.72 and not phases.Pulse then
     phases.Pulse=true;P.Cue('Pulse',lab.AudioAnchor)
     if model then model:Destroy();model=nil end
-    if result.Dog then model=display(result.Dog,anchor)end
+    if result.Dog then model=display(result.Dog,anchor)elseif #(result.Consumed or{})>0 then P.Cue('Extract',lab.AudioAnchor)end
    end
    for o,relative in ringParts do o.CFrame=center*CFrame.Angles(0,0,suppress and 0 or t*math.pi*.6)*relative end
    for i,o in fx do
@@ -96,8 +100,9 @@ function P.Play(result)
    local glow=model and model:FindFirstChild('MutationHue');if glow then glow.Enabled=not suppress end
    Run.RenderStepped:Wait()
   end
-  P.Cue((result.Secret or(result.Dog and C.HighValueVariants[result.Dog.Variant]))and'Rare'or'Reveal',lab.AudioAnchor)
+  -- The result card (LabScreen) plays the Reveal / Rare cue right after this.
  end,debug.traceback)
+ P.Playing=false;P.SkipRequested=false
  cleanup();if not ok then error(e)end
 end
 return P

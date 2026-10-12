@@ -8,11 +8,16 @@ local function runtime()return require(script.Parent.Runtime)end
 function S.Visit(player)
  R.Check(Access.CanUse(player),'Enter Mutation Lab and approach the genetics terminal')
 end
+-- Everything the lab window needs besides the snapshot: unlocked tier, recipe book, cooldown and the variant
+-- rows a reroll uses (with the player's DogMutation bonus), so the client shows real odds on every card.
 function S.Info(player)
  S.Visit(player);local rt=runtime();local p=rt.Engine:Get(player.UserId);rt.Engine:Authorize(p,player.UserId)
- local l=State.Normalize(p)
- return {Tier=l.Tier,Recipes=L.Catalog(p,os.time()),Cooldown=math.max(0,C.Cooldown-(os.time()-l.LastAt))}
+ local l=State.Normalize(p);local now=os.time()
+ return {Tier=l.Tier,Level=p.Level,Recipes=L.Catalog(p,now),Cooldown=math.max(0,C.Cooldown-(now-l.LastAt)),CooldownEndsAt=l.LastAt+C.Cooldown,
+  Now=now,VariantRows=L.Rows(p,now),TutorialComplete=l.TutorialComplete==true}
 end
+-- LabCommit {Token, Confirm=true, Acknowledge}: a plan with valuable dogs needs Acknowledge (true or the plan
+-- token), which the client sends only after the held confirmation. Typed (the old typed phrase) still works.
 function S.Request(player,action,a,receipt)
  local rt=runtime();S.Visit(player)
  R.Check(not rt.Engine.TradeByUser[player.UserId],'Finish or cancel your trade before using the lab')
@@ -25,7 +30,7 @@ function S.Request(player,action,a,receipt)
   return true,public
  end
  R.Check(action=='LabCommit','Unknown lab action')
- for k in a do R.Check(k=='Token'or k=='Confirm'or k=='Typed','Unsupported confirmation parameter')end
+ for k in a do R.Check(k=='Token'or k=='Confirm'or k=='Typed'or k=='Acknowledge','Unsupported confirmation parameter')end
  R.Check(type(a.Token)=='string'and #a.Token==32 and a.Confirm==true,'Review and confirm the experiment')
  local p=rt.Engine:Get(player.UserId);rt.Engine:Authorize(p,player.UserId);State.Normalize(p)
  for _,r in p.Lab.History do if r.Token==a.Token then return true,R.Copy(r)end end
@@ -42,7 +47,7 @@ function S.Request(player,action,a,receipt)
   R.Check(quote.Expires>now,'Preview expired')
   local plan=L.Preview(p,quote.Args,now)
   R.Check(plan.Signature==quote.Plan.Signature,'Dog, material or odds changed. Review a fresh preview.')
-  R.Check(not plan.HighValue or a.Typed==plan.Confirmation,'Type the confirmation for these valuable dogs')
+  R.Check(not plan.HighValue or a.Acknowledge==true or a.Acknowledge==a.Token or(type(a.Typed)=='string'and a.Typed==plan.Confirmation),'Confirm these valuable dogs first')
   local supply={}
   if output then supply=v['supply:'..output]or{};v['supply:'..output]=supply end
   return L.Apply(p,plan,now,rt.Engine.Random,uid,supply,a.Token)
