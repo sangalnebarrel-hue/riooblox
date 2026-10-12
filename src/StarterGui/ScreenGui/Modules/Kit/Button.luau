@@ -29,7 +29,7 @@ export type Props = {
 	LayoutOrder: number?,
 	ZIndex: number?,
 	NoTranslate: boolean?,
-	Sound: any?, -- false = silent; {Hover = cue | false, Press = cue | false} (UISound cue names)
+	Sound: any?, -- true / nil = default cues, false = silent, {Hover = cue | false, Press = cue | false} (UISound cue names)
 }
 
 -- Inputs that hold a hold-to-confirm button: mouse, touch, gamepad A, Enter / Space.
@@ -191,11 +191,7 @@ function Button.new(parent: Instance?, props: Props?): any
 
 	Base.Press(root, nil, self.Maid)
 	-- Hover / press sounds. A hold button sounds when the hold starts and when it completes instead.
-	local sound = p.Sound
-	if sound ~= false and p.Hold and p.Hold > 0 then
-		sound = { Hover = type(sound) == "table" and sound.Hover or nil, Press = false }
-	end
-	Sound.Bind(root, self.Maid, sound)
+	Sound.Bind(root, self.Maid, if p.Hold and p.Hold > 0 then Sound.HoldBinding(p.Sound) else p.Sound)
 	self.Maid:Give(root.Activated:Connect(function()
 		if self.Props.Hold and self.Props.Hold > 0 then
 			return -- hold buttons fire from the hold timer only
@@ -250,8 +246,9 @@ function Button._wireHold(self: any)
 		end
 		local token = {}
 		holding = token
-		if self.Props.Sound ~= false then
-			Sound.Play("Press", root)
+		local press = Sound.PressCue(self.Props.Sound)
+		if press then
+			Sound.Play(press, root)
 		end
 		self.Fill.Visible = true
 		self.Fill.Size = UDim2.fromScale(0, 1)

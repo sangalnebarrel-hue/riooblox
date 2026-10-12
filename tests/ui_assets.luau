@@ -169,18 +169,77 @@ test("buses: EnsureGroups creates UI, SFX and Ambient once and keeps Music", fun
 	truthy(math.abs(music.Volume - 0.7) < 1e-4, "existing groups untouched")
 end)
 
-test("buses: client volumes follow Setting_UIVolume / Setting_SFXVolume", function()
-	player.Attributes.Setting_UIVolume = 0.4
-	local ui = UISound.Group("UI")
-	truthy(ui, "UI group found")
-	eq(math.floor(ui.Volume * 100 + 0.5), 40)
-	player:SetAttribute("Setting_UIVolume", 0.8)
-	eq(math.floor(ui.Volume * 100 + 0.5), 80, "updates when the setting changes")
-	player:SetAttribute("Setting_UIVolume", 7)
+-- The client side: a SoundService whose DOGROTS_AUDIO folder and groups replicate after join. The
+-- service and folder are stand-ins with a ChildAdded signal the test fires (Lune Instances have no
+-- events); the groups are real SoundGroups.
+local function signal()
+	local handlers = {}
+	return {
+		Connect = function(_, fn)
+			table.insert(handlers, fn)
+			return { Disconnect = function() end }
+		end,
+		Fire = function(_, ...)
+			for _, fn in ipairs(handlers) do
+				fn(...)
+			end
+		end,
+	}
+end
+local function clientSoundService()
+	local holder = roblox.Instance.new("Folder") -- real parent so groups have a Parent
+	local folder = { Name = "DOGROTS_AUDIO", ChildAdded = signal(), Children = {} }
+	function folder:FindFirstChild(name)
+		return self.Children[name]
+	end
+	local service = { ChildAdded = signal(), Children = {} }
+	function service:FindFirstChild(name)
+		return self.Children[name]
+	end
+	function service.AddFolder()
+		service.Children.DOGROTS_AUDIO = folder
+		service.ChildAdded:Fire(folder)
+	end
+	function service.AddGroup(name)
+		local group = roblox.Instance.new("SoundGroup")
+		group.Name = name
+		group.Volume = 1
+		group.Parent = holder
+		folder.Children[name] = group
+		folder.ChildAdded:Fire(group)
+		return group
+	end
+	return service
+end
+
+L.Reset()
+local service = clientSoundService()
+L.Stubs.SoundService = service
+local clientPlayer = fakePlayer()
+L.Stubs.Players.LocalPlayer = clientPlayer
+local ClientSound = L.Require("ReplicatedStorage.UISound")
+
+test("buses: Start applies Setting_UIVolume / Setting_SFXVolume without any cue playing", function()
+	clientPlayer.Attributes.Setting_SFXVolume = 0.3
+	ClientSound.Start() -- PerfBootstrap at join, before the folder has replicated
+	ClientSound.Start() -- idempotent
+	eq(ClientSound.Group("SFX"), nil, "no folder yet")
+	service.AddFolder()
+	local sfx = service.AddGroup("SFX") -- replicates later
+	eq(math.floor(sfx.Volume * 100 + 0.5), 30, "a late SFX group gets the setting")
+	clientPlayer:SetAttribute("Setting_SFXVolume", 0.6)
+	eq(math.floor(sfx.Volume * 100 + 0.5), 60, "SFX follows the setting (lab sounds route here)")
+	local ui = service.AddGroup("UI")
+	eq(ui.Volume, 1, "missing setting = full volume")
+	clientPlayer:SetAttribute("Setting_UIVolume", 0.4)
+	eq(math.floor(ui.Volume * 100 + 0.5), 40, "UI follows the setting")
+	clientPlayer:SetAttribute("Setting_UIVolume", 7)
 	eq(ui.Volume, 1, "clamped")
-	local sfx = UISound.Group("SFX")
-	eq(sfx.Volume, 1, "missing setting = full volume")
-	eq(UISound.Group("Nope"), nil)
+	local ambient = service.AddGroup("Ambient")
+	clientPlayer:SetAttribute("Setting_SFXVolume", 0)
+	eq(ambient.Volume, 1, "Ambient has no setting of its own")
+	eq(sfx.Volume, 0)
+	eq(ClientSound.Group("Nope"), nil)
 end)
 
 test("UISoundOff silences a GUI subtree", function()
@@ -189,11 +248,44 @@ test("UISoundOff silences a GUI subtree", function()
 	inner.Parent = window
 	local button = roblox.Instance.new("TextButton")
 	button.Parent = inner
-	eq(UISound.Silenced(button), false)
+	eq(ClientSound.Silenced(button), false)
 	window:SetAttribute("UISoundOff", true)
-	eq(UISound.Silenced(button), true)
-	eq(UISound.Play("Press", { From = button }), false, "a silenced subtree plays nothing")
-	eq(UISound.Play("NoSuchCue"), false)
+	eq(ClientSound.Silenced(button), true)
+	eq(ClientSound.Play("Press", { From = button }), false, "a silenced subtree plays nothing")
+	eq(ClientSound.Play("NoSuchCue"), false)
+end)
+
+test("Bind accepts true / nil / a table (Kit.Button Sound = true)", function()
+	local function fakeButton()
+		local b = { Attributes = {} }
+		b.MouseEnter, b.SelectionGained, b.Activated = signal(), signal(), signal()
+		function b:GetAttribute(k)
+			return self.Attributes[k]
+		end
+		return b
+	end
+	for _, options in ipairs({ true, false, 1 }) do
+		local ok, binding = pcall(ClientSound.Bind, fakeButton(), options)
+		truthy(ok, "Bind(button, " .. tostring(options) .. ") " .. tostring(binding))
+		binding:Disconnect()
+	end
+	truthy(ClientSound.Bind(fakeButton(), { Hover = false }), "a table still works")
+end)
+
+test("Kit hold buttons keep the hover opt-out and a custom press cue", function()
+	local KitSound = L.Require("StarterGui.ScreenGui.Modules.Kit.Sound")
+	local quiet = KitSound.HoldBinding({ Hover = false })
+	eq(quiet.Hover, false, "Sound = {Hover = false} stays silent on hover")
+	eq(quiet.Press, false, "the hold plays its own press")
+	eq(KitSound.HoldBinding(nil).Hover, nil, "default hover")
+	eq(KitSound.HoldBinding(true).Hover, nil)
+	eq(KitSound.HoldBinding({ Hover = "Pop" }).Hover, "Pop")
+	eq(KitSound.HoldBinding(false), false)
+	eq(KitSound.PressCue(nil), "Press")
+	eq(KitSound.PressCue(true), "Press")
+	eq(KitSound.PressCue({ Press = "Lock" }), "Lock", "a custom press cue is kept")
+	eq(KitSound.PressCue({ Press = false }), nil)
+	eq(KitSound.PressCue(false), nil)
 end)
 
 -- GAMEICONS -------------------------------------------------------------------------------------------

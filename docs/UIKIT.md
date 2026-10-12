@@ -122,7 +122,8 @@ local buy = Kit.Button(page, { Text = "BUY", Style = "success", Price = 125000, 
 -- Style: "primary" | "secondary" | "danger" | "ghost" | "success" | "gold"; Color overrides.
 -- Icon = "Shop" (icon key or asset id), PriceIcon = "Bones", PriceText = "FREE", Disabled = true,
 -- Hold = 1 (seconds to hold before OnClick: hold-to-confirm).
--- Sound = false (silent) or { Hover = "Hover", Press = "Press" } (UISound cue names or false).
+-- Sound = true / nil (default cues), false (silent) or { Hover = "Hover", Press = "Press" }
+-- (UISound cue names or false; a hold button plays its Press cue when the hold starts).
 buy:SetBusy(true)   -- pulsing dots, clicks ignored (use while a request is in flight)
 buy:SetDisabled(true); buy:SetText("OWNED"); buy:SetStyle("secondary"); buy:SetPrice(nil)
 
@@ -298,12 +299,14 @@ end, function(spec) return spec.DecorId end)
 
 Kit controls play `ReplicatedStorage.UISound` cues: `Kit.Button` hover and press (hold buttons:
 press when the hold starts, `Success` when it completes), `Kit.Window` open / close, `Kit.Tabs`
-hover and `Tab` on a change. `Sound = false` on a button silences it; on a window it sets the
+hover and `Tab` on a change. `Sound = false` on a button silences it, `{Hover = false}` drops
+only the hover sound (hold buttons too); on a window it sets the
 `UISoundOff` attribute on the window root, which silences everything inside (any GUI subtree can
 use that attribute). For your own feedback call `UISound.Play("Success")` (cues: Hover, Press,
 Open, Close, Tab, Toggle, Success, Error, Reward, Coin, Whoosh, Pop, Rare, Epic, Legendary,
 Countdown, Lock) or `UISound.Bind(button)`. Sounds go through the `DOGROTS_AUDIO/UI` bus, whose
-volume follows `Setting_UIVolume`; at most 6 play at once and hover spam is throttled.
+volume follows `Setting_UIVolume` from join on (`UISound.Start()`, called by PerfBootstrap; the
+`SFX` bus follows `Setting_SFXVolume`); at most 6 play at once and hover spam is throttled.
 
 ## Data refresh pattern
 

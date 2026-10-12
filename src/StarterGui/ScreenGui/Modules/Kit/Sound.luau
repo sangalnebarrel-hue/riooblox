@@ -28,11 +28,34 @@ function Sound.Play(cue: string, from: Instance?)
 	end
 end
 
--- Hover / press sounds on a button; options = false (silent) or {Hover = cue | false, Press = cue | false}.
+-- A hold-to-confirm button sounds when the hold starts (and completes) instead of on Activated:
+-- HoldBinding is its Bind options (its Hover choice kept, false included; no Press), PressCue the
+-- cue for the hold start (nil = silent). sound = the Button's Sound prop.
+function Sound.HoldBinding(sound: any): any
+	if sound == false then
+		return false
+	end
+	local hover = nil
+	if type(sound) == "table" then
+		hover = sound.Hover
+	end
+	return { Hover = hover, Press = false }
+end
+
+function Sound.PressCue(sound: any): string?
+	local press = if type(sound) == "table" then sound.Press else nil
+	if sound == false or press == false then
+		return nil
+	end
+	return if type(press) == "string" then press else "Press"
+end
+
+-- Hover / press sounds on a button; options = false (silent), nil / true (the default cues) or
+-- {Hover = cue | false, Press = cue | false}.
 function Sound.Bind(button: GuiButton, maid: any, options: any?)
 	local ui = uiSound()
 	if ui and options ~= false then
-		maid:Give(ui.Bind(button, options))
+		maid:Give(ui.Bind(button, if type(options) == "table" then options else nil))
 	end
 end
 

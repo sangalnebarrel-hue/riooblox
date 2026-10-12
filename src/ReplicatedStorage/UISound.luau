@@ -6,12 +6,15 @@
 --   local binding = UISound.Bind(button)            -- hover + press sounds; binding:Disconnect()
 --   UISound.Bind(button, { Hover = "Hover", Press = false })
 --   UISound.EnsureGroups()                          -- server: SoundService.DOGROTS_AUDIO/{UI,SFX,Ambient}
+--   UISound.Start()                                 -- client: volume settings -> buses (PerfBootstrap)
 --
 -- Buses: SoundService.DOGROTS_AUDIO holds SoundGroups UI, SFX and Ambient (created by the server at
 -- start, ServerScriptService.AudioBootstrap; the place itself only has Music and WorldEvents) next
--- to the existing Music and WorldEvents groups. On the client the UI / SFX group volumes follow the
--- Setting_UIVolume / Setting_SFXVolume player attributes (0..1, default 1). If a group is missing
--- the sound still plays, with the setting applied to the sound itself.
+-- to the existing Music and WorldEvents groups. On the client UISound.Start() makes the UI / SFX
+-- group volumes follow the Setting_UIVolume / Setting_SFXVolume player attributes (0..1, default 1)
+-- from join on, including groups that replicate later, so every sound routed into a bus (lab,
+-- rewards, world sounds) follows the setting whether or not a cue was ever played. If a group is
+-- missing the cue still plays, with the setting applied to the sound itself.
 --
 -- Cues are built from sounds bundled with every Roblox client that this project's audio already
 -- uses (MiningAudio, LabAudioConfig, LuckyAudio), re-pitched in layers. An owner can upload real
@@ -187,8 +190,18 @@ local function settingVolume(bus: string): number
 end
 
 local groups: { [string]: SoundGroup } = {}
-local watched: { [string]: boolean } = {}
--- The bus's SoundGroup (nil until the server has created it); applies the volume setting once found.
+
+-- Client: the bus's volume setting on its group (written only when it differs).
+local function applyVolume(bus: string, group: SoundGroup)
+	if UISound.Settings[bus] and RunService:IsClient() then
+		local volume = settingVolume(bus)
+		if group.Volume ~= volume then
+			group.Volume = volume
+		end
+	end
+end
+
+-- The bus's SoundGroup (nil until the server has created it); a newly found group gets its volume.
 function UISound.Group(bus: string): SoundGroup?
 	local cached = groups[bus]
 	if cached and cached.Parent then
@@ -197,24 +210,53 @@ function UISound.Group(bus: string): SoundGroup?
 	local folder = SoundService:FindFirstChild(UISound.Folder)
 	local group = folder and folder:FindFirstChild(bus)
 	if not (group and group:IsA("SoundGroup")) then
+		groups[bus] = nil
 		return nil
 	end
 	groups[bus] = group
-	local key = UISound.Settings[bus]
+	applyVolume(bus, group)
+	return group
+end
+
+local started = false
+-- Client, once (PerfBootstrap at join; Play as a fallback): applies the volume settings to the UI
+-- and SFX groups now, whenever a setting changes and whenever the folder or a group replicates.
+function UISound.Start()
 	local player = Players.LocalPlayer
-	if key and player and RunService:IsClient() then
-		group.Volume = settingVolume(bus)
-		if not watched[bus] then
-			watched[bus] = true
-			player:GetAttributeChangedSignal(key):Connect(function()
-				local current = groups[bus]
-				if current then
-					current.Volume = settingVolume(bus)
-				end
-			end)
+	if started or not player or not RunService:IsClient() then
+		return
+	end
+	started = true
+	local function refresh(bus: string)
+		local group = UISound.Group(bus)
+		if group then
+			applyVolume(bus, group)
 		end
 	end
-	return group
+	for bus, key in pairs(UISound.Settings) do
+		player:GetAttributeChangedSignal(key):Connect(function()
+			refresh(bus)
+		end)
+	end
+	local function watch(folder: Instance)
+		folder.ChildAdded:Connect(function(child)
+			if UISound.Settings[child.Name] then
+				refresh(child.Name)
+			end
+		end)
+		for bus in pairs(UISound.Settings) do
+			refresh(bus)
+		end
+	end
+	SoundService.ChildAdded:Connect(function(child)
+		if child.Name == UISound.Folder then
+			watch(child)
+		end
+	end)
+	local folder = SoundService:FindFirstChild(UISound.Folder)
+	if folder then
+		watch(folder)
+	end
 end
 
 ------------------------------------------------------------------------------------------------
@@ -280,6 +322,7 @@ function UISound.Play(cue: string, options: any?): boolean
 	if not def or not RunService:IsClient() then
 		return false
 	end
+	UISound.Start()
 	if o.From and UISound.Silenced(o.From) then
 		return false
 	end
@@ -300,10 +343,11 @@ function UISound.Play(cue: string, options: any?): boolean
 end
 
 -- Hover (mouse enter / gamepad selection, not touch) and press (Activated) sounds on a button.
--- options: {Hover = cue | false, Press = cue | false}. Disabled kit buttons (KitDisabled) stay
--- silent on press. Returns a connection-like object (Disconnect / Destroy).
+-- options: {Hover = cue | false, Press = cue | false}; anything else (nil, true) = the defaults.
+-- Disabled kit buttons (KitDisabled) stay silent on press. Returns a connection-like object
+-- (Disconnect / Destroy).
 function UISound.Bind(button: GuiButton, options: any?): any
-	local o = options or {}
+	local o = if type(options) == "table" then options else {}
 	local hover = if o.Hover == nil then "Hover" else o.Hover
 	local press = if o.Press == nil then "Press" else o.Press
 	local connections = {}
