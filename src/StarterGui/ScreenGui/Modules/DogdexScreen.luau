@@ -292,8 +292,9 @@ local function cardData(e: any): any
 		Count = e.Owned > 1 and e.Owned or nil,
 		Badge = number,
 		BadgeColor = def.MuseumExcluded and P.gold or (e.Found and ACCENT or Theme.Disabled),
-		Tag = e.Favorite and "★" or nil,
-		TagColor = e.Favorite and P.gold or nil,
+		-- ★ favourite, ✓ owned (the ×N badge only shows from two copies).
+		Tag = (e.Favorite or e.Owned > 0) and ((e.Favorite and "★" or "") .. (e.Favorite and e.Owned > 0 and " " or "") .. (e.Owned > 0 and "✓" or "")) or nil,
+		TagColor = e.Favorite and P.gold or P.green,
 	}
 end
 

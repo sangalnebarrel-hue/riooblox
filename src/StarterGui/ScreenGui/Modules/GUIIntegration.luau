@@ -91,25 +91,9 @@ function N.Back()
  if N.DismissDialog()then return end
  N.Close()
 end
--- MY DOGS and the DOGDEX are kit windows on every device (Modules.DogsScreen / DogdexScreen); the static
--- DogsPage / DogDexPage stay hidden. state: the legacy Menus fields (SelectedDog, SelectedDexIndex/Bonus).
-local function dogScreens(page,state)
- if page~='Dogs'and page~='DogDetail'and page~='DogDex'and page~='DexEntry'then return false end
- local isDex=page=='DogDex'or page=='DexEntry'
- local ok,screen=pcall(require,script.Parent:FindFirstChild(isDex and 'DogdexScreen'or'DogsScreen'))
- if not ok or type(screen)~='table'then warn('DOGROTS dog screens unavailable: '..tostring(screen));return false end
- local legacy=type(state)=='table'and state or(screens and screens.state)or {}
- if page=='DexEntry'then
-  local id=screen.ResolveEntry(legacy,state==nil)
-  if id then screen.OpenEntry(id)else screen.Open()end
- elseif page=='DogDex'then screen.Open()
- else screen.Open({Uid=page=='DogDetail'and legacy.SelectedDog or nil})end
- return true
-end
 function N.OpenPage(page,message)
  if page=='Roulette'then page='RewardMachine'end -- Pre-refactor navigation alias.
  page=aliases[page]or page
- if dogScreens(page,nil)then return end
  if page=='Lab'or page=='Shop'or page=='Events'or(gui:GetAttribute('CompactMenus')and(page=='Dogs'or page=='Yard'or page=='DogDex'or page=='Trade'))then N.OpenScreen(page);return end
  if services[page]then N.OpenService(services[page]);return end
  if not staticPages[page]then N.OpenScreen(page);return end
@@ -124,7 +108,6 @@ function N.OpenScreen(page,state)
  if page=='Roulette'then page='RewardMachine'end -- Pre-refactor navigation alias.
  if page=='Feedback'then N.Close();N.Navigate(page);return end
  if page=='Collector'or page=='Seller'then N.OpenService('Seller');return end
- if dogScreens(page,state)then return end
  dispatch(function()
   if page=='RewardMachine'then
    N.Acquire('RewardMachineWorld','RewardMachine');gui.Backdrop.Visible=false
@@ -225,6 +208,33 @@ for _,child in ipairs(gui:GetChildren())do watchGuide(child)end
 connect(gui.ChildAdded,watchGuide)
 connect(player.CharacterRemoving,N.Close)
 connect(gui.Destroying,function()menuControls(false);Actions:UnbindAction('PawpadMovement');for _,c in ipairs(connections)do c:Disconnect()end;table.clear(N.Pending)end)
+-- MY DOGS and the DOGDEX are kit windows on every device (Modules.DogsScreen / DogdexScreen); the static
+-- DogsPage / DogDexPage stay hidden. state: the legacy Menus fields (SelectedDog, SelectedDexIndex/Bonus).
+local function dogScreens(page,state)
+ if page~='Dogs'and page~='DogDetail'and page~='DogDex'and page~='DexEntry'then return false end
+ local isDex=page=='DogDex'or page=='DexEntry'
+ local ok,screen=pcall(require,script.Parent:FindFirstChild(isDex and 'DogdexScreen'or'DogsScreen'))
+ if not ok or type(screen)~='table'then warn('DOGROTS dog screens unavailable: '..tostring(screen));return false end
+ local legacy=type(state)=='table'and state or(screens and screens.state)or {}
+ if page=='DexEntry'then
+  local id=screen.ResolveEntry(legacy,state==nil)
+  if id then screen.OpenEntry(id)else screen.Open()end
+ elseif page=='DogDex'then screen.Open()
+ else screen.Open({Uid=page=='DogDetail'and legacy.SelectedDog or nil})end
+ return true
+end
+do
+ -- Wraps the two entry points (every caller goes through the N table, so all routes are covered).
+ local openPage,openScreen=N.OpenPage,N.OpenScreen
+ function N.OpenPage(page,message)
+  if dogScreens(aliases[page]or page,nil)then return end
+  return openPage(page,message)
+ end
+ function N.OpenScreen(page,state)
+  if dogScreens(page,state)then return end
+  return openScreen(page,state)
+ end
+end
 Theme.AttachNavigation(gui,N);Theme.BindStandalone(gui,N)
  require(script.Parent.BuffHUD).Start(gui)
 require(script.Parent.OnboardingGuide).Start(gui,N)

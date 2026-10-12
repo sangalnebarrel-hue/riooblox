@@ -1413,6 +1413,27 @@ local function compareValue(id: string, v: number): string
 	end
 	return tostring(math.floor(v))
 end
+-- How much better the better side is ("+$84.6K", "+0.30", "+5%"...).
+local function compareDelta(id: string, diff: number): string
+	diff = math.abs(diff)
+	if id == "income" then
+		return "+$" .. short(diff)
+	elseif id == "efficiency" then
+		return "+" .. fixed(diff, 2)
+	elseif id == "speed" then
+		return "+" .. fixed(diff, 1)
+	elseif id == "luck" then
+		return pct(diff / 100)
+	elseif id == "finds" then
+		return "+" .. fixed(diff, 2)
+	elseif id == "power" then
+		return "+" .. tostring(math.floor(diff * 10 + 0.5) / 10)
+	elseif id == "variant" then
+		return pct(diff)
+	end
+	return "+" .. tostring(math.floor(diff + 0.5))
+end
+S.CompareDelta = compareDelta
 
 local layoutCompare: () -> ()
 local fillCompare: () -> ()
@@ -1593,11 +1614,15 @@ fillCompare = function()
 		end
 	end
 	local green = Theme.Hex(Color3.fromRGB(74, 170, 22))
+	local function better(value: string, delta: string): string
+		return string.format('<font color="%s">▲ %s <font size="13">(%s)</font></font>', green, value, delta)
+	end
 	for _, row in ipairs(result.Rows) do
 		local r = cmp.Rows[row.Id]
 		local ta, tb = compareValue(row.Id, row.A), compareValue(row.Id, row.B)
-		r.A.Text = row.Better == "a" and string.format('<font color="%s">▲ %s</font>', green, ta) or ta
-		r.B.Text = row.Better == "b" and string.format('<font color="%s">▲ %s</font>', green, tb) or tb
+		local delta = compareDelta(row.Id, row.A - row.B)
+		r.A.Text = row.Better == "a" and better(ta, delta) or ta
+		r.B.Text = row.Better == "b" and better(tb, delta) or tb
 	end
 	if result.Winner then
 		local winner = result.Winner == "a" and a or b
