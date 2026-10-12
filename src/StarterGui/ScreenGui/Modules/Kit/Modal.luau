@@ -299,6 +299,12 @@ function Modal.new(props: Props): any
 		Motion.Tween(scale, Theme.Motion.Open, { Scale = 1 }, Enum.EasingStyle.Back)
 	end
 	self.Shade, self.Scale = shade, scale
+	-- Screen rotation / window resize: keep the dialog centred inside the safe area.
+	self.Maid:Give(gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		local nx, ny, nw, nh = Base.SafeArea(gui)
+		local fw, fh = math.min(w, nw - 24), math.min(h, nh - 24)
+		Base.PlaceCentered(card, nx + (nw - fw) / 2, ny + (nh - fh) / 2, fw, fh)
+	end))
 	Base.GamepadFocus((self.CancelButton or self.ConfirmButton).Instance)
 	return self
 end

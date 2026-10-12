@@ -208,13 +208,18 @@ local MOVE_TOLERANCE = 12
 function Feedback.LongPress(target: GuiObject, fn: () -> (), opts: any?): any
 	local o: any = opts or {}
 	local duration = o.Duration or LONG_PRESS
-	local handle: any = { FiredAt = -1 }
+	local handle: any = { Fired = false }
 	local connections = {}
 	local pressing: any = nil
 	table.insert(connections, target.InputBegan:Connect(function(input)
 		local touch = input.UserInputType == Enum.UserInputType.Touch
-		local mouse = input.UserInputType == Enum.UserInputType.MouseButton1 and o.Mouse == true
+		local mouse = input.UserInputType == Enum.UserInputType.MouseButton1
 		if not (touch or mouse) then
+			return
+		end
+		-- A new press: the click that ends it counts again unless this press fires.
+		handle.Fired = false
+		if mouse and o.Mouse ~= true then
 			return
 		end
 		local token = { Start = input.Position }
@@ -222,7 +227,7 @@ function Feedback.LongPress(target: GuiObject, fn: () -> (), opts: any?): any
 		task.delay(duration, function()
 			if pressing == token then
 				pressing = nil
-				handle.FiredAt = os.clock()
+				handle.Fired = true
 				task.spawn(fn)
 			end
 		end)
@@ -239,13 +244,12 @@ function Feedback.LongPress(target: GuiObject, fn: () -> (), opts: any?): any
 	end))
 	if o.RightClick ~= false and target:IsA("GuiButton") then
 		table.insert(connections, (target :: any).MouseButton2Click:Connect(function()
-			handle.FiredAt = os.clock()
 			task.spawn(fn)
 		end))
 	end
-	-- True right after a long press: the click that follows the release should be ignored.
+	-- True when the current press fired the long press: ignore the click its release produces.
 	function handle.Consumed(): boolean
-		return os.clock() - handle.FiredAt < 0.6
+		return handle.Fired == true
 	end
 	function handle.Destroy()
 		pressing = nil
@@ -302,6 +306,12 @@ local function panelFor(layer: Instance): any
 	})
 	body.AutomaticSize = Enum.AutomaticSize.Y
 	panel = { Frame = frame, Title = title, Body = body }
+	-- AutomaticSize settles after the text is set: place the panel again with its real height.
+	frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		if frame.Visible and panel.Place then
+			panel.Place()
+		end
+	end)
 	panels[layer] = panel
 	return panel
 end
@@ -333,14 +343,21 @@ local function showTip(owner: any, target: GuiObject, title: string?, body: stri
 	frame.Size = UDim2.fromOffset(width, 0)
 	frame.Visible = true
 	-- Above the target when there is room, otherwise below; clamped to the screen.
-	local pos, size = target.AbsolutePosition, target.AbsoluteSize
-	local height = math.max(frame.AbsoluteSize.Y, 40)
-	local x = math.clamp(pos.X + size.X / 2 - width / 2, 12, math.max(12, screen.X - width - 12))
-	local y = pos.Y - height - 8
-	if y < 8 then
-		y = pos.Y + size.Y + 8
+	local function place()
+		if not target.Parent then
+			return
+		end
+		local pos, size = target.AbsolutePosition, target.AbsoluteSize
+		local height = math.max(frame.AbsoluteSize.Y, 40)
+		local x = math.clamp(pos.X + size.X / 2 - width / 2, 12, math.max(12, screen.X - width - 12))
+		local y = pos.Y - height - 8
+		if y < 8 then
+			y = pos.Y + size.Y + 8
+		end
+		frame.Position = UDim2.fromOffset(math.floor(x), math.floor(math.min(y, math.max(8, screen.Y - height - 8))))
 	end
-	frame.Position = UDim2.fromOffset(x, math.min(y, math.max(8, screen.Y - height - 8)))
+	panel.Place = place
+	place()
 end
 
 -- Attaches a tooltip. content: a string or a function returning (body[, title]) evaluated when
