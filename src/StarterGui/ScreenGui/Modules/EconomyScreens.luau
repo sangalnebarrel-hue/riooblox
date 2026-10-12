@@ -37,6 +37,9 @@ local function expandGrid(grid)
  grid.Destroying:Connect(function()connection:Disconnect()end);resize();task.defer(resize)
 end
 function Screens.Build(c)
+ -- MY DOGS / DOGDEX are kit windows (GUIIntegration routes there); a direct Menus mount opens them too.
+ if c.Page=='Dogs'or c.Page=='DogDetail'then return require(script.Parent.DogsScreen).Build(c)end
+ if c.Page=='DogDex'or c.Page=='DexEntry'then return require(script.Parent.DogdexScreen).Build(c)end
  if c.Page=='OfflineEarnings'then return require(script.Parent.OfflineEarningsScreen).Build(c)end
  if c.Page=="Cosmetics"then return require(script.Parent.PlotShopScreen).Build(c)end
  if c.Page=='Extras'then

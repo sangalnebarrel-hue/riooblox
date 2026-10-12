@@ -84,7 +84,9 @@ local function apply(button,style)
  end
 end
 local function switch(name)
-
+ -- MY DOGS and the DOGDEX are kit windows now (Modules.DogsScreen / DogdexScreen); the static
+ -- DogsPage / DogDexPage stay hidden (other code still indexes their instances).
+ if name=='Dogs'or name=='DogDex'then Navigation.OpenPage(name);return end
  if main.Visible then gui:SetAttribute('OpenMenu',name)end
  if not pages:FindFirstChild(name..'Page') then return end
  local keyboard=pages:FindFirstChild('SearchKeyboard');if keyboard then keyboard.Visible=false end
