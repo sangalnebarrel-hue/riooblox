@@ -17,7 +17,7 @@ local function _startDogrotsRussianUI()
     local locale = "en-us"
     local translator = nil
     local originals = setmetatable({}, {__mode = "k"})
-    local cache = {}
+    local cache: any, results: any -- bounded caches (boundedCache below): translator lookups, translateUI results
     local watching = setmetatable({}, {__mode = "k"})
 
     local extra = {
@@ -2515,6 +2515,38 @@ local function _startDogrotsRussianUI()
         for i = #featurePatterns, 1, -1 do table.insert(patterns, 1, featurePatterns[i]) end
     end
 
+    -- Bounded caches: a long Russian session sees endless distinct dynamic strings (prices,
+    -- timers). Two generations: a lookup hits the current table, then the previous one (and is
+    -- promoted); when the current one fills up it becomes the previous one. At most
+    -- 2 x CACHE_LIMIT entries are kept and recently used strings survive (an approximate LRU).
+    local CACHE_LIMIT = 1000
+    local function boundedCache()
+        local current, previous, count = {}, {}, 0
+        local bounded = {}
+        function bounded.set(key, value)
+            if current[key] == nil then
+                count += 1
+                if count > CACHE_LIMIT then
+                    previous, current, count = current, {}, 1
+                end
+            end
+            current[key] = value
+        end
+        function bounded.get(key)
+            local value = current[key]
+            if value ~= nil then return value end
+            value = previous[key]
+            if value ~= nil then bounded.set(key, value) end
+            return value
+        end
+        function bounded.clear()
+            current, previous, count = {}, {}, 0
+        end
+        return bounded
+    end
+    cache = boundedCache()   -- Cloud translator lookups
+    results = boundedCache() -- whole translateUI results (the ~550 pattern / phrase pass)
+
     local function isRussian()
         return locale:sub(1, 2):lower() == "ru"
     end
@@ -2528,7 +2560,7 @@ local function _startDogrotsRussianUI()
 
     local function translatorLookup(context, source)
         if not translator then return source end
-        local saved = cache[source]
+        local saved = cache.get(source)
         if saved ~= nil then return saved end
         local ok, result = pcall(function()
             return translator:Translate(context, source)
@@ -2539,10 +2571,10 @@ local function _startDogrotsRussianUI()
             end)
         end
         if ok and type(result) == "string" and result ~= source then
-            cache[source] = result
+            cache.set(source, result)
             return result
         end
-        cache[source] = source
+        cache.set(source, source)
         return source
     end
 
@@ -2594,13 +2626,20 @@ local function _startDogrotsRussianUI()
         -- Text without Latin letters (already Russian, numbers, icons) never needs translating.
         if not source:find("[A-Za-z]") then return source end
         if extra[source] then return extra[source] end
+        local done = results.get(source)
+        if done ~= nil then return done end
         local whole = translatorLookup(context, source)
-        if whole ~= source then return whole end
+        if whole ~= source then
+            results.set(source, whole)
+            return whole
+        end
         local pieces = {}
         for line, separator in (source .. "\n"):gmatch("(.-)(\n)") do
             table.insert(pieces, translatedLine(line, context))
         end
-        return table.concat(pieces, "\n")
+        local translated = table.concat(pieces, "\n")
+        results.set(source, translated)
+        return translated
     end
 
     local function retranslate(obj)
@@ -2645,7 +2684,8 @@ local function _startDogrotsRussianUI()
 
     local function reloadLocale()
         locale = currentLocale():lower()
-        table.clear(cache)
+        cache.clear()
+        results.clear()
         translator = nil
         if isRussian() then
             local ok, obj = pcall(function()
