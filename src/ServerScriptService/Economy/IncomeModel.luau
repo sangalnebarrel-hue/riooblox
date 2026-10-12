@@ -20,19 +20,28 @@ local M={Samples=120}
 -- Signature contexts (SignatureRules.Context) are random and depend on the dig number. They are
 -- sampled on a sandbox (Context writes TreasureMapUntil/TimePulseUntil on its profile) with a
 -- stratified deterministic random source over 120 consecutive digs (every WorkSequence cycle in
--- the catalog divides 60), grouped into distinct shapes and cached for the server per 5 minutes:
--- every clock a context reads (Don Puglione's 300 s rotation, night hours) changes on 300 s marks.
-local buckets={}
+-- the catalog divides 60) and grouped into distinct shapes. Shapes are cached for the server;
+-- only the few contexts that read the clock carry its phase in their key (M.Clocks: Don
+-- Puglione's 300 s rotation, the night hours of Vampug and Barkula), so a new 5-minute bucket
+-- re-samples only them instead of every dog kind a Snapshot lists (~150 ms for a 100-kind
+-- collection). A context that starts reading `now` must be listed in M.Clocks
+-- (tests/economy_core.luau compares cached and cold results across a day).
+-- Expected item finds (ItemRules.MutationRows reads the live world event) stay per 5 minutes.
+local function night(now)return now%86400>=64800 and 'N'or 'D'end
+M.Clocks={DonPuglione=function(now)return tostring(math.floor(now/300)%5)end,Vampug=night,Barkula=night}
+local buckets,shapeCache,shapeCount={},{},0
 local function store(now)
  local bucket=math.floor(now/300)
  local s=buckets[bucket]
  if not s or s.Count>4000 then
-  s={Shapes={},Finds={},Count=0};buckets[bucket]=s
+  s={Finds={},Count=0};buckets[bucket]=s
   -- Keep the live bucket, the one before it, and the fixed offline instant (bucket 0).
   for k in pairs(buckets)do if k~=bucket and k~=0 and k<bucket-1 then buckets[k]=nil end end
  end
  return s
 end
+-- Drops every cached shape and expected find (tests).
+function M.Reset()table.clear(buckets);table.clear(shapeCache);shapeCount=0 end
 local GOLDEN=.6180339887498949
 local fmt=tostring
 local function pairsKey(t)
@@ -55,10 +64,10 @@ local function maxDepth(p)
 end
 -- {{Ctx=ctx, Weight=share}, ...} for one dog kind in this team/profile state.
 local function shapes(p,d,e,now,deepest)
- local s=store(now)
  local mapActive=now<(tonumber(p.TreasureMapUntil)or 0)
- local key=table.concat({d.DogId,tostring(p.CurrentLayer or 1),deepest,tostring(e.FoodCount or 0),tostring(e.EventId or ''),mapActive and 1 or 0},'|')
- local hit=s.Shapes[key];if hit then return hit end
+ local clock=M.Clocks[d.DogId]
+ local key=table.concat({d.DogId,tostring(p.CurrentLayer or 1),deepest,tostring(e.FoodCount or 0),tostring(e.EventId or ''),mapActive and 1 or 0,clock and clock(now)or ''},'|')
+ local hit=shapeCache[key];if hit then return hit end
  local sandbox={CurrentLayer=p.CurrentLayer or 1,UnlockedLayers=p.UnlockedLayers or {['1']=true}}
  local dog={DogId=d.DogId,FoodStreak=0,TreasureStreak=0}
  local team={FoodCount=e.FoodCount or 0,EventId=e.EventId}
@@ -73,7 +82,8 @@ local function shapes(p,d,e,now,deepest)
   local g=groups[k]
   if g then g.Weight+=1/n else g={Ctx=ctx,Weight=1/n};groups[k]=g;table.insert(order,g)end
  end
- s.Shapes[key]=order;s.Count+=1
+ if shapeCount>=4000 then table.clear(shapeCache);shapeCount=0 end
+ shapeCache[key]=order;shapeCount+=1
  return order
 end
 -- Expected coins and find chance of one item attempt, cached by everything that changes them.

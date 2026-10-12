@@ -206,7 +206,8 @@ requireNode = function(target)
 	local env = setmetatable({
 		script = target,
 		game = game,
-		workspace = workspaceStub,
+		-- A test may set L.Workspace (before the first require) for modules that walk the world.
+		workspace = L.Workspace or workspaceStub,
 		require = requireNode,
 		Color3 = roblox.Color3,
 		Vector3 = roblox.Vector3,

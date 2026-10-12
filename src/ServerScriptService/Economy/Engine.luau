@@ -247,6 +247,9 @@ end
 function E:Roll(id,mode,request)
  R.Check(mode~='LuckyBlock','Visit the tongue or Lucky Blocks in Shop')
  R.Check(mode=="LuckyBlock" or mode=="EventRoll","Invalid roll")
+ -- Event Tokens are the Global Dig currency, and dog income earns them even while the player is
+ -- away: like EventClaim, the token roll (100 tokens -> a dog) is closed while Global Dig is.
+ if mode=="EventRoll"and require(game.ReplicatedStorage.GlobalDigConfig).Enabled==false then return false,'Global Dig is coming soon'end
  local current=self:Get(id);self:Authorize(current,id)
  -- Secrets only come from the tongue and blocks, never from a token roll.
  local dogId=self:Choose(5);R.Check(dogId,"No assets available")
