@@ -516,6 +516,28 @@ test("offline, XP, storage and dog-mutation nodes reach their systems", function
 	truthy(xp(10) > xp(0) * 1.3, "xp gain")
 end)
 
+test("offline nodes still pay late in the game (the offline guard is above the strongest team)", function()
+	-- A full tree on a strong team: 2 hours away must pay the whole modelled amount, so NIGHT SHIFT /
+	-- ENDLESS SHIFT (and Offline accessories) keep their effect instead of hitting a flat coin cap.
+	local OC = L.Require("ReplicatedStorage.OfflineEarningsConfig")
+	local all = {}
+	for id, node in pairs(T.Nodes) do all[id] = node.Max end
+	local function away(upgrades)
+		local p = profile({ Dogs = { "Cubedog", "Spiderdog", "DivineDog", "NuclearPug", "TheDog" }, Layer = 5, Level = 50, Mastery = 100, Upgrades = upgrades })
+		for _, d in pairs(p.Dogs) do d.Variant = "Void"; d.AscensionLevel = 3 end
+		O.Checkpoint(p, NOW - OC.MaxAwaySeconds)
+		O.Join(p, NOW, "rejoin")
+		return p.OfflineEarnings
+	end
+	local without = table.clone(all)
+	without.NightShift, without.EndlessShift = 0, 0
+	local plain, shifted = away(without), away(all)
+	eq(shifted.LastCreditedSeconds, OC.MaxAwaySeconds, "two hours credited")
+	eq(shifted.PendingCoins, math.floor(OC.MaxAwaySeconds * shifted.Rate), "the whole modelled amount is paid")
+	truthy(not shifted.WasCapped, "not capped by the coin guard")
+	near(shifted.PendingCoins / plain.PendingCoins, (1 + T.Value("NightShift", 10) + T.Value("EndlessShift", 5)), 0.001, "offline nodes count")
+end)
+
 -- Helpers used by the window -------------------------------------------------------------------------
 test("status, requirements, text and summary agree with the server rules", function()
 	local p = profile({ Cash = 0, Level = 1 })
