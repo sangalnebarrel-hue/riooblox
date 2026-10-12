@@ -16,8 +16,9 @@
 --   Actions = {Name=true, ...}         the action names it owns (any truthy value). Registry.Owner
 --                                      answers who owns a name; tests/feature_hooks.luau fails when
 --                                      two features own one name or a feature shadows a legacy one.
---   Cost(action) -> tokens             token-bucket price of one request (default 1; the bucket
---                                      holds 8 and refills 1.5 per second, shared by every remote)
+--   Cost(action) -> tokens             token-bucket price of one request, 0..8 (default 1; the
+--                                      bucket holds 8 and refills 1.5 per second, shared by every
+--                                      remote; anything else counts as 1)
 --   Gate(player,action,a,Runtime)      world checks BEFORE the profile transaction (near a stand or
 --                                      a console, own yard...). Refuse by raising (Rules.Check) or by
 --                                      returning a message string; nil/true lets the request through
@@ -75,7 +76,7 @@ if folder then
   if m:IsA('ModuleScript')then
    local ok,feature=pcall(require,m)
    if ok and type(feature)=='table'then
-    feature.Name=feature.Name or m.Name
+    feature.Name=type(feature.Name)=='string'and feature.Name or m.Name
     Registry.Add(feature)
    else
     warn('DOGROTS feature '..m.Name..' failed to load: '..tostring(feature))
