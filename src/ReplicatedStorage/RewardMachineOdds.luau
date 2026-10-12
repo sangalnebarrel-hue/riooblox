@@ -1,5 +1,6 @@
--- Pure integer allocation. The displayed percentages and the server draw use
--- these exact slots; progression can never increase the fixed ultra rare reward chance.
+-- Pure integer allocation. The displayed percentages and the server draw use these exact
+-- slots. Progression never changes them; only an ACTIVE world event with a MachineAurion perk
+-- (Rainbow Rift) multiplies the fixed ultra rare row for the activations it covers (O.Boost).
 local O={}
 local function integer(n)return type(n)=='number'and n==n and n%1==0 and n>=0 and n<math.huge end
 function O.Build(source,denominator)
@@ -49,5 +50,33 @@ function O.Pick(rows,slot,denominator)
   if slot<=ceiling then return row end
  end
  error('Reward machine draw has no outcome')
+end
+-- Event boost: the Aurion row keeps its single sector and its identity; only its fixed slot
+-- count is multiplied (rounded, capped). Returns new row copies, never edits the config.
+function O.Boost(rows,multiplier,cap)
+ multiplier=tonumber(multiplier)or 1
+ if multiplier~=multiplier then multiplier=1 end
+ multiplier=math.clamp(multiplier,1,math.max(1,tonumber(cap)or 10))
+ local out={}
+ for index,row in ipairs(rows)do
+  local copy=table.clone(row)
+  if row.Id=='Aurion'and integer(row.FixedUnits)and multiplier>1 then
+   copy.BaseUnits=row.FixedUnits;copy.Multiplier=multiplier
+   copy.FixedUnits=math.max(row.FixedUnits,math.floor(row.FixedUnits*multiplier+.5))
+  end
+  out[index]=copy
+ end
+ return out,multiplier
+end
+-- Integer split of one row's slots between its parts ({Weight=...}), largest remainder first.
+-- Used for the rarity share inside a multi-rarity dog tier; the parts sum to exactly `units`.
+function O.Split(parts,units)
+ if not integer(units)or units<=0 or #parts==0 then
+  for _,part in ipairs(parts)do part.ChanceUnits=0 end
+  return parts
+ end
+ local rows=O.Build(parts,units)
+ for index,part in ipairs(parts)do part.ChanceUnits=rows[index].ChanceUnits end
+ return parts
 end
 return O

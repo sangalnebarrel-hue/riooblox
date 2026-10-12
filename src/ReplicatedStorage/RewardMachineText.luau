@@ -1,12 +1,140 @@
+-- Drum, odds board and Aurion plaque text for DOG-O-MATIC, shared by the server (static pool,
+-- dog symbols) and every client (per-player pool from RewardMachineInfo). Board rows and drum
+-- faces are matched by PrizeIndex, never by list position.
 local C=require(script.Parent.RewardMachineConfig)
 local Odds=require(script.Parent.RewardMachineOdds)
 local RunService=game:GetService("RunService")
 local ServerStorage=RunService:IsServer() and game:GetService("ServerStorage") or nil
-local T={}
-function T.Pool()return Odds.Build(C.Rewards,C.OddsDenominator)end
+local T={FeaturedPeriod=600}
+-- DogDefinitions requires this module for Aurion's description: load it lazily.
+local function dogs()return require(script.Parent.DogEconomy.DogDefinitions)end
+-- Sentences built from live odds pick their language here (labels get NoTranslate);
+-- fixed labels go through ReplicatedStorage.Localization.Machine instead.
+function T.IsRussian()
+ local ok,locale=pcall(function()
+  local player=game:GetService('Players').LocalPlayer;local LS=game:GetService('LocalizationService')
+  if RunService:IsStudio()or not player then return LS.RobloxLocaleId end
+  return player.LocaleId or LS.RobloxLocaleId
+ end)
+ return ok and type(locale)=='string'and locale:sub(1,2):lower()=='ru'
+end
+-- Russian numbers use a decimal comma (0,20%).
+function T.L(en,ru)if T.IsRussian()then return (ru:gsub('(%d)%.(%d)','%1,%2'))end;return en end
+function T.Own(label)label:SetAttribute('NoTranslate',true);return label end
+T.RarityRu={Common='ОБЫЧНАЯ',Rare='РЕДКАЯ',Epic='ЭПИЧЕСКАЯ',Legendary='ЛЕГЕНДАРНАЯ',Mythic='МИФИЧЕСКАЯ',Secret='СЕКРЕТНАЯ'}
+function T.Pct(fraction)return string.format('%.3g%%',(tonumber(fraction)or 0)*100)end
+-- Odds disclosure lines for one pool row (dog tiers: each rarity, its dog count and the chance
+-- of every single dog; Aurion: its event boost and base chance). Already localized; returns
+-- no lines for other rows (their rarity word goes through the dictionary).
+function T.OddsLines(row)
+ local lines={};local pct=T.Pct
+ if row.Kind=='DogTier'and type(row.Breakdown)=='table'then
+  for _,part in ipairs(row.Breakdown)do
+   local members=type(part.Members)=='table'and #part.Members or 0
+   local rarity=tostring(part.Rarity or row.Rarity or'')
+   if #row.Breakdown>1 then
+    table.insert(lines,T.L(string.format('%s · %s · %d DOGS · %s EACH',rarity:upper(),pct(part.Chance),members,pct(part.EachChance)),
+     string.format('%s · %s · СОБАК: %d · КАЖДАЯ %s',T.RarityRu[rarity]or rarity:upper(),pct(part.Chance),members,pct(part.EachChance))))
+   else
+    table.insert(lines,T.L(string.format('%s · %d DOGS · %s EACH',rarity:upper(),members,pct(part.EachChance)),
+     string.format('%s · СОБАК: %d · КАЖДАЯ %s',T.RarityRu[rarity]or rarity:upper(),members,pct(part.EachChance))))
+   end
+  end
+ elseif row.Jackpot and row.Multiplier then
+  local base=pct((row.BaseUnits or 0)/(row.OddsDenominator or C.OddsDenominator))
+  table.insert(lines,T.L(string.format('SECRET · RAINBOW x%g · BASE %s',row.Multiplier,base),string.format('СЕКРЕТНАЯ · РАДУГА x%g · ОБЫЧНО %s',row.Multiplier,base)))
+ end
+ return lines,#lines>0
+end
+-- The world event (Rainbow Rift) whose perks boost Aurion on the machine, from the shared definitions.
+function T.BoostEvent()
+ local ok,defs=pcall(function()return require(script.Parent.WorldEvents.WorldEventDefinitions)end)
+ if not ok or type(defs)~='table'then return nil end
+ for _,def in ipairs(defs.List or{})do
+  local mult=type(def.Perks)=='table'and tonumber(def.Perks.MachineAurion)
+  if def.Enabled~=false and mult and mult>1 then
+   return {EventId=def.Id,Name=def.DisplayName,Multiplier=math.min(mult,C.EventBoostCap or 10)}
+  end
+ end
+ return nil
+end
+-- Static pool (no per-player eligibility). `multiplier` > 1 applies an event boost to Aurion.
+function T.Pool(multiplier)
+ local rows=C.Rewards
+ if multiplier and multiplier>1 then rows=Odds.Boost(rows,multiplier,C.EventBoostCap)end
+ return Odds.Build(rows,C.OddsDenominator)
+end
+local function oneIn(units)
+ if not units or units<=0 then return '—'end
+ local n=C.OddsDenominator/units
+ local s=n%1==0 and string.format('%d',n)or string.format('%.1f',n)
+ return (s:reverse():gsub('(%d%d%d)(%d)','%1,%2'):reverse())
+end
+T.OneIn=oneIn
+-- Aurion's real numbers: base and during the boosting event.
+function T.AurionOdds()
+ local base;for _,row in ipairs(T.Pool())do if row.Id=='Aurion'then base=row end end
+ local event=T.BoostEvent();local boosted
+ if event then for _,row in ipairs(T.Pool(event.Multiplier))do if row.Id=='Aurion'then boosted=row end end end
+ return {
+  Units=base and base.ChanceUnits or 0,ChanceText=base and base.ChanceText or 'Unavailable',OneIn=base and oneIn(base.ChanceUnits)or '—',
+  EventId=event and event.EventId,EventName=event and event.Name,Multiplier=event and event.Multiplier,
+  BoostUnits=boosted and boosted.ChanceUnits,BoostChanceText=boosted and boosted.ChanceText,BoostOneIn=boosted and oneIn(boosted.ChanceUnits),
+ }
+end
 function T.Aurion()
- for _,row in ipairs(T.Pool())do if row.Id=='Aurion'then return row.ChanceText end end
- return 'Unavailable'
+ local a=T.AurionOdds()
+ local text=a.ChanceText..' per spin (1 in '..a.OneIn..')'
+ if a.Multiplier then text..=' · x'..string.format('%g',a.Multiplier)..' during '..a.EventName end
+ return text
+end
+-- Every released dog of a tier row's rarities the machine may award, grouped by rank, sorted by Id.
+-- The server additionally checks layer and asset readiness (RewardMachineService.TierMembers).
+function T.TierMembers(row,accept)
+ local groups={};local wanted={}
+ for _,rank in ipairs(row.Ranks or{})do wanted[rank]=true end
+ for id,def in pairs(dogs())do
+  if wanted[def.Rank]and def.CanDropFromRoulette==true and id~='Aurion'and not def.Jackpot and not def.OG and def.Available~=false and not def.Reserved and(not accept or accept(def))then
+   groups[def.Rank]=groups[def.Rank]or{};table.insert(groups[def.Rank],id)
+  end
+ end
+ for _,list in pairs(groups)do table.sort(list)end
+ return groups
+end
+-- The dog shown on a tier sector and as its preview: rotates every FeaturedPeriod seconds among
+-- the members of the row's highest rarity (members = {[rank]={ids}} or a row with Breakdown).
+function T.Featured(row,members,now)
+ local list
+ if type(row.Breakdown)=='table'then
+  for _,part in ipairs(row.Breakdown)do if type(part.Members)=='table'and #part.Members>0 then list=part.Members end end
+ elseif type(members)=='table'then
+  local ranks=row.Ranks or{}
+  for i=#ranks,1,-1 do local group=members[ranks[i]];if group and #group>0 then list=group;break end end
+ end
+ if not list or #list==0 then return nil end
+ local turn=math.floor((now or os.time())/T.FeaturedPeriod)
+ return list[(turn+(row.PrizeIndex or 0))%#list+1]
+end
+function T.FaceTitle(row)
+ if not row then return '' end
+ if row.Coins then return 'COIN BAG'end
+ return row.Name or ''
+end
+function T.FaceSubtitle(row)
+ if not row then return 'UNLOCK AT A DEEPER LAYER'end
+ local chance=row.ChanceText or string.format('%.2f%%',(row.Chance or 0)*100)
+ if row.Multiplier and row.Multiplier>1 then return 'x'..string.format('%g',row.Multiplier)..' · '..chance..' CHANCE'end
+ return chance..' CHANCE'
+end
+function T.BoardRow(row)
+ local chance=row.ChanceText or string.format('%.2f%%',(row.Chance or 0)*100)
+ if row.Jackpot and row.Multiplier and row.Multiplier>1 then return 'RAINBOW x'..string.format('%g',row.Multiplier)..': '..row.Name..'  '..chance end
+ return (row.Jackpot and 'ULTRA RARE: 'or '')..row.Name..'  '..chance
+end
+function T.Plaque(row)
+ if not row then return 'AURION · ULTRA RARE · Unavailable'end
+ if row.Multiplier and row.Multiplier>1 then return 'AURION · RAINBOW x'..string.format('%g',row.Multiplier)..' · '..row.ChanceText end
+ return 'AURION · ULTRA RARE · '..row.ChanceText
 end
 local visibilityConnection
 function T.SetupVisibility(rig)
@@ -133,22 +261,38 @@ local function ensureDogSymbol(drum,index,templateName,scale)
  preview:PivotTo(targetCFrame*cf:Inverse()*preview:GetPivot())
  symbol:SetAttribute('DogTemplate',templateName)
 end
-function T.Apply(rig,pool)
+-- Server: a rarity-tier sector shows one of its dogs, rotating every FeaturedPeriod seconds.
+function T.ApplySymbols(rig,now)
+ if not RunService:IsServer() or not ServerStorage then return end
+ local drum=rig:FindFirstChild('SpinningDrum');if not drum then return end
+ local templates=ServerStorage:FindFirstChild('DogTemplates')
+ local defs=dogs()
+ for prizeIndex,row in ipairs(C.Rewards)do
+  if row.Kind=='DogTier'then
+   local view=table.clone(row);view.PrizeIndex=prizeIndex
+   local members=T.TierMembers(row,function(def)return templates~=nil and templates:FindFirstChild(def.VisualAsset or def.Id)~=nil end)
+   local id=T.Featured(view,members,now)
+   local def=id and defs[id]
+   if def then ensureDogSymbol(drum,prizeIndex,def.VisualAsset or def.Id,3.0)end
+  elseif row.Kind=='Dog'and row.Id~='Aurion'and defs[row.Id]then
+   ensureDogSymbol(drum,prizeIndex,defs[row.Id].VisualAsset or row.Id,3.0)
+  end
+ end
+end
+-- keepSymbols: the server skips swapping sector dogs while the drum is mid-presentation.
+function T.Apply(rig,pool,keepSymbols)
  pool=pool or T.Pool()
  local faces={}
- for _,row in ipairs(pool)do faces[row.PrizeIndex]=row end
+ for _,row in ipairs(pool)do if row.PrizeIndex then faces[row.PrizeIndex]=row end end
  local board=rig:FindFirstChild('StatusBoard');local rows=board and board:FindFirstChild('OddsDisplay')and board.OddsDisplay:FindFirstChild('Rows')
- if rows then for i=1,#C.Rewards do local label=rows:FindFirstChild('Row'..i);local row=pool[i];if label then label.Visible=row~=nil;if row then label.Text=(row.Jackpot and'ULTRA RARE: 'or'')..row.Name..'  '..row.ChanceText end end end end
+ if rows then for i=1,#C.Rewards do local label=rows:FindFirstChild('Row'..i);local row=faces[i];if label then label.Visible=row~=nil;if row then label.Text=T.BoardRow(row)end end end end
  local drum=rig:FindFirstChild('SpinningDrum')
  if drum then
   for i=1,#C.Rewards do
    local face=drum:FindFirstChild('PrizeFace_'..i,true)
    local gui=face and face:FindFirstChild('Lettering')
-   local reward=C.Rewards[i]
-   local titleText=reward and (reward.Coins and 'COIN BAG' or reward.Name) or ''
-   local subtitleText=faces[i] and (faces[i].ChanceText..' CHANCE') or 'UNLOCK AT A DEEPER LAYER'
-   if gui and gui:FindFirstChild('Title') then gui.Title.Text=titleText end
-   if gui and gui:FindFirstChild('Subtitle') then gui.Subtitle.Text=subtitleText end
+   if gui and gui:FindFirstChild('Title') then gui.Title.Text=T.FaceTitle(C.Rewards[i]) end
+   if gui and gui:FindFirstChild('Subtitle') then gui.Subtitle.Text=T.FaceSubtitle(faces[i]) end
    if gui and gui:IsA('SurfaceGui') then
     gui.AlwaysOnTop=RunService:IsClient()
     gui.LightInfluence=0
@@ -156,9 +300,7 @@ function T.Apply(rig,pool)
     if RunService:IsServer() then gui.Enabled=true end
    end
   end
-  ensureDogSymbol(drum,1,'Breadog',3.0)
-  ensureDogSymbol(drum,2,'CoffeeDog',3.0)
-  ensureDogSymbol(drum,3,'DJDoggo',3.0)
+  if not keepSymbols then T.ApplySymbols(rig)end
  end
  if RunService:IsClient() then T.SetupVisibility(rig) end
  local aurion
@@ -171,6 +313,6 @@ function T.Apply(rig,pool)
  end
  local displays=rig:FindFirstChild('RewardVitrines');local tower=displays and displays:FindFirstChild('TreasureTower')
  local plaque=tower and tower:FindFirstChild('PrizePlaque')
- if plaque and plaque:FindFirstChild('Lettering')then plaque.Lettering.Title.Text='AURION · ULTRA RARE · '..(aurion and aurion.ChanceText or'Unavailable')end
+ if plaque and plaque:FindFirstChild('Lettering')then plaque.Lettering.Title.Text=T.Plaque(aurion)end
 end
 return T

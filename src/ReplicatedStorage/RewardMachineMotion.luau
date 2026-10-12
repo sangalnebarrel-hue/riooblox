@@ -1,6 +1,7 @@
 -- Shared clock/easing keeps the world drum and personal prize strip in sync.
 local Config=require(script.Parent.RewardMachineConfig)
-local M={Duration=6.2,Turns=6,PrizeCount=#Config.Rewards}
+-- QuickDuration: a result revealed on the winner's own screen while the shared drum is busy.
+local M={Duration=6.2,QuickDuration=2.4,Turns=6,PrizeCount=#Config.Rewards}
 function M.Progress(t)
  t=math.clamp(t,0,1)
  -- Immediate launch, then a long smooth brake. The old curve spent the first

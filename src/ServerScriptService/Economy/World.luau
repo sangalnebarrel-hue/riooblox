@@ -16,8 +16,13 @@ function World.Start()
  local Routing=require(Replicated:WaitForChild('MapRouting'))
  local targets={
  {'DOGDEX','DogDex',map['06_DogDexMuseum'].NavigationAndReception.InteractionAnchor},
- {'GLOBAL DIG','Events',Routing.Anchor('GlobalDigSite')}, {'COLLECTION','Collection',map['06_DogDexMuseum'].NavigationAndReception.CollectionAnchor},
+ {'COLLECTION','Collection',map['06_DogDexMuseum'].NavigationAndReception.CollectionAnchor},
  }
+ -- While Global Dig is sealed behind the COMING SOON cover (GlobalDigConfig.Enabled==false) no
+ -- "GLOBAL DIG" prompt is placed inside that cube; it used to open WORLD EVENTS under a wrong name.
+ if require(Replicated:WaitForChild('GlobalDigConfig')).Enabled~=false then
+  table.insert(targets,2,{'GLOBAL DIG','Events',Routing.Anchor('GlobalDigSite')})
+ end
  local shops=map:WaitForChild('11_Shops');local points=shops:WaitForChild('InteractionAnchors')
  table.insert(targets,{'MARKETPLACE','Marketplace',points.Marketplace})
  -- Ordinary loot and unique finds are sold at the collector in the owner's yard.

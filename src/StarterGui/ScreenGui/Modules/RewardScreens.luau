@@ -1,7 +1,8 @@
 local Audio=require(game.ReplicatedStorage.RewardAudio)
 local RS=game:GetService('ReplicatedStorage');local Http=game:GetService('HttpService');local Run=game:GetService('RunService');local Marketplace=game:GetService('MarketplaceService');local Players=game:GetService('Players')
 local Motion=require(RS:WaitForChild('RewardMachineMotion'));local Definitions=require(RS.DogEconomy.DogDefinitions)
-local C=require(RS.LuckyBlockConfig);local Visual=require(RS.LuckyBlockVisuals);local V=require(script.Parent.PreviewRenderer);local S={};local clearWorldPrediction
+local C=require(RS.LuckyBlockConfig);local Visual=require(RS.LuckyBlockVisuals);local V=require(script.Parent.PreviewRenderer);local S={};local clearWorldPrediction,refreshMachineInfo
+local Tween=game:GetService('TweenService');local Format=require(RS.PriceFormat);local Text=require(RS.RewardMachineText)
 local function request(c,action,args,done)
  local s=c.State;if s.RewardBusy then return end;s.RewardBusy=true;s.RewardMessage='Please wait…';c.Draw()
  task.spawn(function()
@@ -11,15 +12,39 @@ local function request(c,action,args,done)
   else
    if action=='RewardMachineActivate'then clearWorldPrediction(c,true)end
    s.RewardMessage=transport and tostring(value)or 'Connection interrupted. Retry to check the saved result.'
+   s.RewardMessageAt=os.clock();s.NoticeDismissed=nil
+   -- A refusal means the machine state changed (tokens, storage, reset): show fresh info at once.
+   if action=='RewardMachineActivate'then refreshMachineInfo(c)end
   end
   if not c.Gui or c.Gui.Parent then c.Draw()end
  end)
 end
+-- Re-read RewardMachineInfo without the busy guard or the 'Please wait…' message.
+refreshMachineInfo=function(c)
+ local s=c.State;if s.MachineInfoRefreshing then return end;s.MachineInfoRefreshing=true
+ task.spawn(function()
+  local transport,ok,value=pcall(function()return RS.RewardRequest:InvokeServer('RewardMachineInfo',{})end)
+  s.MachineInfoRefreshing=nil
+  if transport and ok and type(value)=='table'then s.RewardMachineInfo=value end
+  if not c.Gui or c.Gui.Parent then c.Draw()end
+ end)
+end
+-- Odds change only when an event boost starts or ends (the server mirrors it on the rig).
+task.defer(function()
+ local map=workspace:WaitForChild('DOGROTS_District',30);local area=map and map:WaitForChild('37_AttractionRefresh',30)
+ local rig=area and area:WaitForChild('RewardMachineRig',30);if not rig then return end
+ rig:GetAttributeChangedSignal('AurionBoost'):Connect(function()
+  local ok,menus=pcall(function()return require(script.Parent.Menus).Active end)
+  if ok and menus and(menus.page=='RewardMachine'or menus.page=='TicketShop')then menus:FetchRewardMachine(true)end
+ end)
+end)
 local function block(parent,tier,x,y,w,h)
  local model=Visual.Build(tier);local view=V.Scene(parent,model,x,y,w,h);model:Destroy();return view
 end
 local function preview(c,parent,row,x,y,w,h)
- if row.Dog or row.Kind=='Dog'then V.Dog(parent,row.Dog or row.Id,x,y,w,h)
+ if row.Kind=='DogTier'then
+  if row.Featured then V.Dog(parent,row.Featured,x,y,w,h)else c.U.Center(parent,row.Name or'DOG',x,y,w,h,22,c.U.Colors.purple,true)end
+ elseif row.Dog or row.Kind=='Dog'then V.Dog(parent,row.Dog or row.Id,x,y,w,h)
  elseif row.Item or row.Kind=='Item'then V.Item(parent,row.Item or {ItemId=row.Id,Mutation='NORMAL',WeightMultiplier=1},x,y,w,h)
  else local model=require(RS.EconomyRewardVisuals).Build(row);if model then V.Scene(parent,model,x,y,w,h);model:Destroy()else c.U.Center(parent,row.Name or row.Kind,x,y,w,h,27,c.U.Colors.gold,true)end end
 end
@@ -39,17 +64,42 @@ clearWorldPrediction=function(c,failed)
   if c.Gui then c.Gui:SetAttribute('RewardMachineActiveUntil',0);c.Gui:SetAttribute('RewardMachineActive',false)end
  end
 end
+-- One line under a reward that explains what happened beyond the prize itself (localized here).
+function S.ResultDetail(result)
+ local storage=type(result.Storage)=='table'and result.Storage
+ local L=Text.L
+ if storage and storage.Kind=='Dogs'then
+  local n,cap=tonumber(storage.Count)or 0,tonumber(storage.Capacity)or 0
+  return L(string.format('Dog storage %d / %d · sell or manage dogs to make room',n,cap),string.format('Собак %d / %d · продай или освободи место',n,cap))
+ elseif storage and storage.Kind=='Items'then
+  local n,cap=tonumber(storage.Count)or 0,tonumber(storage.Capacity)or 0
+  return L(string.format('Bag %d / %d · sell items to make room',n,cap),string.format('Предметов %d / %d · продай лишнее, чтобы освободить место',n,cap))
+ end
+ if(tonumber(result.Coins)or 0)>0 then
+  local coins=Format.Number(result.Coins)
+  return L('Energy Snack is full · +'..coins..' Coins instead','Энергетический перекус на максимуме · вместо него +'..coins..' монет')
+ end
+ if(tonumber(result.Reserved)or 0)>0 then return L('Energy Snack timer is full · the extra time waits in reserve','Таймер перекуса заполнен · лишнее время ждёт в запасе')end
+ if result.Jackpot and result.Multiplier then
+  local x=string.format('%g',result.Multiplier)
+  return L('Won during Rainbow Rift · x'..x..' chance','Выигрыш во время Радужного разлома · шанс x'..x)
+ end
+ return nil
+end
 function S.PresentWorld(c,result)
  local receipt=result.Receipt or result.Request
  if receipt and seenMachine[receipt]then return end
  if receipt then seenMachine[receipt]=true end
  local gui=c.Gui or script.Parent.Parent;local U=c.U;local p=result.Presentation
  local finish=type(p)=='table'and tonumber(p.StartedAt)and tonumber(p.Duration)and(p.StartedAt+p.Duration)or workspace:GetServerTimeNow()
- c.State.WorldSpinUntil=finish;gui:SetAttribute('RewardMachineActiveUntil',finish);gui:SetAttribute('RewardMachineActive',finish>workspace:GetServerTimeNow())
+ c.State.WorldSpinUntil=finish;c.State.WorldSpinStart=type(p)=='table'and tonumber(p.StartedAt)or nil
+ c.State.WorldSpinPersonal=type(p)=='table'and p.Personal==true or nil
+ gui:SetAttribute('RewardMachineActiveUntil',finish);gui:SetAttribute('RewardMachineActive',finish>workspace:GetServerTimeNow())
+ local detail=S.ResultDetail(result);local toastH=detail and 126 or 104
  local function showToast()
   if not gui.Parent or not gui:GetAttribute('RewardMachineWorldOpen')then return end
   local old=gui:FindFirstChild('RewardMachineRewardToast');if old then old:Destroy()end
-  local toast=U.Panel(gui,'RewardMachineRewardToast',0,0,420,104);toast.ZIndex=80;toast.AnchorPoint=Vector2.new(.5,1)
+  local toast=U.Panel(gui,'RewardMachineRewardToast',0,0,420,toastH);toast.ZIndex=80;toast.AnchorPoint=Vector2.new(.5,1)
   local scale=U.New('UIScale',{},toast)
   toast:SetAttribute('Receipt',receipt);toast:SetAttribute('RewardMachineStartedAt',p and p.StartedAt);toast:SetAttribute('RewardMachineDuration',p and p.Duration);toast:SetAttribute('RevealedAt',workspace:GetServerTimeNow())
   U.Gradient(toast,Color3.fromRGB(255,245,183),Color3.fromRGB(238,218,255))
@@ -58,6 +108,7 @@ function S.PresentWorld(c,result)
   U.Text(toast,Motion.UltraRare(result)and'ULTRA RARE!'or'REWARD FOUND!',98,5,278,20,16,U.Colors.purple,true)
   U.Text(toast,name,98,27,278,47,23,U.Colors.text,true)
   U.Text(toast,tostring(rarity):upper()..' · SAVED',98,80,196,18,15,U.Colors.muted,true)
+  if detail then local line=Text.Own(U.Text(toast,detail,10,102,400,20,14,result.Storage and U.Colors.red or U.Colors.purple,true));line.Name='Detail';line.TextScaled=true;U.New('UITextSizeConstraint',{MaxTextSize=14,MinTextSize=9},line)end
   preview(c,toast,result,4,7,90,90)
   U.Button(toast,'Collect','COLLECT',302,77,110,23,function()toast:Destroy()end,U.Colors.green).Caption.TextSize=13
   local function layout()
@@ -65,18 +116,23 @@ function S.PresentWorld(c,result)
    local left,top,width,height=U.SafeArea(gui)
    scale.Scale=math.min(1,(width-28)/420)
    local rail=gui:GetAttribute('RewardMachineRailHeight')or(width<600 and 132 or 94)
-   toast.Position=UDim2.fromOffset(left+width/2,math.max(top+104*scale.Scale+8,top+height-14-rail-10))
+   local notices=gui:GetAttribute('RewardMachineNoticeHeight')or 0
+   -- Short landscape phones cannot fit rail + notices + toast: the notices wait behind the toast.
+   local crowded=notices>0 and top+height-14-rail-notices-10<top+toastH*scale.Scale+8
+   gui:SetAttribute('RewardMachineNoticesHidden',crowded)
+   toast.Position=UDim2.fromOffset(left+width/2,math.max(top+toastH*scale.Scale+8,top+height-14-rail-(crowded and 0 or notices)-10))
    toast.Visible=gui:GetAttribute('OpenMenu')=='RewardMachine'and not gui:GetAttribute('RewardMachineOddsOpen')
   end
-  local events={gui:GetPropertyChangedSignal('AbsoluteSize'):Connect(layout),gui:GetAttributeChangedSignal('RewardMachineRailHeight'):Connect(layout),gui:GetAttributeChangedSignal('RewardMachineWorldOpen'):Connect(layout),gui:GetAttributeChangedSignal('RewardMachineOddsOpen'):Connect(layout)}
-  toast.Destroying:Connect(function()for _,event in ipairs(events)do event:Disconnect()end end);layout()
+  local events={gui:GetPropertyChangedSignal('AbsoluteSize'):Connect(layout),gui:GetAttributeChangedSignal('RewardMachineRailHeight'):Connect(layout),gui:GetAttributeChangedSignal('RewardMachineNoticeHeight'):Connect(layout),gui:GetAttributeChangedSignal('RewardMachineWorldOpen'):Connect(layout),gui:GetAttributeChangedSignal('RewardMachineOddsOpen'):Connect(layout)}
+  toast.Destroying:Connect(function()for _,event in ipairs(events)do event:Disconnect()end;if gui.Parent then gui:SetAttribute('RewardMachineNoticesHidden',false)end end);layout()
+  scale.Scale*=.92;Tween:Create(scale,TweenInfo.new(.18,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Scale=scale.Scale/.92}):Play()
   Audio.Cue(Motion.UltraRare(result)and'burst'or'reveal')
-  task.delay(8,function()if toast.Parent then toast:Destroy()end end)
+  task.delay(detail and 10 or 8,function()if toast.Parent then toast:Destroy()end end)
  end
  local function finishSpin()
   if not gui.Parent then return end
   local left=finish-workspace:GetServerTimeNow();if left>0 then task.delay(left,finishSpin);return end
-  if c.State.WorldSpinUntil==finish then c.State.WorldSpinUntil=nil;gui:SetAttribute('RewardMachineActive',false)end
+  if c.State.WorldSpinUntil==finish then c.State.WorldSpinUntil=nil;c.State.WorldSpinPersonal=nil;c.State.WorldSpinStart=nil;gui:SetAttribute('RewardMachineActive',false)end
   c.State.WorldOddsOpen=false
   c.State.RewardMachineLastReward=result
   c.Draw();showToast()
@@ -186,6 +242,151 @@ local function prizeRarity(row)
  local def=row.Kind=='Dog'and Definitions[row.Id]
  return row.Rarity or(def and def.Rarity)or({Cash='Coins',Bones='Bones',Boost='Boost'})[row.Kind]or row.Kind or'Reward'
 end
+-- One-line labels whose translation may be longer: shrink instead of clipping.
+local function fit(label,maxSize,minSize)
+ label.TextScaled=true;label.TextWrapped=true
+ local constraint=Instance.new('UITextSizeConstraint');constraint.MaxTextSize=maxSize;constraint.MinTextSize=minSize or 9;constraint.Parent=label
+ return label
+end
+-- Disclosure lines under one odds row (see RewardMachineText.OddsLines); other rows show their
+-- rarity word, which the dictionary translates.
+local function oddsLines(row)
+ local lines,owned=Text.OddsLines(row)
+ if not owned then lines={prizeRarity(row):upper()}end
+ return lines,owned
+end
+local function oddsLabel(label,owned)if owned then Text.Own(label)end;return label end
+local rainbowColors=ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(255,86,140)),ColorSequenceKeypoint.new(.25,Color3.fromRGB(255,176,52)),
+ ColorSequenceKeypoint.new(.5,Color3.fromRGB(96,214,104)),ColorSequenceKeypoint.new(.75,Color3.fromRGB(66,170,255)),ColorSequenceKeypoint.new(1,Color3.fromRGB(184,104,255))})
+local function rainbow(frame)
+ frame.BackgroundColor3=Color3.new(1,1,1)
+ local old=frame:FindFirstChildWhichIsA('UIGradient');if old then old:Destroy()end
+ local gradient=Instance.new('UIGradient');gradient.Color=rainbowColors;gradient.Offset=Vector2.new(-.3,0);gradient.Parent=frame
+ local tween=Tween:Create(gradient,TweenInfo.new(2.6,Enum.EasingStyle.Sine,Enum.EasingDirection.InOut,-1,true),{Offset=Vector2.new(.3,0)})
+ tween:Play();frame.Destroying:Connect(function()tween:Cancel()end)
+ return gradient
+end
+local function boostTitle(boost)return string.format('AURION HOWLS · x%g CHANCE',tonumber(boost.Multiplier)or 1)end
+-- Which refusal this is, so the notice can offer the action that fixes it.
+local function reasonCode(info,message)
+ if info and message==info.UnavailableReason and info.ReasonCode then return info.ReasonCode end
+ message=tostring(message or'')
+ if message:find('Move closer',1,true)then return 'TooFar'
+ elseif message:find('dogs. Sell',1,true)then return 'DogsHardCap'
+ elseif message:find('items. Sell',1,true)then return 'ItemsHardCap'
+ elseif message:find('still recharging',1,true)then return 'Recharging'
+ elseif message:find('Paid random tickets',1,true)then return 'PaidRestricted'
+ elseif message:find('Please wait',1,true)then return 'Wait'end
+ return 'Retry'
+end
+local function noticeActions(c,code)
+ local N=require(script.Parent.GUIIntegration)
+ if code=='DogsHardCap'then return {{'MANAGE DOGS',function()c.Show('Dogs')end},{'DOG SHELTER',function()N.Navigate('Dog Shelter')end}}
+ elseif code=='ItemsHardCap'then return {{'MY ITEMS',function()c.Show('Collection')end}}
+ elseif code=='Recharging'then return {{'GET TOKENS',function()c.Show('TicketShop')end}}
+ elseif code=='PaidRestricted'then return {{'TOKEN INFO',function()c.Show('TicketShop')end}}
+ elseif code=='TooFar'then return {{'FIND DOG-O-MATIC',function()N.Navigate('DOG-O-MATIC PLAZA')end}}
+ elseif code=='Retry'then return {{'TRY AGAIN',function()c.State.RewardMessage=nil;c.State.NoticeDismissed=nil;refreshMachineInfo(c)end}}end
+ return {}
+end
+-- Rainbow boost and refusal notices sit just above the control rail, persistently (the rail
+-- itself is redrawn on every refresh). Both are sized for phones and desktops.
+local function noticeHost(c)
+ local gui=c.Gui;if not gui then return nil end
+ local host=gui:FindFirstChild('RewardMachineNotices')
+ if host then return host end
+ host=c.U.New('Frame',{Name='RewardMachineNotices',BackgroundTransparency=1,AnchorPoint=Vector2.new(.5,1),Size=UDim2.fromOffset(300,0),ZIndex=72,Visible=false},gui)
+ c.U.New('UIListLayout',{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),VerticalAlignment=Enum.VerticalAlignment.Bottom,HorizontalAlignment=Enum.HorizontalAlignment.Center},host)
+ local events={}
+ local function sync()
+  if not gui:GetAttribute('RewardMachineWorldOpen')then host:Destroy();return end
+  host.Visible=gui:GetAttribute('OpenMenu')=='RewardMachine'and not gui:GetAttribute('RewardMachineOddsOpen')and not gui:GetAttribute('RewardMachineNoticesHidden')and #host:GetChildren()>1
+ end
+ for _,name in ipairs({'RewardMachineWorldOpen','RewardMachineOddsOpen','OpenMenu','RewardMachineNoticesHidden'})do table.insert(events,gui:GetAttributeChangedSignal(name):Connect(sync))end
+ host.Destroying:Connect(function()for _,event in ipairs(events)do event:Disconnect()end;if gui.Parent then gui:SetAttribute('RewardMachineNoticeHeight',0)end end)
+ return host
+end
+local function popIn(frame)
+ local scale=Instance.new('UIScale');scale.Scale=.9;scale.Parent=frame
+ Tween:Create(scale,TweenInfo.new(.2,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Scale=1}):Play()
+end
+local function boostNotice(c,host,boost,width)
+ local U=c.U;local key=tostring(boost.EventId)..':'..tostring(boost.Multiplier)..':'..width
+ local frame=host:FindFirstChild('BoostNotice')
+ if frame and frame:GetAttribute('Key')==key then return frame end
+ if frame then frame:Destroy()end
+ frame=U.Frame(host,'BoostNotice',0,0,width,40,Color3.new(1,1,1));frame.LayoutOrder=1;frame.ZIndex=73;frame:SetAttribute('Key',key)
+ U.Round(frame,12);U.Stroke(frame,U.Colors.edge,3);rainbow(frame)
+ local title=fit(U.Text(frame,boostTitle(boost),12,0,width-112,40,width<420 and 15 or 18,Color3.new(1,1,1),true),width<420 and 15 or 18);title.ZIndex=74
+ title.TextStrokeTransparency=0;title.TextStrokeColor3=U.Colors.edge
+ local clock=U.Text(frame,'',width-104,0,92,40,15,Color3.new(1,1,1),true);clock.ZIndex=74;clock.TextXAlignment=Enum.TextXAlignment.Right
+ clock.TextStrokeTransparency=0;clock.TextStrokeColor3=U.Colors.edge
+ task.spawn(function()
+  while clock.Parent do
+   local left=math.max(0,(tonumber(boost.EndsAt)or 0)-c.Now())
+   clock.Text='ENDS '..string.format('%02d:%02d',math.floor(left/60),math.floor(left)%60)
+   if left<=0 then refreshMachineInfo(c);break end
+   task.wait(1)
+  end
+ end)
+ popIn(frame);return frame
+end
+local function refusalNotice(c,host,message,code,width)
+ local U=c.U;local P=U.Colors;local narrow=width<460
+ local actions=noticeActions(c,code)
+ local key=message..'|'..code..'|'..width
+ local frame=host:FindFirstChild('RefusalNotice')
+ if frame and frame:GetAttribute('Key')==key then return frame end
+ if frame then frame:Destroy()end
+ local buttonsW=#actions>0 and(#actions*124+(#actions-1)*6)or 0
+ local height=narrow and(#actions>0 and 98 or 58)or 60
+ frame=U.Frame(host,'RefusalNotice',0,0,width,height,Color3.fromRGB(255,244,246));frame.LayoutOrder=2;frame.ZIndex=73;frame:SetAttribute('Key',key)
+ U.Round(frame,12);U.Stroke(frame,P.red,3)
+ local stripe=U.Frame(frame,'Stripe',0,0,8,height,P.red);stripe.ZIndex=74;U.Round(stripe,4)
+ local textW=narrow and width-56 or width-56-buttonsW-8
+ local label=U.Text(frame,message,16,narrow and 4 or 2,textW,narrow and 50 or 56,narrow and 15 or 16,P.text,true);label.ZIndex=74
+ label.TextYAlignment=Enum.TextYAlignment.Center;U.New('UITextSizeConstraint',{MinTextSize=11,MaxTextSize=narrow and 15 or 16},label);label.TextScaled=true
+ local close=U.Button(frame,'Dismiss','×',width-38,8,30,30,function()c.State.NoticeDismissed=message;local old=host:FindFirstChild('RefusalNotice');if old then old:Destroy()end;c.Draw()end,P.red)
+ close.ZIndex=75
+ for i,action in ipairs(actions)do
+  local w=narrow and math.min(150,(width-32-(#actions-1)*6)/#actions)or 124
+  local x=narrow and 16+(i-1)*(w+6)or width-44-buttonsW+(i-1)*130
+  local y=narrow and 56 or 12
+  local button=U.Button(frame,'Action'..i,action[1],x,y,w,36,action[2],i==1 and P.blue or P.gold);button.ZIndex=75;button.Caption.TextSize=13
+ end
+ popIn(frame);return frame
+end
+local function renderNotices(c,info,spinning)
+ local gui=c.Gui;if not gui then return end
+ local s=c.State
+ local message,code
+ local recent=s.RewardMessage and s.RewardMessageAt and os.clock()-s.RewardMessageAt<15 and not s.RewardBusy
+ if not spinning then
+  if recent then message=s.RewardMessage;code=reasonCode(info,message)
+  elseif info.CanSpin==false and info.UnavailableReason and info.ReasonCode~='Cooldown'then message=info.UnavailableReason;code=info.ReasonCode or reasonCode(info,message)end
+ end
+ if message and(message==s.NoticeDismissed or code=='Wait')then message=nil end
+ local boost=type(info.ActiveBoost)=='table'and info.ActiveBoost or nil
+ local host=gui:FindFirstChild('RewardMachineNotices')
+ if not message and not boost then
+  if host then host:Destroy()end
+  return nil
+ end
+ host=noticeHost(c);if not host then return nil end
+ local left,top,width,height=c.U.SafeArea(gui)
+ local wide=width>=600;local W=math.max(260,math.min(wide and 760 or 380,width-28));local scale=math.min(1,(width-28)/W)
+ local noticeW=math.floor(W*scale)
+ local rail=gui:GetAttribute('RewardMachineRailHeight')or(wide and 94 or 132)
+ local total=0
+ if boost then boostNotice(c,host,boost,noticeW);total+=40 else local old=host:FindFirstChild('BoostNotice');if old then old:Destroy()end end
+ if message then local frame=refusalNotice(c,host,message,code,noticeW);total+=(total>0 and 6 or 0)+frame.Size.Y.Offset
+ else local old=host:FindFirstChild('RefusalNotice');if old then old:Destroy()end end
+ host.Size=UDim2.fromOffset(noticeW,total)
+ host.Position=UDim2.fromOffset(left+width/2,top+height-14-rail-8)
+ host.Visible=gui:GetAttribute('OpenMenu')=='RewardMachine'and not gui:GetAttribute('RewardMachineOddsOpen')and not gui:GetAttribute('RewardMachineNoticesHidden')
+ gui:SetAttribute('RewardMachineNoticeHeight',total+8)
+ return message
+end
 function S.WorldRewardMachine(c)
  local U,W,H,s=c.U,c.W,c.H,c.State;local P=U.Colors;local wide=W>=600
  local panel=U.Panel(c.Parent,'WorldControls',0,0,W,H)
@@ -198,18 +399,24 @@ function S.WorldRewardMachine(c)
   return
  end
  local free=tonumber(info.FreeTickets)or math.min(1,tonumber(info.Tickets)or 0);local total=free+usablePaid(info)
- local spinning=(s.WorldSpinUntil or 0)>workspace:GetServerTimeNow();local cooling=(tonumber(info.NextSpinAt)or 0)>c.Now()
+ local serverNow=workspace:GetServerTimeNow()
+ local spinning=(s.WorldSpinUntil or 0)>serverNow;local cooling=(tonumber(info.NextSpinAt)or 0)>c.Now()
  local ready=total>0 and info.CanSpin~=false and info.InRange~=false and not cooling and not spinning and not s.RewardBusy
  U.Text(panel,U.Fmt(total)..' DOG TOKEN',12,wide and 9 or 24,wide and 190 or 131,28,wide and 23 or 18,P.text,true)
  U.Text(panel,'FREE · '..free..' / 1',wide and 12 or 145,wide and 36 or 26,wide and 190 or W-195,23,wide and 15 or 13,P.purple,true)
  local at=tonumber(info.NextFreeTicketAt or info.NextTicketAt)or 0
- local statusText=spinning and'Watch the reward drum!'or free>0 and'FREE READY · 1 / 5H'or'Free in '..clockText(at-c.Now())
- local status=U.Text(panel,s.RewardMessage or(info.CanSpin==false and total>0 and info.UnavailableReason)or statusText,12,wide and 63 or 52,wide and 190 or W-24,wide and 23 or 20,13,P.muted)
- if not spinning and free==0 and at>0 and not s.RewardMessage then status:SetAttribute('Deadline',at);status:SetAttribute('CountdownStyle','Clock');status:SetAttribute('CountdownPrefix','Free in ')end
+ local spinText='Watch the reward drum!'
+ if spinning and s.WorldSpinPersonal then spinText='Drum busy · your reward appears here'
+ elseif spinning and(s.WorldSpinStart or 0)>serverNow then spinText='Your turn on the drum is next'end
+ local statusText=spinning and spinText or free>0 and'FREE READY · 1 / 5H'or'Free in '..clockText(at-c.Now())
+ local noticeShown=renderNotices(c,info,spinning)
+ local status=U.Text(panel,(not noticeShown and not spinning and s.RewardMessage)or statusText,12,wide and 63 or 52,wide and 190 or W-24,wide and 23 or 20,13,P.muted)
+ if not spinning and free==0 and at>0 and(noticeShown or not s.RewardMessage)then status:SetAttribute('Deadline',at);status:SetAttribute('CountdownStyle','Clock');status:SetAttribute('CountdownPrefix','Free in ')end
  local label=spinning and'ACTIVATING…'or s.RewardBusy and'PLEASE WAIT…'or info.InRange==false and'VISIT DOG-O-MATIC'or total==0 and'NO DOG TOKEN'or cooling and'RESETTING…'or info.CanSpin==false and'UNAVAILABLE'or'ACTIVATE · 1 TOKEN'
  local spinX,spinY,spinW,spinH=wide and 214 or 12,wide and 18 or 80,wide and math.min(260,W-452)or W-170,wide and 58 or 40
  local spin=U.Button(panel,'Spin',label,spinX,spinY,spinW,spinH,ready and function()
   s.SpinRequest=s.SpinRequest or Http:GenerateGUID(false):gsub('-','')
+  s.NoticeDismissed=nil
   local startedAt=beginWorldPrediction(c,s.SpinRequest)
   request(c,'RewardMachineActivate',{Request=s.SpinRequest,StartedAt=startedAt},function(v)
    s.SpinRequest=nil
@@ -219,7 +426,7 @@ function S.WorldRewardMachine(c)
  end or nil,P.green)
  spin.Caption.TextSize=wide and 19 or W<320 and 12 or 14
  U.Text(panel,'DOG-O-MATIC',wide and W-222 or 12,wide and 9 or 4,wide and 178 or W-65,wide and 29 or 19,wide and 18 or 13,P.purple,true)
- local odds=U.Button(panel,'Odds','CHANCES',wide and W-222 or W-146,wide and 50 or 80,wide and 85 or 60,wide and 34 or 40,function()s.WorldOddsOpen=not s.WorldOddsOpen;c.Draw()end,P.blue)
+ local odds=U.Button(panel,'Odds','CHANCES',wide and W-222 or W-146,wide and 50 or 80,wide and 85 or 60,wide and 34 or 40,function()s.WorldOddsOpen=not s.WorldOddsOpen;c.Draw()end,info.ActiveBoost and P.red or P.blue)
  local tickets=U.Button(panel,'TicketShop','TOKENS',wide and W-129 or W-78,wide and 50 or 80,wide and 113 or 66,wide and 34 or 40,not spinning and function()c.Show('TicketShop')end or nil,P.gold)
  odds.Caption.TextSize=wide and 14 or 10;tickets.Caption.TextSize=wide and 16 or 12
  if c.Gui then
@@ -227,15 +434,24 @@ function S.WorldRewardMachine(c)
   if old then old:Destroy()end
   c.Gui:SetAttribute('RewardMachineOddsOpen',s.WorldOddsOpen==true)
   if s.WorldOddsOpen then
-   local _,_,width,height=U.SafeArea(c.Gui);local ow=math.min(430,width-28);local oh=math.min(355,height-28)
+   local _,_,width,height=U.SafeArea(c.Gui);local ow=math.min(430,width-28);local oh=math.min(420,height-28)
    local overlay=U.New('Frame',{Name='RewardMachineOddsOverlay',Size=UDim2.fromScale(1,1),BackgroundTransparency=1,Active=true,ZIndex=85},c.Gui)
    local window=U.Modal(overlay,'OddsWindow','REWARD CHANCES',ow,oh)
    U.Button(window,'CloseOdds','×',ow-43,18,28,30,function()s.WorldOddsOpen=false;c.Draw()end,P.red)
    local sc=U.Scroll(window,'OddsList',12,75,ow-24,oh-89)
+   local y=0
+   U.Text(sc,'Every activation uses these exact chances, for free and bought DOG TOKENS.',5,y,ow-48,38,14,P.muted);y+=42
+   if info.ActiveBoost then
+    local strip=U.Frame(sc,'BoostStrip',5,y,ow-48,32,P.purple);U.Round(strip,8);rainbow(strip)
+    local text=fit(U.Center(strip,boostTitle(info.ActiveBoost),4,0,ow-56,32,15,Color3.new(1,1,1),true),15);text.TextStrokeTransparency=0;text.TextStrokeColor3=P.edge
+    y+=40
+   end
    for i,row in ipairs(info.Rewards or{})do
-    U.Text(sc,row.Name or row.Kind,5,(i-1)*64,ow-133,40,18,P.text,true)
-    U.Text(sc,prizeRarity(row):upper(),5,(i-1)*64+42,ow-133,20,14,P.muted)
-    U.Text(sc,string.format('%.6g%%',(row.Chance or 0)*100),ow-119,(i-1)*64,83,58,20,P.purple,true)
+    local lines,owned=oddsLines(row)
+    U.Text(sc,row.Name or row.Kind,5,y,ow-140,30,18,P.text,true).Name='Reward'..i
+    U.Text(sc,string.format('%.6g%%',(row.Chance or 0)*100),ow-125,y,83,30,20,row.Multiplier and P.red or P.purple,true).TextXAlignment=Enum.TextXAlignment.Right
+    for j,line in ipairs(lines)do oddsLabel(fit(U.Text(sc,line,5,y+29+(j-1)*19,ow-60,19,14,P.muted),14),owned)end
+    y+=29+#lines*19+12
    end
    if savedScroll then sc.CanvasPosition=savedScroll end
   end
@@ -259,20 +475,26 @@ function S.RewardMachine(c)
   end)
  end or nil,ready and P.green or P.purple);y+=66
  U.Button(sc,'TicketShop',info.FreeOnly==false and'DOG TOKENS · LUCKY SPINS'or'FREE DOG TOKEN INFO',8,y,W-24,42,function()c.Show('TicketShop')end,P.gold);y+=49
- if info.InRange==false then U.Button(sc,'FindRewardMachine','FIND DOG-O-MATIC',8,y,W-24,42,function()require(script.Parent.GUIIntegration).Navigate('RewardMachine')end,P.blue);y+=51 end
+ if info.InRange==false then U.Button(sc,'FindRewardMachine','FIND DOG-O-MATIC',8,y,W-24,42,function()require(script.Parent.GUIIntegration).Navigate('DOG-O-MATIC PLAZA')end,P.blue);y+=51 end
  local message=s.RewardMessage or info.CanSpin==false and info.UnavailableReason
  if message and message~=''then U.Text(sc,tostring(message),12,y,W-32,48,17,not s.RewardMessage and(total==0 or cooling)and P.muted or P.red);y+=54 end
+ if info.ActiveBoost then
+  local strip=U.Frame(sc,'BoostStrip',8,y,W-24,40,P.purple);U.Round(strip,10);rainbow(strip)
+  local text=fit(U.Center(strip,boostTitle(info.ActiveBoost),6,0,W-36,40,19,Color3.new(1,1,1),true),19);text.TextStrokeTransparency=0;text.TextStrokeColor3=P.edge
+  y+=50
+ end
  U.Text(sc,'YOUR POSSIBLE REWARDS',12,y,W-32,31,24,P.text,true);y+=36
- U.Text(sc,'One free DOG TOKEN gives one random reward. Exact chances are shown below.',12,y,W-32,45,16,P.muted);y+=49
+ U.Text(sc,'One DOG TOKEN gives one random reward. Exact chances are shown below.',12,y,W-32,45,16,P.muted);y+=49
  local cols=c.Mobile and 2 or 4;local cw=(W-24-(cols-1)*12)/cols
  for i,row in ipairs(info.Rewards or{})do
   local rarity=prizeRarity(row);local tone=U.Rarity[rarity]or({Cash=P.gold,Bones=P.blue,Boost=P.green})[row.Kind]or P.purple
-  local card=U.Panel(sc,'Reward'..i,8+(i-1)%cols*(cw+12),y+math.floor((i-1)/cols)*205,cw,193,true)
+  local card=U.Panel(sc,'Reward'..i,8+(i-1)%cols*(cw+12),y+math.floor((i-1)/cols)*225,cw,213,true)
   local art=U.Frame(card,'Art',6,6,cw-12,90,tone:Lerp(Color3.new(1,1,1),.78));U.Round(art,10)
   preview(c,art,row,4,1,cw-20,88)
   U.Center(card,row.Name or row.Kind,7,99,cw-14,34,18,P.text,true)
-  U.Center(card,rarity:upper(),7,136,cw-14,22,14,P.muted,true)
-  local chance=U.Frame(card,'Chance',8,162,cw-16,25,tone);U.Round(chance,7)
+  local lines,owned=oddsLines(row)
+  oddsLabel(fit(U.Center(card,table.concat(lines,'\n'),7,134,cw-14,42,13,P.muted,true),13),owned)
+  local chance=U.Frame(card,'Chance',8,182,cw-16,25,row.Multiplier and P.red or tone);U.Round(chance,7)
   U.Center(chance,string.format('%.6g%%',(row.Chance or 0)*100),3,0,cw-22,25,18,P.text,true)
  end
 end
@@ -301,7 +523,29 @@ function S.TicketShop(c)
    if not row.CanPurchase and row.UnavailableReason then U.Text(card,row.UnavailableReason,10,76,cw-20,26,13,P.muted)end
   end
   y+=math.ceil(#products/cols)*172+4
-  U.Text(sc,'Aurion owns exactly 1 of 10,000 slots on every spin. Paid tokens are delivered after Roblox confirms payment and only work where Roblox allows paid random items.',12,y,W-32,64,15,P.muted);y+=70
+  -- Paid random items: the exact odds a bought token rolls, before purchase.
+  U.Text(sc,'REWARD CHANCES · EVERY TOKEN',12,y,W-32,34,21,P.text,true);y+=38
+  local aurion
+  for _,row in ipairs(info.Rewards or{})do
+   if row.Id=='Aurion'then aurion=row end
+   U.Text(sc,row.Name or row.Kind,16,y,W-150,24,16,P.text,true)
+   U.Text(sc,string.format('%.6g%%',(row.Chance or 0)*100),W-130,y,100,24,16,row.Multiplier and P.red or P.purple,true).TextXAlignment=Enum.TextXAlignment.Right
+   y+=24
+   local lines,owned=oddsLines(row)
+   for _,line in ipairs(lines)do oddsLabel(fit(U.Text(sc,line,24,y,W-60,18,13,P.muted),13),owned);y+=18 end
+   y+=6
+  end
+  y+=6
+  local odds=Text.AurionOdds()
+  local chance=aurion and aurion.ChanceText or odds.ChanceText;local oneIn=aurion and Text.OneIn(aurion.ChanceUnits)or odds.OneIn
+  local en=string.format('Aurion: %s per spin (1 in %s).',chance,oneIn)
+  local ru=string.format('Аурион: %s за вращение (1 из %s).',chance,(oneIn:gsub(',',' ')))
+  if odds.Multiplier then
+   en..=string.format(' During %s: x%g (%s).',odds.EventName,odds.Multiplier,odds.BoostChanceText)
+   ru..=string.format(' Во время Радужного разлома: x%g (%s).',odds.Multiplier,odds.BoostChanceText)
+  end
+  Text.Own(U.Text(sc,Text.L(en,ru),12,y,W-32,44,15,P.text));y+=48
+  U.Text(sc,'Paid tokens are delivered after Roblox confirms payment and only work where Roblox allows paid random items.',12,y,W-32,44,15,P.muted);y+=50
  else
   U.Text(sc,'No Coins, Bones, Robux or items are needed. Extra activations cannot be purchased.',12,y,W-32,68,17,P.text);y+=77
  end

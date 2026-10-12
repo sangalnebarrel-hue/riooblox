@@ -120,7 +120,7 @@ function Screens.Build(c)
   U.Button(sc,'OpenUpgrades','DOG TRAINING',0,y,(W-20)/2,45,show('DogTraining'),P.gold);U.Button(sc,'OpenLayers','DIGGING LAYERS',(W-20)/2+12,y,(W-20)/2,45,show('Layers'),P.blue);y+=57
   U.Button(sc,'OfflineEarnings','OFFLINE EARNINGS',0,y,W-8,45,show('OfflineEarnings'),P.gold);y+=57
   section(sc,'WORLD FEATURES',0,y,W-8);y+=48
-  local features={{'DOG LINE','03_DogLine','Factory','Meet · choose · adopt'},{'LAB','05_MutationLab','Mutation lab','Mutate · ascend · evolve'},{'GLOBAL DIG','08_GlobalDigSite','Global dig site','A new adventure is on the way',true}}
+  local features={{'DOG LINE','03_DogLine','Factory','Meet · choose · adopt'},{'LAB','05_MutationLab','Mutation lab','Mutate · ascend · evolve'},{'GLOBAL EVENT','08_GlobalDigSite','Global event','A new adventure is on the way',true}}
   local cols=math.clamp(math.floor((W+12)/272),1,3);local fw=(W-18-(cols-1)*12)/cols
   for i,v in ipairs(features)do local card=U.Panel(sc,'Feature'..i,((i-1)%cols)*(fw+12),y+math.floor((i-1)/cols)*258,fw,246,true);U.Center(card,v[1],9,6,fw-18,33,23,P.text,true);V.Place(card,v[2],8,43,fw-16,112);U.Center(card,v[4],8,157,fw-16,34,16,P.muted);U.Button(card,'Go',v[5]and'COMING SOON'or'GO  ›',10,196,fw-20,42,not v[5]and function()c.Go(v[3])end or nil,P.green)end
  elseif c.Page=='Dogs'or c.Page=='DogDetail'then

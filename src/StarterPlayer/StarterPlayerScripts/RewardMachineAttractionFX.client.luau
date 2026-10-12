@@ -4,13 +4,24 @@ local motion=require(RS:WaitForChild('RewardMachineMotion'))
 local rig=workspace:WaitForChild('DOGROTS_District'):WaitForChild('37_AttractionRefresh'):WaitForChild('RewardMachineRig')
 local hooks=rig:WaitForChild('CameraHooks');local drum=rig:WaitForChild('SpinningDrum')
 local center=hooks:WaitForChild('DrumCenter',60).CFrame;local focus=hooks:WaitForChild('RevealFocus',60)
-local cue;local lastReceipt;local lastTick=-1;local lastSound=-1;local revealed={};local cameraSession
+-- Several players can win in a row: the server queues their drum presentations and every
+-- client plays them in StartedAt order (cues). A Personal cue never moves the shared drum.
+local cues={};local played={};local playedOrder={};local drumAngle;local lastTick=-1;local lastSound=-1;local revealed={};local cameraSession
 local lights={};for _,o in ipairs(rig:GetDescendants())do if o:IsA('PointLight')or o:IsA('SurfaceLight')then table.insert(lights,{o,o.Color,o.Brightness})end end
 local function reduced()return touch or player:GetAttribute('ReducedMotion')==true or player:GetAttribute('WorldEventFX')=='Low'end
 local function audible()local camera=workspace.CurrentCamera;return cameraSession~=nil or camera and(camera.CFrame.Position-focus.Position).Magnitude<105 end
 local function tone(pitch,volume)
  if not audible()then return end
  local sound=Instance.new('Sound');sound.Name='RewardMachineChime';sound.SoundId='rbxasset://sounds/volume_slider.ogg';sound.Volume=volume or .12;sound.PlaybackSpeed=pitch;sound.RollOffMinDistance=8;sound.RollOffMaxDistance=100;sound.Parent=cameraSession and game:GetService('SoundService')or focus;sound:Play();Debris:AddItem(sound,3)
+end
+local function remember(receipt)
+ if played[receipt]then return end
+ played[receipt]=true;table.insert(playedOrder,receipt)
+ while #playedOrder>48 do local old=table.remove(playedOrder,1);played[old]=nil;revealed[old]=nil end
+end
+local function drop(index)
+ local old=table.remove(cues,index or 1)
+ if old then remember(old.Receipt)end
 end
 local function burst(result)
  if revealed[result.Receipt]then return end;revealed[result.Receipt]=true
@@ -29,10 +40,14 @@ local function burst(result)
  for _,row in ipairs(lights)do if row[1].Parent then row[1].Color=color;row[1].Brightness=math.min(3,row[3]+1.3);Tween:Create(row[1],TweenInfo.new(2),{Color=row[2],Brightness=row[3]}):Play()end end
 end
 local function receive(value)
- if type(value)~='table'or type(value.Presentation)~='table'or not value.Receipt or value.Receipt==lastReceipt then return end
+ if type(value)~='table'or type(value.Presentation)~='table'or type(value.Receipt)~='string'or played[value.Receipt]then return end
+ local p=value.Presentation
+ if p.Personal or type(p.StartedAt)~='number'or type(p.Duration)~='number'or type(p.PrizeIndex)~='number'then return end
+ for _,queued in ipairs(cues)do if queued.Receipt==value.Receipt then return end end
  -- Do not replay old celebrations for a player arriving long after the spin.
- if workspace:GetServerTimeNow()>value.Presentation.StartedAt+value.Presentation.Duration+2 then return end
- cue=value;lastReceipt=value.Receipt;lastTick=-1
+ if workspace:GetServerTimeNow()>p.StartedAt+p.Duration+2 then return end
+ table.insert(cues,value);table.sort(cues,function(a,b)return a.Presentation.StartedAt<b.Presentation.StartedAt end)
+ while #cues>8 do drop(1)end
  if value.WinnerUserId==player.UserId then player:SetAttribute('RewardMachinePendingAt',nil);player:SetAttribute('RewardMachinePendingRequest',nil)end
 end
 RS:WaitForChild('RewardMachinePresentation').OnClientEvent:Connect(receive)
@@ -41,22 +56,33 @@ rig:GetAttributeChangedSignal('SpinInfo'):Connect(readSnapshot);readSnapshot()
 local accumulator=0
 Run.Heartbeat:Connect(function(dt)
  accumulator+=dt;if accumulator<(touch and 1/30 or 1/60)then return end;accumulator=0
+ local now=workspace:GetServerTimeNow()
+ -- Finished or overtaken presentations leave the queue even while nobody is watching.
+ while cues[1]do
+  local p=cues[1].Presentation;local overtaken=cues[2]and now>=cues[2].Presentation.StartedAt
+  if not overtaken and now<p.StartedAt+p.Duration+2 then break end
+  drop(1);lastTick=-1
+ end
  local camera=workspace.CurrentCamera;if not camera then return end
  if not cameraSession and(camera.CFrame.Position-center.Position).Magnitude>190 then return end
- local now=workspace:GetServerTimeNow()
+ local cue=cues[1]
+ if cue and now>=cue.Presentation.StartedAt+cue.Presentation.Duration then
+  burst(cue);drop(1);lastTick=-1;cue=cues[1]
+ end
  if cue then
   local p=cue.Presentation;local t=math.clamp((now-p.StartedAt)/p.Duration,0,1)
-  local a=motion.Angle(p.StartAngle,p.PrizeIndex,t);drum:PivotTo(center*CFrame.Angles(0,0,a))
+  local a=motion.Angle(p.StartAngle,p.PrizeIndex,t)
+  -- A queued cue waits at its start angle: do not re-pivot an unchanged drum every frame.
+  if a~=drumAngle then drumAngle=a;drum:PivotTo(center*CFrame.Angles(0,0,a))end
   local tick=math.floor(a/(math.pi*2/motion.PrizeCount))
   if t>0 and t<1 and tick~=lastTick and os.clock()-lastSound>(touch and .18 or .09)then lastSound=os.clock();tone(.7+math.sin(math.pi*t)*.8,.07)end;lastTick=tick
-  if t>=1 then burst(cue);cue=nil end
  else
   local pending=tonumber(player:GetAttribute('RewardMachinePendingAt'))or 0
   if pending>0 and now>=pending and now-pending<2 then
    -- Prize index is not known yet. Use only the common six-turn component for
    -- the first network frames; the authoritative cue then lands on the real prize.
    local t=math.clamp((now-pending)/motion.Duration,0,.35);local start=tonumber(rig:GetAttribute('RestAngle'))or 0
-   local a=start+math.pi*2*motion.Turns*motion.Progress(t);drum:PivotTo(center*CFrame.Angles(0,0,a))
+   local a=start+math.pi*2*motion.Turns*motion.Progress(t);drumAngle=a;drum:PivotTo(center*CFrame.Angles(0,0,a))
   elseif not reduced()then
    for i,row in ipairs(lights)do if row[1].Parent then row[1].Brightness=row[3]*(.9+.1*math.sin(now*1.8+i*.75))end end
   end
@@ -120,6 +146,8 @@ local function cameraRect(camera)
  -- The centered compact toast occupies the same horizontal space as the prize.
  local toast=gui:FindFirstChild('RewardMachineRewardToast')
  if toast and toast.Visible~=false then bottom=math.min(bottom,toast.AbsolutePosition.Y-originY-12)end
+ local notices=gui:FindFirstChild('RewardMachineNotices')
+ if notices and notices.Visible~=false and notices.AbsoluteSize.Y>0 then bottom=math.min(bottom,notices.AbsolutePosition.Y-originY-12)end
  left+=12;right-=12;top+=12
  bottom=math.max(top+80,bottom)
  return {W=w,H=h,Left=left,Right=right,Top=top,Bottom=bottom}
