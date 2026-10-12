@@ -145,7 +145,8 @@ local function request(action,args)
  local ok,result=net().Request(action,args)
  return ok,result
 end
-local function toast(text,kind)Kit.Toast(text,{Kind=kind or'info',NoTranslate=true})end
+-- server: a server reply; said() covers the lab's own messages, AutoTranslate the shared ones (busy, saving...).
+local function toast(text,kind,server)Kit.Toast(text,{Kind=kind or'info',NoTranslate=server~=true})end
 local function cue(name)
  local lab=Access.Model()
  local anchor=lab and lab:FindFirstChild('AudioAnchor')
@@ -447,8 +448,8 @@ local function evaluate(id)
    e.Consumes=consumes
    e.Args={Procedure=row.Procedure,RecipeId=row.RecipeId,Uids=fill.Uids,PrimaryUid=fill.Uids[1],Items=fill.Items,StabilizerUid=''}
   else
-   e.Cost={Cash=0,Bones=0,DNA={}}
-   e.Gain=T('Unknown result · the recipe DNA is taken automatically')
+   -- Its coins, bones and DNA are secret until the server preview shows them (never 'FREE').
+   e.Gain=T('Unknown result · its coins, bones and DNA are shown before you confirm')
    if not pick or #pick.Uids<2 then e.Reason=T('Tap EXPERIMENT and choose the dogs and catalysts')
    else
     local consumes={}
@@ -509,7 +510,7 @@ local function rowBind(o,d)
    local done,result=request(fix.Action,fix.Args)
    button:SetBusy(false)
    if done then toast(T('Done! The dog is ready for the lab.'),'success')
-   else toast(said(result),'error');cue('Deny')end
+   else toast(said(result),'error',true);cue('Deny')end
   end)
  else
   button:SetText(T(STATUS[code]or'UNAVAILABLE'));button:SetStyle('secondary');button:SetDisabled(true)
@@ -1141,7 +1142,7 @@ renderBar=function()
   else
    local e=evaluate(st.Action)
    title=T(ACTION_BY[st.Action].Title)
-   sub=e.Reason and colored('⚠ '..e.Reason,Theme.Darken(P.red,.1))or(e.Cost and(T('Cost:')..' '..costText(e.Cost))or'')
+   sub=e.Reason and colored('⚠ '..e.Reason,Theme.Darken(P.red,.1))or(e.Cost and(T('Cost:')..' '..costText(e.Cost))or e.Gain or'')
    goText=T('REVIEW & CONFIRM');go=e.Args~=nil and e.Reason==nil
    if cooling()then timer=true;go=false end
   end
@@ -1345,7 +1346,7 @@ layout=function()
  local y=phone and 8 or 20
  if icon>0 then place(ui.SplashIcon,(W-icon)/2,y,icon,icon);y+=icon+8 end
  place(ui.SplashTitle,sx,y,sw,phone and 32 or 40);y+=phone and 36 or 46
- local bodyH=phone and 58 or 54
+ local bodyH=phone and(landscape and 46 or 58)or 54
  place(ui.SplashBody,sx,y,sw,bodyH);y+=bodyH+6
  local tileW=math.floor((sw-16)/3);local tileH=50
  for i,t in ipairs(ui.SplashTiles)do
@@ -1429,7 +1430,7 @@ function S.PickDog(uid)
  local d=dogsOf(profile())[uid]
  if not d then return end
  local ok,_,message=G.Check(profile(),d)
- if not ok then toast(said(message),'warn');cue('Deny');return end
+ if not ok then toast(said(message),'warn',true);cue('Deny');return end
  if st.DogUid~=uid then
   st.DogUid=uid;st.Stabilizer=nil
   if st.Action~='Recipes'then st.Action=nil end
@@ -1646,7 +1647,7 @@ local function commit(plan)
  end
  st.Busy=false;ui.BarGo:SetBusy(false)
  if not ok then
-  toast(said(result),'error');cue('Deny')
+  toast(said(result),'error',true);cue('Deny')
   if tostring(result)=='Chamber cooling down'then st.CooldownEndsAt=Kit.Now()+C.Cooldown;renderBar()end
   return
  end
@@ -1699,7 +1700,7 @@ function S.Primary()
  st.Busy=false;ui.BarGo:SetBusy(false)
  if not ok or type(plan)~='table'then
   local text=tostring(plan)
-  toast(said(text),'error');cue('Deny')
+  toast(said(text),'error',true);cue('Deny')
   if text=='Enter Mutation Lab and approach the genetics terminal'then st.Message=text;setView('splash')end
   return
  end

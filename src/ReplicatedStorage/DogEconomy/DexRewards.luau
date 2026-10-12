@@ -29,9 +29,19 @@ M.Tiers = {
 }
 
 M.ByCount = {}
+M.TitleNames = {} -- p.Cosmetics key ("Dex30") -> the title name the Dogdex promises ("DOG COLLECTOR")
 for index, tier in ipairs(M.Tiers) do
 	tier.Index = index
 	M.ByCount[tier.Count] = tier
+	if tier.Title and tier.TitleName then
+		M.TitleNames[tier.Title] = tier.TitleName
+	end
+end
+
+-- The name to show for a collection title id (nil when it is not a Dogdex title): the COSMETICS title
+-- list and the title over the player's dogs show this instead of the raw p.Cosmetics key.
+function M.TitleName(id: any): string?
+	return type(id) == "string" and M.TitleNames[id] or nil
 end
 
 -- The tier unlocked at exactly `count` dogs (nil when no tier has that threshold).

@@ -274,10 +274,34 @@ return {
 		["Your saved profile is still loading"] = "Твой профиль ещё загружается",
 		["Invalid request"] = "Неверный запрос",
 		["Connection problem; try again"] = "Проблема с подключением, попробуй ещё раз",
+		-- Catalogue dog names (DogDefinitions DisplayName) the base dictionary misses: it only has other
+		-- spellings ("Cubedog", "Astrodoggo"...) or nothing. Cards, panels and the Russian search use these.
+		["CubeDog"] = "Кубопёс",
+		["AstroDoggo"] = "Астродогго",
+		["NecroHound"] = "Некропёс",
+		["PelmenDog"] = "Пельмендог",
+		["RamenDog"] = "Раменпёс",
+		["Dr. Pug"] = "Доктор Мопс",
+		["RoboPug 3000"] = "РобоМопс 3000",
+		-- Dogdex collection titles where the game shows them: the COSMETICS title list and the title over
+		-- the player's dogs (DexRewards.TitleName); the list's "<title> / EQUIPPED" is in Patterns.
+		["DOG SPOTTER"] = "ЗНАТОК СОБАК",
+		["DOG COLLECTOR"] = "КОЛЛЕКЦИОНЕР СОБАК",
+		["DOGDEX EXPERT"] = "ЭКСПЕРТ ДОГДЕКСА",
+		["DOG SCHOLAR"] = "СОБАКОВЕД",
+		["DOG LEGEND"] = "СОБАЧЬЯ ЛЕГЕНДА",
+		["DOGDEX MASTER"] = "МАСТЕР ДОГДЕКСА",
 	},
 	Patterns = {
 		{ "^Discover (%d+) dogs to unlock this reward$", "Открой %1 собак, чтобы получить эту награду" },
 		{ "^(.+) placed in display (%d)$", "%1 — на витрине %2" },
+		-- Anchored: base phrases would otherwise rewrite parts of a title ("COLLECT" in "DOG COLLECTOR").
+		{ "^DOG SPOTTER / EQUIPPED$", "ЗНАТОК СОБАК / НАДЕТО" },
+		{ "^DOG COLLECTOR / EQUIPPED$", "КОЛЛЕКЦИОНЕР СОБАК / НАДЕТО" },
+		{ "^DOGDEX EXPERT / EQUIPPED$", "ЭКСПЕРТ ДОГДЕКСА / НАДЕТО" },
+		{ "^DOG SCHOLAR / EQUIPPED$", "СОБАКОВЕД / НАДЕТО" },
+		{ "^DOG LEGEND / EQUIPPED$", "СОБАЧЬЯ ЛЕГЕНДА / НАДЕТО" },
+		{ "^DOGDEX MASTER / EQUIPPED$", "МАСТЕР ДОГДЕКСА / НАДЕТО" },
 	},
 	Phrases = {},
 }
