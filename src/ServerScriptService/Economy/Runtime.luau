@@ -420,7 +420,6 @@ function Runtime.Request(player,action,a,requestId)
   if action=='SellItem'then return false,'Sell finds with the collector in your own yard'end
   if action=='SellQuote'or action=='NPCSell'or action=='BulkSell'then return commerce.Request(player,action,a,receiptId)end
   if action=='SellLoot'then commerce.Visit(player)end
-  if action=='Upgrade'then commerce.UpgradeVisit(player,a.Kind)end
   if action=='BuyPlotSkin'or action=='ClaimPlotSkin'then require(script.Parent.PlotDevelopment).VisitShop(player)end
   if action=='DisplayDog'then commerce.StorageVisit(player)end
   if action=='ClaimOffline'then return engine:ClaimOffline(id,a,receiptId)
