@@ -14,7 +14,10 @@ function Menus.new(gui,options)
  local self={page=nil,state={DogFilter='All',DexFilter='All',FindDepth='All',FindClass='All',FindTier='All',FindMutation='All',FindSort='Newest',CollectionDepth=1,TradeDogs={},TradeItems={},Materials={},Tracked={}},busy=false,epoch=0}
  local W,H,mobile=1100,700,false
  local polling,lastPoll=false,-10
- local idleLastPoll=-30
+ -- With no page open the snapshot only feeds the offline-earnings notice: it is fetched again when
+ -- the server's OfflineEarningsRevision mark moves (a return with offline coins, a claim). false =
+ -- nothing loaded yet; a failed fetch resets it so the next update retries.
+ local idleMark=false
  local offlineNotice=U.Button(gui.HUD,'OfflineEarningsNotice','WHILE YOU WERE AWAY',0,0,320,57,function()N.OpenScreen('OfflineEarnings')end,U.Colors.gold)
  offlineNotice.AnchorPoint=Vector2.new(.5,0);offlineNotice.Position=UDim2.new(.5,0,0,18);offlineNotice.Visible=false
  offlineNotice.Caption.TextSize=19
@@ -73,7 +76,7 @@ function Menus.new(gui,options)
   task.spawn(function()
    local transport,ok,value=pcall(function()return remote:InvokeServer('Snapshot',{})end);polling=false
    if transport and ok and type(value)=='table'and value.Profile then self.snapshot=value;self.serverClock=value.Now;self.clockAt=os.clock();self:OfflineNotice()
-   else self.message=transport and tostring(value)or'Connection interrupted. Reopen to retry.'end
+   else idleMark=false;self.message=transport and tostring(value)or'Connection interrupted. Reopen to retry.'end
    if self.page and not UIS:GetFocusedTextBox()and not self.dialog then self:Render()end
   end)
  end
@@ -202,7 +205,8 @@ function Menus.new(gui,options)
  end
  function self:Update()
   if not self.page then
-   if N.Owner=='HUD'and game.Players.LocalPlayer:GetAttribute('EconomyReady')and os.clock()-idleLastPoll>=15 then idleLastPoll=os.clock();self:Fetch(false)end
+   local player=game.Players.LocalPlayer;local mark=player:GetAttribute('OfflineEarningsRevision')
+   if N.Owner=='HUD'and player:GetAttribute('EconomyReady')and mark~=idleMark and not polling and os.clock()-lastPoll>=5 then idleMark=mark;self:Fetch(false)end
    return
   end
   if root.AbsoluteSize~=self.observedSize then self:Resize(root.AbsoluteSize)end

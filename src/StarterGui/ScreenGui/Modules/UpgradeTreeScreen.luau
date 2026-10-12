@@ -692,6 +692,12 @@ local function build()
 	ui.Maid:Give(player:GetAttributeChangedSignal("Bones"):Connect(live))
 	ui.Maid:Give(player:GetAttributeChangedSignal("Level"):Connect(live))
 	ui.Maid:Give(player:GetAttributeChangedSignal("InventoryRevision"):Connect(live))
+	-- Coins: InventoryRevision moves only on inventory changes, not on every dog income.
+	local stats = player:FindFirstChild("leaderstats")
+	local coins = stats and stats:FindFirstChild("Coins")
+	if coins and coins:IsA("ValueBase") then
+		ui.Maid:Give(coins.Changed:Connect(live))
+	end
 	ui.Maid:Give(win.Resized:Connect(function(layout)
 		arrange(layout)
 	end))
