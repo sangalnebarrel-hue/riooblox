@@ -570,6 +570,41 @@ test("a busy profile lock makes TickAll skip instead of throw, and Run returns f
 	truthy(tickedAfter == true and not after.Skipped[1], "ticks resume once the lock is free")
 end)
 
+-- The economy loop's record step must not wait for a receipt's lock (it would pause every
+-- player's tick for up to LockWait): it skips the busy profile and collects on a later pass.
+test("the record step skips a profile whose lock a receipt holds", function()
+	local W = world({ LockWait = 3 })
+	W.AddPlayer(1)
+	W.Join(1)
+	W.PS.Start(W.Runtime)
+	W.Tx:Run({ "p:1" }, function(v)
+		local p = v["p:1"]
+		p.RecordJobs = p.RecordJobs or {}
+		p.RecordJobs.Bone = { ItemId = "Bone", ItemUid = "u1", Depth = 1, WeightKg = 1, OriginalFinderUserId = 1, FoundAt = L.Now }
+		return true
+	end)
+	W.Store.Raw.Latency = 0.1 -- the receipt holds the profile lock for about a second
+	local decision
+	task.spawn(function()
+		decision = W.PS.HandleReceipt(W.Receipt(1, 3717465311, "REC-LOCK"))
+	end)
+	task.wait(0.05)
+	truthy(W.Tx.Busy["p:1"], "the receipt holds the profile lock")
+	local started = os.clock()
+	local ok, message = W.Engine:Records(1, {}, { Timeout = 0 })
+	truthy(os.clock() - started < 0.1, ("the record step waited %.2f s"):format(os.clock() - started))
+	eq(ok, false, "busy profile skipped")
+	eq(message, BUSY, "busy message")
+	while decision == nil do
+		task.wait(0.05)
+	end
+	eq(decision, GRANTED, "receipt")
+	W.Store.Raw.Latency = 0
+	local again, result = W.Engine:Records(1, {}, { Timeout = 0 })
+	truthy(again == true and result.Jobs.Bone, "collected once the lock is free")
+	eq(W.Profile(1).RecordJobs.Bone, nil, "job handed to the batch")
+end)
+
 -- ===== 7. Transactions: stale saves are re-read, lost replies recognised =====
 test("a foreign newer save is never overwritten: RAM re-reads it", function()
 	local W = world()
@@ -713,6 +748,7 @@ test("paid server luck is a saved credit: queued, released on shutdown, restarte
 	truthy(W.Stored(1).ServerLuckCredits["r:MAX-1"], "credit is durable with the receipt")
 	-- 100 s later the server shuts down: the unused running time goes back to the credit.
 	L.Now += 100
+	W.Runtime.Closing = true
 	W.ServerLuck.Release(W.Runtime, 1, true)
 	W.Engine:Leave(1)
 	truthy(W.Tx:FlushProfile(1), "shutdown save")
