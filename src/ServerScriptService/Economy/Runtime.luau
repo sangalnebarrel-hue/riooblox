@@ -102,6 +102,47 @@ local function projectMining(player,p)
  end
 end
 
+-- InventoryRevision moves only when something an inventory view shows changed (InventorySignature).
+local inventorySignatures=setmetatable({},{__mode='k'})
+local function bumpInventory(player,p)
+ local signature=inventorySignatures[player]
+ if not signature then signature=require(script.Parent.InventorySignature).new();inventorySignatures[player]=signature end
+ if signature:Changed(p)then player:SetAttribute('InventoryRevision',(player:GetAttribute('InventoryRevision')or 0)+1)end
+end
+-- Player.DogInventory mirrors every dog as a StringValue whose attributes are the dog's scalar fields
+-- (EconomyVisuals, YardPageController, DogKennelService read them; this projection is their only
+-- writer). Each dog keeps a shadow of what was written last (dogShadows[player][dogUid], dropped
+-- with the dog and on PlayerRemoving), so only changed fields are written, and OwnerHistory
+-- (append-only, capped at 100 with EarlierTransfers) is JSON-encoded again only when its length,
+-- its earlier-transfer count or its newest row changes. The shadow holds its entry: a recreated
+-- entry is written in full. Plain keys, not a weak table of Instances (Roblox may collect an
+-- Instance's Lua wrapper while the Instance lives, which would empty a weak entry).
+local dogShadows={}
+local ENTRY,DISPLAY,HISTORY={},{},{}
+local function historyMark(d)
+ local h=d.OwnerHistory
+ if type(h)~='table'then return'-'end
+ local last=h[#h]
+ local newest=type(last)=='table'and(tostring(last.UserId)..':'..tostring(last.At)..':'..tostring(last.Type))or''
+ return #h..':'..tostring(d.EarlierTransfers)..':'..newest
+end
+local function projectDogs(player,p)
+ local inv=folder(player,'DogInventory')
+ local shadows=dogShadows[player];if not shadows then shadows={};dogShadows[player]=shadows end
+ for uid in pairs(shadows)do if not p.Dogs[uid]then shadows[uid]=nil end end
+ for _,entry in ipairs(inv:GetChildren())do if not p.Dogs[entry.Name] then entry:Destroy()end end
+ for uid,d in pairs(p.Dogs)do
+  local entry=folder(inv,uid,'StringValue')
+  local shadow=shadows[uid];if not shadow or shadow[ENTRY]~=entry then shadow={[ENTRY]=entry};shadows[uid]=shadow end
+  if shadow[DISPLAY]~=d.DisplayName then entry.Value=d.DisplayName;shadow[DISPLAY]=d.DisplayName end
+  for key,value in pairs(d)do
+   local kind=type(value)
+   if(kind=='string' or kind=='number' or kind=='boolean')and shadow[key]~=value then entry:SetAttribute(key,value);shadow[key]=value end
+  end
+  local mark=historyMark(d)
+  if shadow[HISTORY]~=mark then entry:SetAttribute('OwnerHistory',Http:JSONEncode(d.OwnerHistory));shadow[HISTORY]=mark end
+ end
+end
 function Runtime.Project(player,p)
  if not player.Parent or not p then return end
  Rules.UpdateLevel(p)
@@ -122,15 +163,7 @@ function Runtime.Project(player,p)
  previous[player.UserId]=retained
  local stats=folder(player,'leaderstats');folder(stats,'Coins','IntValue').Value=p.Cash
  folder(player,'Bones','IntValue').Value=p.Bones
- local inv=folder(player,'DogInventory')
- for _,entry in ipairs(inv:GetChildren())do if not p.Dogs[entry.Name] then entry:Destroy()end end
- for uid,d in pairs(p.Dogs)do
-  local entry=folder(inv,uid,'StringValue');entry.Value=d.DisplayName
-  for key,value in pairs(d)do
-   if type(value)=='string' or type(value)=='number' or type(value)=='boolean' then entry:SetAttribute(key,value)end
-  end
-  entry:SetAttribute('OwnerHistory',Http:JSONEncode(d.OwnerHistory))
- end
+ projectDogs(player,p)
  local levelFloor=Config.XPForLevel(p.Level);local nextFloor=Config.XPForLevel(math.min(Config.MaxLevel,p.Level+1))
   player:SetAttribute('Level',p.Level);player:SetAttribute('XP',math.max(0,p.XP-levelFloor));player:SetAttribute('XPRequired',p.Level>=Config.MaxLevel and 0 or math.max(1,nextFloor-levelFloor));player:SetAttribute('CurrentLayer',p.CurrentLayer)
  player:SetAttribute('LayerName',Config.Layers[p.CurrentLayer].Name);player:SetAttribute('Bones',p.Bones)
@@ -160,11 +193,19 @@ function Runtime.Project(player,p)
  -- Personal luck tiers (LUCK tab) for the buff HUD.
  local luck=require(script.Parent.LuckRules)
  for tier in ipairs(Config.LuckTiers or {})do player:SetAttribute('LuckExpires_'..tier,luck.EndAt(p,tier))end
- player:SetAttribute('InventoryRevision',(player:GetAttribute('InventoryRevision')or 0)+1)
+ bumpInventory(player,p)
  player:SetAttribute('LatestFoundItem',p.DiscoveryFeed[1] and (p.DiscoveryFeed[1].DisplayName..' · '..string.format('%.4g kg',p.DiscoveryFeed[1].WeightKg)) or 'No finds yet')
+ -- The idle HUD's "while you were away" notice (Modules.Menus) refetches the snapshot only when
+ -- this mark moves: a return with offline coins, or a claim.
+ local offline=type(p.OfflineEarnings)=='table'and p.OfflineEarnings or{}
+ local offlineMark=tostring(offline.Revision or 0)..':'..tostring(offline.LastReturnAt or 0)
+ if player:GetAttribute('OfflineEarningsRevision')~=offlineMark then player:SetAttribute('OfflineEarningsRevision',offlineMark)end
+ -- Feature world phase first (yard geometry such as mine floors), then the yard reconcilers.
+ Rules.Features.ProjectWorld(player,p,Runtime)
  require(script.Parent.PlotDevelopment).Reconcile(player,p)
  if Runtime.Kennels then Runtime.Kennels.Reconcile(player,p)end
  require(script.Parent.PlotShowcase).Reconcile(player,p)
+ Rules.Features.Project(player,p,Runtime)
 end
 function Runtime.Refresh(player)
  if not player or not Runtime.Loaded[player.UserId] then return end
@@ -203,7 +244,7 @@ function Runtime.RefreshSale(player,fast)
  local levelFloor=Config.XPForLevel(p.Level);local nextFloor=Config.XPForLevel(math.min(Config.MaxLevel,p.Level+1))
  player:SetAttribute('Level',p.Level);player:SetAttribute('XP',math.max(0,p.XP-levelFloor));player:SetAttribute('XPRequired',p.Level>=Config.MaxLevel and 0 or math.max(1,nextFloor-levelFloor))
  player:SetAttribute('ItemCount',patch.ItemCount)
- player:SetAttribute('InventoryRevision',(player:GetAttribute('InventoryRevision')or 0)+1)
+ bumpInventory(player,p)
  return patch
 end
 
@@ -329,10 +370,12 @@ end
 function Runtime.Snapshot(player)
  local p=Runtime.Views[player.UserId];Rules.Check(p,'Loading profile')
  local view=Rules.Copy(p);view.Session=nil;view.RecordJobs=nil
- local sellable={}
- if not Runtime.Engine.TradeByUser[player.UserId]then
-  local commerce=require(script.Parent.YardCommerce)
-  for uid in pairs(p.Items or{})do if commerce.CanSell(p,uid)then sellable[uid]=true end end
+ -- What the collector would take in a sale (no IncludeFavorites), and why the other finds stay.
+ local sellable,protected={},{}
+ local commerce=require(script.Parent.YardCommerce);local trading=Runtime.Engine.TradeByUser[player.UserId]
+ for uid in pairs(p.Items or{})do
+  local ok,reason=commerce.CanSell(p,uid)
+  if reason then protected[uid]=reason elseif ok and not trading then sellable[uid]=true end
  end
  for _,b in pairs(view.OwnedBlocks or {})do
   if b.Pool then
@@ -362,15 +405,31 @@ function Runtime.Snapshot(player)
  local tradeView=trade and Rules.Copy(trade)
  if tradeView then tradeView.Details={};for _,offer in pairs(tradeView.Offers)do for uid,dog in pairs(offer.Details or {})do tradeView.Details[uid]=dog end end end
  return {Features=features,Profile=view,OfflineEarnings=Offline.Report(view),Meta=Rules.Meta(os.time()),Week=Rules.Week(os.time()),EventTotal=Runtime.EventTotal or 0,
-  SellableItems=sellable,DogStats=dogStats,IncomeEstimate=income,IncomePerMinute=model.PerMinute,Storage=Rules.Storage(p,os.time()),EventEnds=345600+(Rules.Week(os.time())+1)*604800,Trade=tradeView,Players=online,Preview=memory,Now=os.time(),Dex=dex,GlobalRecords=Runtime.GlobalRecords or {},ServerRecords=Runtime.ServerRecords or {}}
+  SellableItems=sellable,ProtectedItems=protected,DogStats=dogStats,IncomeEstimate=income,IncomePerMinute=model.PerMinute,Storage=Rules.Storage(p,os.time()),EventEnds=345600+(Rules.Week(os.time())+1)*604800,Trade=tradeView,Players=online,Preview=memory,Now=os.time(),Dex=dex,GlobalRecords=Runtime.GlobalRecords or {},ServerRecords=Runtime.ServerRecords or {}}
+end
+-- Actions owned by a feature (FeatureRegistry Actions) take the hook path: Cost, Gate, then the
+-- feature's Request or Engine:Action, then Refresh (unless the feature opts out) and the Reply mode.
+-- Everything else is the legacy path below.
+local function featureReply(player,action,success,result)
+ if not success then return false,result end
+ if Rules.Features.Refresh(action)then Runtime.Refresh(player)end
+ local mode=Rules.Features.Reply(action)
+ if type(result)=='table'and mode~='None'then
+  local patch=mode=='Patch'and Rules.Features.Patch(player,action,result,Runtime.Views[player.UserId])
+  if patch then result.StatePatch=patch else result.StateSnapshot=Runtime.Snapshot(player)end
+ end
+ return success,result
 end
 function Runtime.Request(player,action,a,requestId)
- local requestCost=action=='MarketQuery'and 3 or action=='MiningHit'and .25 or action=='MiningTrain'and .5 or 1
+ local feature=Rules.Features.Owner(action)
+ local requestCost=feature and Rules.Features.Cost(action)or action=='MarketQuery'and 3 or action=='MiningHit'and .25 or action=='MiningTrain'and .5 or 1
  if not allow(player,requestCost)then return false,'Please wait a moment' end
  if not Runtime.Ready(player)then return false,'Your saved profile is still loading' end
  local validArgs=action=='BulkSell'and require(script.Parent.YardCommerce).ValidBulkArgs(a)or action~='BulkSell'and clean(a or {},0)
  if type(action)~='string'or #action>40 or not validArgs then return false,'Invalid request'end
  a=a or {}
+ -- The two participants of the trade a Trade step touches (refreshed after it, not the server).
+ local tradeUsers=nil
  local ok,success,result=pcall(function()
   if action=='Snapshot' then return true,Runtime.Snapshot(player)end
   if action=='MarketQuery' then
@@ -380,6 +439,11 @@ function Runtime.Request(player,action,a,requestId)
   end
   Rules.Check(type(requestId)=='string' and requestId:match('^[a-fA-F0-9]+$') and #requestId==32,'Invalid request ID')
   local receiptId=tostring(player.UserId)..':'..requestId:sub(1,26)
+  if feature then
+   Rules.Features.Gate(player,action,a,Runtime)
+   if feature.Request then return feature.Request(player,action,a,receiptId,Runtime)end
+   return Runtime.Engine:Action(player.UserId,action,a,receiptId)
+  end
   if action=='DistrictTravel'then return require(script.Parent.DistrictTravel).Request(player,a)end
   if action=='Tutorial'then return require(script.Parent.OnboardingService).Request(Runtime,player,a,receiptId)end
   if action=='LabInfo'or action=='LabPreview'or action=='LabCommit'then return require(script.Parent.LabService).Request(player,action,a,receiptId)end
@@ -435,10 +499,13 @@ function Runtime.Request(player,action,a,requestId)
    if target then Replicated.DogEconomyOpen:FireClient(target,'Trade','Trade invitation from '..player.DisplayName)end
    return true,invitation
   elseif action=='TradeCancel' then engine:CancelTrade(id);return true,{Message='Trade cancelled'}
-  elseif action=='Trade' then return true,engine:Trade(id,a.Action,a)
+  elseif action=='Trade' then
+   local trade=engine.Trades[engine.TradeByUser[id]];tradeUsers=trade and table.clone(trade.Users)
+   return true,engine:Trade(id,a.Action,a)
   else return engine:Action(id,action,a,receiptId)end
  end)
  if not ok then return false,tostring(success)end
+ if feature then return featureReply(player,action,success,result)end
  if action~='Snapshot' and action~='MarketQuery' then
   local fastSale=action=='BulkSell'or action=='SellLoot'
   local miningAction=type(action)=='string'and action:sub(1,6)=='Mining'
@@ -449,7 +516,14 @@ function Runtime.Request(player,action,a,requestId)
   elseif fastSale and success then patch=Runtime.RefreshSale(player,type(result)=='table'and result.FastSale or nil)
   elseif fastSale then
    -- Rejected sales do not need any world/profile projection.
-  elseif action=='Trade'or action=='BuyListing'or action=='CancelListing'or action=='Bid'then Runtime.RefreshAll()
+  elseif action=='LabInfo'or action=='LabPreview'then
+   -- Read-only lab requests change no profile state.
+  elseif action=='Trade'then
+   -- A trade step can only change its two participants (a commit moves both profiles).
+   for _,uid in ipairs(tradeUsers or{player.UserId})do
+    local participant=Players:GetPlayerByUserId(uid);if participant then Runtime.Refresh(participant)end
+   end
+  elseif action=='BuyListing'or action=='CancelListing'or action=='Bid'then Runtime.RefreshAll()
   else Runtime.Refresh(player)end
   if success and action~='LabInfo'and action~='LabPreview'then
    if miningAction then
@@ -580,6 +654,17 @@ function Runtime.PushTo(player,kind,data)
  local push=Runtime.Push
  if push and player and player.Parent then push:FireClient(player,kind,data)end
 end
+-- A failed Join is tried again (Attempts in all, Delay seconds apart) when the cause can pass: the
+-- previous server still holds the session (a quick rejoin), the profile is busy (a receipt holds
+-- its lock), a journal is still pending, or DataStore failed for a moment. Anything else (a saved
+-- profile that does not validate...) kicks at once.
+Runtime.JoinRetry={Attempts=6,Delay=2.5}
+local TRANSIENT_JOIN={'another server','busy','retry','datastore','storage unavailable','expired before commit'}
+function Runtime.JoinRetryable(message)
+ local text=tostring(message):lower()
+ for _,needle in ipairs(TRANSIENT_JOIN)do if text:find(needle,1,true)then return true end end
+ return false
+end
 function Runtime.Start()
  if Runtime.Started then return end;Runtime.Started=true
  local push=Replicated:FindFirstChild('DogEconomyPush')or Instance.new('RemoteEvent');push.Name='DogEconomyPush';push.Parent=Replicated;Runtime.Push=push
@@ -614,11 +699,10 @@ function Runtime.Start()
  local function added(player)
   player:SetAttribute('EconomyReady',false)
   local ok,result
-  -- A quick rejoin can arrive before the previous server has released the session.
-  for attempt=1,6 do
+  for attempt=1,Runtime.JoinRetry.Attempts do
    ok,result=Runtime.Engine:Join(player.UserId)
-   if ok or not player.Parent or not tostring(result):lower():find('another server',1,true)then break end
-   task.wait(2.5)
+   if ok or not player.Parent or attempt==Runtime.JoinRetry.Attempts or not Runtime.JoinRetryable(result)then break end
+   task.wait(Runtime.JoinRetry.Delay)
   end
   if not player.Parent then if ok then pcall(Runtime.ReleaseProfile,player.UserId,Runtime.Closing,10)end;return end
   if not ok then player:Kick('Your data is protected. Please rejoin shortly. '..tostring(result));return end
@@ -641,7 +725,7 @@ function Runtime.Start()
    if not(called and saveOK)then warn('DOGROTS final profile save deferred:',uid,called and saveResult or saveOK)
    elseif not rejoined()then Runtime.Tx:UnloadProfile(uid)end
   end
-  buckets[p]=nil;marketQueries[p]=nil
+  buckets[p]=nil;marketQueries[p]=nil;dogShadows[p]=nil
   if rejoined()then return end
   Runtime.Loaded[uid]=nil;Runtime.Views[uid]=nil;if Runtime.SeenFinds then Runtime.SeenFinds[uid]=nil end
   Runtime.Draining[uid]=nil;if Runtime.TickWarnings then Runtime.TickWarnings[uid]=nil end

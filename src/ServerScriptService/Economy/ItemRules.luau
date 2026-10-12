@@ -13,6 +13,7 @@ local Bonuses=require(game.ReplicatedStorage.DogEconomy.Bonuses)
 local Signatures=require(script.Parent.SignatureRules)
 local Valuation=require(game.ReplicatedStorage.ItemValuation)
 local ValueConfig=require(game.ReplicatedStorage.ItemValueConfig)
+local Protection=require(script.Parent.ItemProtection)
 local function check(v,s)if not v then error(s,0)end end
 local function copy(v)if type(v)~='table'then return v end;local t={};for k,x in pairs(v)do t[k]=copy(x)end;return t end
 local function count(t)local n=0;for _ in pairs(t or {})do n+=1 end;return n end
@@ -42,12 +43,17 @@ function I.Capacity(p,extra)
 end
 -- capacity: optional precomputed I.Capacity(p) (hot paths compute it once per dig).
 function I.Free(p,capacity)return count(p.Items)+count(p.ItemReservations)<(capacity or I.Capacity(p))end
-function I.Get(p,uid,transfer)
+-- transfer: the find is about to leave the profile for another player or system (trade offer,
+-- market listing, lab catalyst): it must be tradeable, past its record check and not protected
+-- (Economy.ItemProtection, 'Transfer' context). ignore = {[protector]=true} skips protectors the
+-- player explicitly overrode (Trade 2.0: I.Get(p, uid, true, offer.Allow)).
+function I.Get(p,uid,transfer,ignore)
  check(type(uid)=='string' and #uid<=100,'Invalid ItemUid')
  local x=p.Items[uid];check(x and x.ItemUid==uid and x.OwnerUserId==p.UserId,'Item not owned')
  if transfer then
   check(x.Tradeable,'This item cannot be transferred')
   check(not (p.RecordJobs[x.ItemId] and p.RecordJobs[x.ItemId].ItemUid==uid),'Record check pending; retry shortly')
+  local protected=Protection.Reason(p,uid,'Transfer',ignore);check(not protected,protected)
  end
  return x
 end

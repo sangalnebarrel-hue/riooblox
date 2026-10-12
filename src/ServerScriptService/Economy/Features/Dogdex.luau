@@ -27,6 +27,7 @@ local BlockConfig = require(RS.LuckyBlockConfig)
 local Lifecycle = require(RS.LuckyLifecycleConfig)
 
 local F = { Name = "Dogdex", Order = 40 }
+F.Actions = { DexClaim = true }
 F.CacheSeconds = 60
 
 -- Variant name -> bit (Config.Variants order: Normal = 1, Shiny = 2, Golden = 4, ...).
