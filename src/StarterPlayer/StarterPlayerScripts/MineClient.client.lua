@@ -612,6 +612,8 @@ local function destroyShaft()
 	end
 	Shaft.Yard, Shaft.Lining, Shaft.Cage = nil, nil, nil
 end
+-- Assigned below (station doors, counterweight and rope follow this client's cage).
+local syncStation: (yard: Model, layout: any) -> () = function() end
 local function cageCF(layout: any, y: number): CFrame
 	return layout:ToWorld(CFrame.new(Layout.Shaft.X, y, Layout.Shaft.Z))
 end
@@ -632,6 +634,7 @@ local function ensureShaft(yard: Model): boolean
 	cage:PivotTo(cageCF(layout, Layout.StopY(Shaft.CageLayer) or Layout.GroundY))
 	cage.Parent = world
 	Shaft.Yard, Shaft.Lining, Shaft.Cage = yard, lining, cage
+	syncStation(yard, layout)
 	return true
 end
 
@@ -839,6 +842,157 @@ local function waitForFloor(position: Vector3, timeout: number)
 	return false
 end
 
+------------------------------------------------------------------------------------------------
+-- Station pieces this client animates for its own cage: freight doors, counterweight, ropes
+------------------------------------------------------------------------------------------------
+local function headframeOf(yard: Model): Instance?
+	local root = works and works:FindFirstChild(yard.Name .. "_Mine")
+	return root and root:FindFirstChild("Headframe") or nil
+end
+local doorBase = setmetatable({}, { __mode = "k" }) -- part -> open CFrame
+local function setDoors(yard: Model, closed: number, seconds: number)
+	local headframe = headframeOf(yard)
+	local doors = headframe and headframe:FindFirstChild("Doors", true)
+	if not doors then
+		return
+	end
+	for _, leaf in doors:GetChildren() do
+		local slide = leaf:GetAttribute("Slide")
+		if type(slide) == "number" then
+			for _, p in leaf:GetDescendants() do
+				if p:IsA("BasePart") then
+					doorBase[p] = doorBase[p] or p.CFrame
+					local goal = doorBase[p] + Vector3.new(0, slide * closed, 0)
+					if seconds > 0 and not reduced() then
+						TweenService:Create(p, TweenInfo.new(seconds, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), { CFrame = goal }):Play()
+					else
+						p.CFrame = goal
+					end
+				end
+			end
+		end
+	end
+end
+local weightBase = setmetatable({}, { __mode = "k" })
+-- depth: 0 = cage at the surface, 1 = at the Void stop. The counterweight falls as the cage rises.
+local function setCounterweight(yard: Model, depth: number)
+	local headframe = headframeOf(yard)
+	local cw = headframe and headframe:FindFirstChild("Counterweight", true)
+	if not cw then
+		return
+	end
+	local travel = cw:GetAttribute("Travel") or 7
+	local offset = travel * (1 - 2 * math.clamp(depth, 0, 1))
+	local hookY = nil
+	for _, p in cw:GetDescendants() do
+		if p:IsA("BasePart") then
+			weightBase[p] = weightBase[p] or p.CFrame
+			p.CFrame = weightBase[p] + Vector3.new(0, offset, 0)
+			if p.Name == "WeightHook" then
+				hookY = p.Position.Y + p.Size.Y / 2
+			end
+		end
+	end
+	local rope = headframe:FindFirstChild("CounterRope", true)
+	if rope and rope:IsA("BasePart") and hookY then
+		local top = rope:GetAttribute("TopY") or (rope.Position.Y + rope.Size.X / 2)
+		local x, z = rope.Position.X, rope.Position.Z
+		local len = math.max(0.2, top - hookY)
+		rope.Size = Vector3.new(len, rope.Size.Y, rope.Size.Z)
+		rope.CFrame = CFrame.new(x, hookY + len / 2, z) * CFrame.Angles(0, 0, math.pi / 2)
+	end
+end
+-- The cage's hoist rope runs from the cage hook up to the machine room floor of the station.
+local function fitCageRope(layout: any, y: number)
+	local cage = Shaft.Cage
+	local rope = cage and cage:FindFirstChild("CageRope", true)
+	if not (rope and rope:IsA("BasePart")) then
+		return
+	end
+	local topY = Structures.RopeTopY or (Layout.GroundY + 20)
+	local bottom = layout:Point(Layout.Shaft.X, y + (Structures.CageHeight or 8.2) + 1.3, Layout.Shaft.Z)
+	local len = math.max(0.2, topY - bottom.Y)
+	rope.Size = Vector3.new(len, rope.Size.Y, rope.Size.Z)
+	rope.CFrame = CFrame.new(bottom.X, bottom.Y + len / 2, bottom.Z) * CFrame.Angles(0, 0, math.pi / 2)
+end
+
+syncStation = function(yard: Model, layout: any)
+	local y = Layout.StopY(Shaft.CageLayer) or Layout.GroundY
+	fitCageRope(layout, y)
+	setDoors(yard, Shaft.CageLayer == 1 and 0 or 1, 0)
+	local bottomY = Layout.StopY(5) or -160
+	setCounterweight(yard, (Layout.GroundY - y) / math.max(1, Layout.GroundY - bottomY))
+end
+
+------------------------------------------------------------------------------------------------
+-- Ride presentation: a fade, a cinematic but safe shot inside the shaft, a depth readout
+------------------------------------------------------------------------------------------------
+local rideGui = Instance.new("ScreenGui")
+rideGui.Name = "MineRide"
+rideGui.IgnoreGuiInset = true
+rideGui.ResetOnSpawn = false
+rideGui.DisplayOrder = 90
+rideGui:SetAttribute("NoTranslate", true)
+rideGui.Parent = player:WaitForChild("PlayerGui")
+local fade = Instance.new("Frame")
+fade.Name = "Fade"
+fade.Size = UDim2.fromScale(1, 1)
+fade.BackgroundColor3 = C(6, 8, 14)
+fade.BackgroundTransparency = 1
+fade.BorderSizePixel = 0
+fade.Parent = rideGui
+local depthLabel = Instance.new("TextLabel")
+depthLabel.Name = "Depth"
+depthLabel.AnchorPoint = Vector2.new(0.5, 1)
+depthLabel.Position = UDim2.new(0.5, 0, 1, -34)
+depthLabel.Size = UDim2.fromOffset(420, 52)
+depthLabel.BackgroundColor3 = C(14, 18, 30)
+depthLabel.BackgroundTransparency = 0.25
+depthLabel.TextColor3 = C(255, 255, 255)
+depthLabel.TextScaled = true
+depthLabel.Font = Enum.Font.Arcade
+depthLabel.Visible = false
+depthLabel:SetAttribute("NoTranslate", true)
+depthLabel.Parent = rideGui
+do
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 14)
+	c.Parent = depthLabel
+	local st = Instance.new("UIStroke")
+	st.Name = "Accent"
+	st.Thickness = 3
+	st.Color = C(110, 214, 255)
+	st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	st.Parent = depthLabel
+	local pad = Instance.new("UIPadding")
+	pad.PaddingTop = UDim.new(0, 8)
+	pad.PaddingBottom = UDim.new(0, 8)
+	pad.PaddingLeft = UDim.new(0, 14)
+	pad.PaddingRight = UDim.new(0, 14)
+	pad.Parent = depthLabel
+end
+local function fadeTo(alpha: number, seconds: number)
+	if reduced() then
+		seconds = math.min(seconds, 0.08)
+	end
+	local tween = TweenService:Create(fade, TweenInfo.new(seconds, Enum.EasingStyle.Sine), { BackgroundTransparency = 1 - alpha })
+	tween:Play()
+	task.wait(seconds)
+end
+-- Pulls a wanted camera position in before walls (the character, the cage and the shaft lining
+-- never block: they are part of the shot).
+local function safeEye(from: Vector3, wanted: Vector3, ignore: { Instance }): Vector3
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = ignore
+	local dir = wanted - from
+	local hit = workspace:Raycast(from, dir, params)
+	if hit then
+		return hit.Position - dir.Unit * 0.8
+	end
+	return wanted
+end
+
 local function rideSequence(yard: Model, layout: any, fromLayer: number, layer: number, arrival: CFrame)
 	local character = player.Character
 	local root = rootPart()
@@ -857,27 +1011,68 @@ local function rideSequence(yard: Model, layout: any, fromLayer: number, layer: 
 	local camera = workspace.CurrentCamera
 	local fromY = Layout.StopY(fromLayer) or Layout.GroundY
 	local toY = Layout.StopY(layer) or Layout.GroundY
+	local bottomY = Layout.StopY(5) or -160
 	local seconds = rideSeconds(fromLayer, layer)
 	local still = reduced()
 	local cage = Shaft.Cage
 	local facing = arrival.Rotation
-	-- Board: the rider stands in the cage, the camera rides along inside it.
-	root.Anchored = true
-	root.AssemblyLinearVelocity = Vector3.zero
 	local function at(y: number): CFrame
 		return cageCF(layout, y)
 	end
+	local function depthOf(y: number): number
+		return (Layout.GroundY - y) / math.max(1, Layout.GroundY - bottomY)
+	end
+	-- Doors shut, the screen dips to black and the shot moves inside the shaft (no camera ever
+	-- travels through the station walls).
+	if fromLayer == 1 then
+		setDoors(yard, 1, 0.45)
+	end
+	shot(CLANK, 0.4, 0.6)
+	fadeTo(1, 0.28)
+	root.Anchored = true
+	root.AssemblyLinearVelocity = Vector3.zero
 	placeCharacter(character, root, CFrame.new(at(fromY).Position) * facing)
 	if cage then
 		cage:PivotTo(at(fromY))
 	end
+	fitCageRope(layout, fromY)
+	-- The cage roof (and its lamp and hook) would block the shot from above: hidden locally.
+	local hidden = {}
+	if cage then
+		for _, d in cage:GetDescendants() do
+			if d:IsA("BasePart") and (d.Name == "CageRoof" or d.Name == "CageLamp" or d.Name == "CageHook") then
+				d.LocalTransparencyModifier = 1
+				table.insert(hidden, d)
+			end
+		end
+	end
 	local previousType = camera.CameraType
+	local previousFov = camera.FieldOfView
 	camera.CameraType = Enum.CameraType.Scriptable
+	camera.FieldOfView = still and previousFov or 76
+	local theme = Themes.Get(layer)
+	local accent = depthLabel:FindFirstChild("Accent")
+	if accent and accent:IsA("UIStroke") then
+		accent.Color = theme.Accent
+	end
+	depthLabel.Visible = true
 	local hum = sound(FALLING, 0.18, 0.55, nil, true, DRONE)
 	hum:Play()
-	shot(CLANK, 0.4, 0.6)
 	local started = os.clock()
 	local done = false
+	local angle0 = math.random() * math.pi * 2
+	local function shotAt(y: number, t: number): CFrame
+		-- Above the rider inside the 8 x 8 shaft, slowly circling the cable, looking down at the
+		-- rider's head: the lining, lamps and level openings stream past.
+		local a = angle0 + (still and 0 or t * 0.55)
+		local r = 1.6
+		local eye = layout:Point(Layout.Shaft.X + math.cos(a) * r, y + 11.2, Layout.Shaft.Z + math.sin(a) * r)
+		local focus = layout:Point(Layout.Shaft.X, y + 3.4 + (toY < fromY and -1.5 or 1.5), Layout.Shaft.Z)
+		local shake = still and Vector3.zero or Vector3.new(math.sin(os.clock() * 29) * 0.04, math.sin(os.clock() * 21) * 0.035, 0)
+		return CFrame.lookAt(eye + shake, focus)
+	end
+	camera.CFrame = shotAt(fromY, 0)
+	task.spawn(fadeTo, 0, 0.35)
 	local connection
 	connection = RunService.RenderStepped:Connect(function()
 		local t = math.min(1, (os.clock() - started) / seconds)
@@ -887,11 +1082,12 @@ local function rideSequence(yard: Model, layout: any, fromLayer: number, layer: 
 		if cage then
 			cage:PivotTo(cf)
 		end
+		fitCageRope(layout, y)
+		setCounterweight(yard, depthOf(y))
 		placeCharacter(character, root, CFrame.new(cf.Position) * facing)
-		local shake = still and Vector3.zero or Vector3.new(math.sin(os.clock() * 31) * 0.05, math.sin(os.clock() * 23) * 0.04, 0)
-		local eye = layout:ToWorld(CFrame.new(Layout.Shaft.X - 2.7, y + 6.6, Layout.Shaft.Z + 2.7)).Position + shake
-		local look = layout:ToWorld(CFrame.new(Layout.Shaft.X + 1.6, y + 1.2 + (toY < fromY and -2 or 2), Layout.Shaft.Z - 1.6)).Position
-		camera.CFrame = CFrame.lookAt(eye, look)
+		camera.CFrame = shotAt(y, os.clock() - started)
+		local meters = math.max(0, math.floor((Layout.GroundY - y) * 0.5 + 0.5))
+		depthLabel.Text = (toY < fromY and "▼ " or "▲ ") .. themeName(layer) .. "  ·  " .. meters .. (lang() == "ru" and " м" or " m")
 		if t >= 1 then
 			done = true
 			connection:Disconnect()
@@ -906,13 +1102,53 @@ local function rideSequence(yard: Model, layout: any, fromLayer: number, layer: 
 	hum:Destroy()
 	shot(CLANK, 0.5, 0.45)
 	Shaft.CageLayer = layer
-	-- Step out.
+	setCounterweight(yard, depthOf(toY))
+	-- Step out: dip to black, then a safe follow shot from inside the cage behind the rider until
+	-- they are out of the shaft, then the normal camera.
+	fadeTo(1, 0.22)
+	for _, d in hidden do
+		if d.Parent then
+			d.LocalTransparencyModifier = 0
+		end
+	end
+	depthLabel.Visible = false
 	if character.Parent and humanoid.Health > 0 then
 		placeCharacter(character, root, arrival)
 		root.AssemblyLinearVelocity = Vector3.zero
 		root.AssemblyAngularVelocity = Vector3.zero
 		root.Anchored = false
-		camera.CFrame = CFrame.lookAt((arrival * CFrame.new(0, 7, 13)).Position, arrival.Position + Vector3.new(0, 2, 0))
+	end
+	if layer == 1 then
+		setDoors(yard, 0, 0.5)
+	end
+	local ignore = { character, world }
+	local look = arrival.LookVector
+	local function follow(): CFrame
+		local r = rootPart()
+		local pos = r and r.Position or arrival.Position
+		local head = pos + Vector3.new(0, 1.6, 0)
+		local wanted = head - look * 6.5 + Vector3.new(0, 3.2, 0)
+		return CFrame.lookAt(safeEye(head, wanted, ignore), head + look * 5 - Vector3.new(0, 0.6, 0))
+	end
+	camera.FieldOfView = previousFov
+	camera.CFrame = follow()
+	task.spawn(fadeTo, 0, 0.3)
+	local shaftCenter = layout:Point(Layout.Shaft.X, 0, Layout.Shaft.Z)
+	local followStart = os.clock()
+	local following = true
+	local followConn
+	followConn = RunService.RenderStepped:Connect(function(dt)
+		local r = rootPart()
+		local flat = r and Vector3.new(r.Position.X - shaftCenter.X, 0, r.Position.Z - shaftCenter.Z).Magnitude or 99
+		if not r or flat > 9.5 or os.clock() - followStart > 2.6 or not character.Parent then
+			following = false
+			followConn:Disconnect()
+			return
+		end
+		camera.CFrame = camera.CFrame:Lerp(follow(), math.min(1, dt * 8))
+	end)
+	while following do
+		task.wait()
 	end
 	camera.CameraType = previousType ~= Enum.CameraType.Scriptable and previousType or Enum.CameraType.Custom
 	camera.CameraSubject = humanoid

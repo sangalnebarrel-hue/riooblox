@@ -9,6 +9,11 @@
 --    MineFrame / MineSx for clients) and onto the headframe's depth sign.
 --  * Shows a rope winch with a "DIGGING AT <LAYER>" sign over every kennel pit whose dog works in
 --    the mine (owner's CurrentLayer >= 2).
+--  * The elevator station (MineStructures.Headframe) replaces the yard Workshop: the Workshop model
+--    is moved out of the yard into ServerStorage.MineRemovedWorkshops (kept for a rollback), the
+--    UPGRADE TREE prompt (UpgradeAnchor / UpgradeInteractionZone) moves to the station's kiosk.
+--    Where the Workshop stood behind the shaft the station gets its hoist-house annex; where it
+--    stood on the far side (mirrored yards) an ore depot fills the lot and points at the elevator.
 --  * Validates elevator rides (RemoteFunction ReplicatedStorage.MineRequest, action "Ride"): the
 --    level must be unlocked by the yard's owner (visitors may ride another player's mine) and the
 --    rider must stand at that yard's headframe or inside its mine. The client moves its own
@@ -26,7 +31,7 @@ local Carve = require(script.Parent:WaitForChild("Mine"):WaitForChild("MineCarve
 local district = workspace:WaitForChild("DOGROTS_District")
 local yardsFolder = district:WaitForChild("04_PlayerYards")
 
-local LAYOUT_VERSION = 1
+local LAYOUT_VERSION = 2
 local RIDE_COOLDOWN = 1.2
 
 local works = district:FindFirstChild("MineWorks")
@@ -69,8 +74,54 @@ local function tag(model: Instance)
 	end
 end
 
+------------------------------------------------------------------------------------------------
+-- The Workshop makes way for the elevator station
+------------------------------------------------------------------------------------------------
+local removed = game:GetService("ServerStorage"):FindFirstChild("MineRemovedWorkshops")
+if not removed then
+	removed = Instance.new("Folder")
+	removed.Name = "MineRemovedWorkshops"
+	removed.Parent = game:GetService("ServerStorage")
+end
+-- Which side the yard's Workshop stood on (+1: behind the shaft, design x' > 0; -1: far side).
+-- Remembered on the yard, so it survives the Workshop leaving.
+local function workshopSide(yard: Model, layout: any): number
+	local side = yard:GetAttribute("MineWorkshopSide")
+	if type(side) == "number" then
+		return side
+	end
+	local workshop = yard:FindFirstChild("Workshop")
+	side = 1
+	if workshop and workshop:IsA("Model") then
+		side = layout:ToDesign(workshop:GetPivot().Position).X >= 0 and 1 or -1
+		yard:SetAttribute("MineWorkshopLot", workshop:GetPivot())
+	end
+	yard:SetAttribute("MineWorkshopSide", side)
+	return side
+end
+local function removeWorkshop(yard: Model, layout: any)
+	local workshop = yard:FindFirstChild("Workshop")
+	if workshop then
+		workshop.Name = yard.Name .. "_Workshop"
+		workshop:SetAttribute("FromYard", yard.Name)
+		workshop.Parent = removed
+	end
+	-- UPGRADE TREE stays reachable: its anchor and zone move to the station's kiosk.
+	local kiosk = Structures.Kiosk
+	local anchor = yard:FindFirstChild("UpgradeAnchor")
+	if anchor and anchor:IsA("BasePart") then
+		anchor.CFrame = layout:CF(kiosk.Anchor.X, kiosk.Anchor.Y, kiosk.Anchor.Z, -1, 0)
+	end
+	local zone = yard:FindFirstChild("UpgradeInteractionZone")
+	if zone and zone:IsA("BasePart") then
+		zone.CFrame = layout:ToWorld(kiosk.Zone)
+		zone.Size = kiosk.ZoneSize
+	end
+end
+
 local function build(yard: Model, layout: any)
 	local name = yard.Name .. "_Mine"
+	local side = workshopSide(yard, layout)
 	local old = works:FindFirstChild(name)
 	if old and old:GetAttribute("LayoutVersion") == LAYOUT_VERSION then
 		return old
@@ -82,7 +133,7 @@ local function build(yard: Model, layout: any)
 	root.Name = name
 	root:SetAttribute("YardId", yard:GetAttribute("YardId"))
 	root:SetAttribute("LayoutVersion", LAYOUT_VERSION)
-	local headframe = Structures.Headframe()
+	local headframe = Structures.Headframe({ Annex = side > 0 })
 	Structures.Place(headframe, layout)
 	headframe.Name = "Headframe"
 	-- "Show the way" (Navigation.PathGuide) points at the elevator gate.
@@ -103,6 +154,21 @@ local function build(yard: Model, layout: any)
 	local winches = Instance.new("Model")
 	winches.Name = "Winches"
 	winches.Parent = root
+	-- The far-side Workshop lot becomes an ore depot pointing at the elevator.
+	local lot = yard:GetAttribute("MineWorkshopLot")
+	if side < 0 and typeof(lot) == "CFrame" then
+		local p = (lot :: CFrame).Position
+		local origin = layout:CF(layout:ToDesign(p).X, Layout.GroundY, layout:ToDesign(p).Z, 0, -1)
+		local ok, depot = pcall(Structures.Depot, origin, layout.Sx < 0 and "◄" or "►")
+		if ok and depot then
+			depot.Name = "Depot"
+			tag(depot)
+			setStreaming(depot, Enum.ModelStreamingMode.Atomic)
+			depot.Parent = root
+		elseif not ok then
+			warn("DOGROTS mine: depot for " .. yard.Name .. ": " .. tostring(depot))
+		end
+	end
 	root.Parent = works
 	return root
 end
@@ -228,6 +294,22 @@ local function unlockedMask(player: Player?): number
 	return Layout.Mask(type(p) == "table" and p.UnlockedLayers or nil)
 end
 
+-- Depth lamps on the station front: lit in the depth's colour once the owner unlocked it.
+local function updateLamps(s: any, mask: number)
+	local headframe = s.Root and s.Root:FindFirstChild("Headframe")
+	if not headframe then
+		return
+	end
+	for i = 1, 5 do
+		local lamp = headframe:FindFirstChild("DepthLamp" .. i, true)
+		if lamp and lamp:IsA("BasePart") then
+			local open = Layout.Unlocked(mask, i)
+			lamp.Material = open and Enum.Material.Neon or Enum.Material.SmoothPlastic
+			lamp.Color = open and Themes.Get(i).Accent or Color3.fromRGB(60, 58, 66)
+		end
+	end
+end
+
 local function updateSign(s: any, layer: number)
 	local headframe = s.Root and s.Root:FindFirstChild("Headframe")
 	local sign = headframe and headframe:FindFirstChild("DepthSign", true)
@@ -338,6 +420,7 @@ local function refreshOwner(yard: Model)
 		yard:SetAttribute("MineUnlocked", mask)
 	end
 	updateSign(s, layer)
+	updateLamps(s, mask)
 	updateWinches(yard)
 end
 
@@ -380,6 +463,7 @@ local function setup(yard: Instance)
 	local s = { Layout = layout }
 	state[yard] = s
 	s.Root = build(yard :: Model, layout)
+	removeWorkshop(yard :: Model, layout)
 	local headframe = s.Root:FindFirstChild("Headframe")
 	s.Prompt = headframe and prompt(headframe)
 	local cf, size = layout:Hole(2, Layout.IslandBottom - 2)
@@ -440,6 +524,10 @@ task.spawn(function()
 			local mask = unlockedMask(player)
 			if yard:GetAttribute("MineUnlocked") ~= mask then
 				yard:SetAttribute("MineUnlocked", mask)
+				local s = state[yard]
+				if s then
+					updateLamps(s, mask)
+				end
 			end
 		end
 	end

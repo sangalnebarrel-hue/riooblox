@@ -6,8 +6,9 @@
 -- the call panel (Attachment "StopAnchor" on part "CallPanel"), the FINDS board (SurfaceGui
 -- "FindsBoard", one cell per DepthDefinitions item: Frame "Item_<id>"), three item pedestals
 -- (Attachments "Pedestal1..3"), five dog worksites with an ore vein of that layer's loot table, and
--- the level's own props and effects. Budget per level (tests/mine.luau): <= 350 parts, <= 6 lights,
--- <= 6 particle emitters. Animated parts carry attributes the client tweens (MineBob = amplitude in
+-- the level's own props and effects, then the shared dressing pass (relief, niches and cracks, timber
+-- supports and old mine gear, a lamp line, roots, glowing spots, ground fog and dust; dressing()).
+-- Budget per level (tests/mine.luau): <= 560 parts, <= 8 lights, <= 8 particle emitters. Animated parts carry attributes the client tweens (MineBob = amplitude in
 -- studs, MineBobPeriod = seconds): nothing runs per frame.
 local RS = game:GetService("ReplicatedStorage")
 local Forge = require(RS:WaitForChild("Forge"))
@@ -21,7 +22,7 @@ local ANG = CFrame.Angles
 local rad = math.rad
 
 local Levels = {}
-Levels.Budget = { Parts = 350, Lights = 6, Emitters = 6 }
+Levels.Budget = { Parts = 560, Lights = 8, Emitters = 8 }
 
 local SPARKLE = "rbxasset://textures/particles/sparkles_main.dds"
 local SMOKE = "rbxasset://textures/particles/smoke_main.dds"
@@ -963,6 +964,216 @@ local function void(b: any, ctx: any)
 end
 
 ------------------------------------------------------------------------------------------------
+-- DRESSING: the shared pass that makes every level feel lived-in and deep. Walls get relief
+-- slabs, cracks and lit niches between the worksites; old mining gear (timber sets, a toppled
+-- cart, rail pieces, planks) lies along the walls; a lamp line hangs from the ceiling; roots,
+-- glowing mushrooms / crystals, low ground fog and dust motes add the atmosphere. Lights are
+-- accents only (two per level). The landing (x' > 12, z < -22), the worksites and the middle of
+-- the chamber stay clear.
+------------------------------------------------------------------------------------------------
+local DRESS = {
+	[2] = { Glow = C(110, 220, 255), Glow2 = C(170, 255, 230), Fog = C(120, 160, 200), Root = C(96, 76, 58), Roots = true, Mush = C(90, 230, 255) },
+	[3] = { Glow = C(255, 196, 80), Glow2 = C(255, 150, 60), Fog = C(214, 180, 130), Root = C(110, 90, 60), Roots = true, Mush = C(255, 210, 120) },
+	[4] = { Glow = C(255, 70, 40), Glow2 = C(255, 140, 60), Fog = C(140, 40, 40), Root = C(60, 40, 40), Roots = false, Mush = C(255, 90, 60) },
+	[5] = { Glow = C(176, 92, 255), Glow2 = C(90, 224, 255), Fog = C(80, 50, 130), Root = C(40, 30, 60), Roots = false, Mush = C(200, 120, 255) },
+}
+local function clearOfSites(x: number, z: number, pad: number): boolean
+	for _, site in Layout.Worksites do
+		if math.abs(x - site.X) < pad and math.abs(z - site.Z) < pad + 2 then
+			return false
+		end
+	end
+	if x > 10 and z < -20 then
+		return false -- landing
+	end
+	return true
+end
+local function dressing(b: any, ctx: any)
+	local t, R, F, H = ctx.Theme, ctx.R, ctx.F, ctx.H
+	local d = DRESS[ctx.Layer] or DRESS[2]
+	local c = Layout.Chamber
+	local mat = t.RockMaterial
+	local tones = { t.Rock, t.RockDark, t.RockLight or t.Rock }
+	-- RELIEF: leaning slabs and bulges low on the side walls, between the worksites.
+	local wallSpots = { { -1, -24 }, { -1, -9 }, { -1, 4.5 }, { 1, -21 }, { 1, -5.5 }, { 1, 8.5 } }
+	for i, w in wallSpots do
+		local side, z = w[1], w[2]
+		local x = side < 0 and c.X0 + 1.4 or c.X1 - 1.4
+		local hgt = R(4, 8)
+		b:Ellipsoid(V(R(3, 4.5), hgt, R(4, 6)), CF(x, F + hgt * 0.35, z) * ANG(rad(R(-8, 8)), rad(R(0, 180)), rad(side * R(4, 12))), tones[(i % 3) + 1], mat, { Name = "WallBulge" })
+		-- A crack running up the wall above it.
+		for k = 0, 2 do
+			b:Box(V(0.12, R(1.6, 2.6), 0.5), CF(side < 0 and c.X0 + 0.35 or c.X1 - 0.35, F + 5 + k * 2.1, z + R(-1.2, 1.2)) * ANG(rad(R(-25, 25)), 0, 0), t.RockDark:Lerp(C(0, 0, 0), 0.6), "SmoothPlastic", { Name = "Crack", CastShadow = false })
+		end
+	end
+	-- NICHES: dark recesses in the far wall, each with a little glowing crystal or candle stub.
+	for i, x in { -10, 2, 14 } do
+		local z = c.Z1 - 0.5
+		b:Box(V(3.2, 2.6, 1.0), CF(x, F + 3.4 + (i % 2) * 1.2, z), t.RockDark:Lerp(C(0, 0, 0), 0.55), "SmoothPlastic", { Name = "Niche", CastShadow = false })
+		b:Box(V(3.6, 0.35, 1.3), CF(x, F + 2.0 + (i % 2) * 1.2, z - 0.2), tones[2], mat, { Name = "NicheSill" })
+		local glow = i % 2 == 0 and d.Glow or d.Glow2
+		b:Prism(CF(x - 0.5, F + 2.2 + (i % 2) * 1.2, z - 0.1) * ANG(0, rad(i * 40), rad(8)), 0.35, 1.3, 0.3, glow, "Neon", { Name = "NicheCrystal", CastShadow = false })
+		b:Prism(CF(x + 0.4, F + 2.2 + (i % 2) * 1.2, z - 0.2) * ANG(0, rad(i * 25), rad(-12)), 0.25, 0.9, 0.22, glow, "Neon", { Name = "NicheCrystal", CastShadow = false })
+	end
+	-- TIMBER SETS along the side walls and a sagging crossbeam; planks on the floor.
+	for _, z in { -12.5, 6.5 } do
+		for _, side in { -1, 1 } do
+			local x = side < 0 and c.X0 + 2.6 or c.X1 - 2.6
+			if clearOfSites(x, z, 3.5) then
+				b:Box(V(0.7, H - 2, 0.7), CF(x, F + (H - 2) / 2, z) * ANG(0, 0, rad(side * 3)), TIMBER, "WoodPlanks", { Name = "Prop" })
+				b:Box(V(0.9, 0.9, 4.2), CF(x, F + H - 1.6, z), TIMBER_DARK, "WoodPlanks", { Name = "PropCap" })
+				b:Box(V(0.5, 3.2, 0.5), CF(x - side * 1.1, F + H - 3.2, z) * ANG(0, 0, rad(side * 40)), TIMBER_DARK, "WoodPlanks", { Name = "PropBrace" })
+			end
+		end
+	end
+	for i = 1, 4 do
+		local x, z = R(c.X0 + 4, c.X1 - 6), R(c.Z0 + 6, c.Z1 - 3)
+		if clearOfSites(x, z, 4) and math.abs(x) > 6 then
+			b:Box(V(0.5, 0.18, R(3, 5)), CF(x, F + 0.12, z) * ANG(0, rad(R(0, 180)), rad(R(-6, 6))), i % 2 == 0 and TIMBER or TIMBER_DARK, "WoodPlanks", { Name = "Plank" })
+		end
+	end
+	-- A toppled ore cart and a stretch of old rail by the far wall.
+	local cart = CF(-4, F, c.Z1 - 4.5) * ANG(0, rad(18), rad(78))
+	b:Box(V(2.2, 1.5, 3.0), cart * CF(0, 1.2, 0), C(86, 64, 46), "WoodPlanks", { Name = "ToppledCart" })
+	b:Box(V(2.4, 0.22, 3.2), cart * CF(0, 2.0, 0), IRON, "Metal", { Name = "CartRim" })
+	for _, p in { { -1.1, -1.0 }, { 1.1, -1.0 } } do
+		b:Cyl(0.3, 0.9, cart * CF(p[1], 0.45, p[2]), C(40, 40, 44), "Metal", { Name = "CartWheel" })
+	end
+	for k = 0, 2 do
+		b:Ellipsoid(V(0.9, 0.6, 0.9), CF(-2.6 + k * 0.9, F + 0.3, c.Z1 - 6 + (k % 2) * 0.6), k == 1 and d.Glow or t.RockDark, k == 1 and "Neon" or mat, { Name = "SpilledOre", CastShadow = false })
+	end
+	local rail = CF(4, F, c.Z1 - 3) * ANG(0, rad(90), 0)
+	for _, x in { -0.9, 0.9 } do
+		b:Box(V(0.22, 0.22, 11), rail * CF(x, 0.3, 0), C(110, 100, 92), "Metal", { Name = "Rail" })
+	end
+	for i = -2, 2 do
+		b:Box(V(2.6, 0.2, 0.5), rail * CF(0, 0.12, i * 2.2) * ANG(0, rad(R(-6, 6)), 0), TIMBER_DARK, "WoodPlanks", { Name = "Sleeper" })
+	end
+	-- LAMP LINE: a cable along the ceiling with hanging bulbs (one warm light in the middle).
+	local z = -6
+	local a, bb = V(c.X0 + 3, ctx.Top - 1.2, z), V(c.X1 - 6, ctx.Top - 1.6, z + 6)
+	b:Rod(a, bb, 0.08, C(30, 30, 34), "Metal", { Name = "LampCable" })
+	for i = 1, 5 do
+		local p = a:Lerp(bb, i / 6) - V(0, 0.15 + math.sin(i / 6 * math.pi) * 0.6, 0)
+		b:Rod(p, p - V(0, 0.8, 0), 0.05, C(30, 30, 34), "Metal", { Name = "LampDrop" })
+		local bulb = b:Ball(0.42, CF(p - V(0, 1.0, 0)), C(255, 214, 150), "Neon", { Name = "CaveBulb", CastShadow = false })
+		if i == 3 then
+			b:Light(bulb, C(255, 196, 130), 20, 0.9, "Point")
+		end
+	end
+	-- ROOTS hanging from the ceiling (the upper levels lie under the island's soil).
+	if d.Roots then
+		for i = 1, 9 do
+			local x, zz = R(c.X0 + 3, c.X1 - 3), R(c.Z0 + 4, c.Z1 - 2)
+			local len = R(2.5, 6)
+			local top = V(x, ctx.Top - 0.1, zz)
+			local mid = top + V(R(-0.6, 0.6), -len * 0.55, R(-0.6, 0.6))
+			local tip = mid + V(R(-0.5, 0.5), -len * 0.45, R(-0.5, 0.5))
+			b:Rod(top, mid, R(0.18, 0.32), d.Root, "Wood", { Name = "Root" })
+			b:Rod(mid, tip, R(0.08, 0.16), d.Root:Lerp(C(0, 0, 0), 0.2), "Wood", { Name = "Root" })
+		end
+	end
+	-- GLOWING SPOTS: mushrooms (or embers) in two corners, one coloured accent light.
+	local spots = { { c.X0 + 3.5, c.Z1 - 3.5 }, { c.X1 - 4, c.Z1 - 3 } }
+	for i, sp in spots do
+		for k = 1, 5 do
+			local x, zz = sp[1] + R(-2, 2), sp[2] + R(-1.5, 1.5)
+			local hgt = R(0.5, 1.4)
+			b:Box(V(0.18, hgt, 0.18), CF(x, F + hgt / 2, zz), C(220, 220, 210), "SmoothPlastic", { Name = "MushStem" })
+			b:Ellipsoid(V(R(0.6, 1.2), 0.35, R(0.6, 1.2)), CF(x, F + hgt, zz), k % 2 == 0 and d.Mush or d.Glow2, "Neon", { Name = "MushCap", CastShadow = false })
+		end
+		if i == 1 then
+			local holder = b:Box(V(0.3, 0.3, 0.3), CF(sp[1], F + 1.5, sp[2]), d.Mush, "SmoothPlastic", { Name = "GlowSpot", Transparency = 1, CastShadow = false })
+			b:Light(holder, d.Mush, 16, 1.2, "Point")
+		end
+	end
+	ctx.Detail(function()
+		-- Small stalagmites and pebbles scattered near the walls.
+		for i = 1, 10 do
+			local side = i % 2 == 0 and -1 or 1
+			local x = side < 0 and c.X0 + R(3, 6) or c.X1 - R(3, 6)
+			local zz = R(c.Z0 + 4, c.Z1 - 2)
+			if clearOfSites(x, zz, 3.5) then
+				local h = R(1, 2.6)
+				b:Ellipsoid(V(h * 0.6, h, h * 0.6), CF(x, F + h * 0.35, zz), tones[(i % 3) + 1], mat, { Name = "SmallStalagmite" })
+			end
+		end
+	end)
+	-- GROUND FOG (low, very transparent) and floating dust motes.
+	local fog = volume(b, "GroundFog", V(c.X1 - c.X0 - 6, 1.2, c.Z1 - c.Z0 - 6), CF((c.X0 + c.X1) / 2, F + 0.8, (c.Z0 + c.Z1) / 2))
+	emitter(fog, {
+		Texture = SMOKE,
+		Rate = ctx.LowFX and 1 or 3,
+		Lifetime = NumberRange.new(8, 12),
+		Speed = NumberRange.new(0.1, 0.4),
+		Size = NumberSequence.new(6, 11),
+		Color = ColorSequence.new(d.Fog),
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.4, 0.9), NumberSequenceKeypoint.new(1, 1) }),
+		LightEmission = 0.15,
+		Rotation = NumberRange.new(0, 360),
+		RotSpeed = NumberRange.new(-6, 6),
+		Acceleration = V(0, 0.05, 0),
+	})
+	if not ctx.LowFX then
+		local dust = volume(b, "DustMotes", V(c.X1 - c.X0 - 4, ctx.H - 4, c.Z1 - c.Z0 - 4), CF((c.X0 + c.X1) / 2, F + ctx.H / 2, (c.Z0 + c.Z1) / 2))
+		emitter(dust, {
+			Texture = SPARKLE,
+			Rate = 5,
+			Lifetime = NumberRange.new(4, 7),
+			Speed = NumberRange.new(0.05, 0.3),
+			Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.5, 0.12), NumberSequenceKeypoint.new(1, 0) }),
+			Color = ColorSequence.new(d.Glow:Lerp(C(255, 255, 255), 0.6)),
+			LightEmission = 0.8,
+			Transparency = NumberSequence.new(0.35),
+			Acceleration = V(0, -0.02, 0),
+		})
+	end
+	-- THEMED EXTRAS.
+	if ctx.Layer == 2 then
+		-- Cavern: a blue crystal cluster bursting out of the near wall and drip stains.
+		crystalCluster(b, CF(-16, F + 4, c.Z0 + 0.8) * ANG(rad(-70), 0, 0), 0.9, C(120, 200, 255), t.Glow, 4)
+		for i = 1, 4 do
+			b:Box(V(0.6, R(2, 4), 0.1), CF(R(c.X0 + 4, -2), F + 6, c.Z1 - 0.15), t.Water:Lerp(C(0, 0, 0), 0.3), "Glass", { Name = "DripStain", Transparency = 0.4, CastShadow = false })
+		end
+	elseif ctx.Layer == 3 then
+		-- Ruins: broken column stubs, sand drifts and a fallen lintel.
+		for i, p in { { -12, 9 }, { 8, 10 }, { -6, -14 } } do
+			local h = R(2, 4.5)
+			b:CylY(h, 1.6, CF(p[1], F + h / 2, p[2]) * ANG(rad(R(-6, 6)), 0, rad(R(-6, 6))), t.RockLight, "Sandstone", { Name = "ColumnStub" })
+			b:Ellipsoid(V(3.4, 0.6, 2.6), CF(p[1] + 1, F + 0.15, p[2] + 0.8), t.Floor:Lerp(C(255, 230, 170), 0.25), "Sand", { Name = "SandDrift" })
+			if i == 1 then
+				b:Box(V(7, 1.2, 1.4), CF(p[1] + 3, F + 0.6, p[2] - 2) * ANG(0, rad(30), rad(6)), t.RockLight, "Sandstone", { Name = "FallenLintel" })
+			end
+		end
+	elseif ctx.Layer == 4 then
+		-- Cursed: glowing lava cracks across the floor and a skull pile.
+		for i = 1, 6 do
+			local x, zz = R(c.X0 + 6, c.X1 - 8), R(c.Z0 + 6, c.Z1 - 4)
+			if clearOfSites(x, zz, 4) then
+				b:Box(V(R(2.5, 5), 0.06, 0.25), CF(x, F + 0.1, zz) * ANG(0, rad(R(0, 180)), 0), t.Lava, "Neon", { Name = "LavaCrack", CastShadow = false })
+			end
+		end
+		for i = 1, 3 do
+			skull(b, CF(c.X0 + 4 + i * 0.9, F + 0.35 + (i == 2 and 0.5 or 0), c.Z1 - 7 + (i % 2) * 0.7) * ANG(0, rad(i * 40), 0), 0.8, t.Bone)
+		end
+	elseif ctx.Layer == 5 then
+		-- Void: floating shards that bob, and violet rift lines on the walls.
+		for i = 1, 6 do
+			local x, zz = R(c.X0 + 6, c.X1 - 8), R(c.Z0 + 6, c.Z1 - 4)
+			local shard = b:Prism(CF(x, F + R(6, 12), zz) * ANG(rad(R(-30, 30)), rad(R(0, 180)), rad(R(-30, 30))), R(0.4, 0.8), R(1.4, 2.6), 0.4, i % 2 == 0 and t.Glow or t.Cyan, "Neon", { Name = "FloatingShard", CastShadow = false })
+			for _, p in shard do
+				p:SetAttribute("MineBob", R(0.4, 0.9))
+				p:SetAttribute("MineBobPeriod", R(2.5, 4.5))
+			end
+		end
+		for i = 1, 4 do
+			local side = i % 2 == 0 and -1 or 1
+			b:Box(V(0.1, R(3, 6), 0.3), CF(side < 0 and c.X0 + 0.3 or c.X1 - 0.3, F + R(4, 10), R(c.Z0 + 6, c.Z1 - 4)) * ANG(rad(R(-30, 30)), 0, 0), t.Glow, "Neon", { Name = "RiftLine", CastShadow = false })
+		end
+	end
+end
+
+------------------------------------------------------------------------------------------------
 -- Build
 ------------------------------------------------------------------------------------------------
 local BUILDERS = {
@@ -1022,6 +1233,7 @@ function Levels.Build(layer: number, options: { LowFX: boolean? }?): Model
 	landing(b, ctx)
 	worksites(b, ctx)
 	recipe.Main(b, ctx)
+	dressing(b, ctx)
 	local model = b:Finish()
 	model:SetAttribute("MineLayer", layer)
 	return model

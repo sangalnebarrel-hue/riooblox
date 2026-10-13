@@ -121,7 +121,7 @@ def main():
     scenes = json.load(open(src))
     sheet = []
     for name, sc in scenes.items():
-        parts = sc["parts"]
+        parts = [p for p in sc["parts"] if p and None not in p["size"] and None not in p["cf"]]
         lo, hi = bounds(parts)
         c = (lo + hi) / 2; r = np.linalg.norm(hi - lo) / 2 + .5
         imgs = []

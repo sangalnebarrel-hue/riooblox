@@ -1,8 +1,12 @@
 -- MineStructures: Forge recipes of the mine's fixed structures, in YARD DESIGN coordinates
 -- (see MineLayout). Callers place a built model with Structures.Place(model, layout).
---   Headframe()   server, every yard: steel headframe over the shaft, big spoked wheel, cables,
---                 hoist drum, collar, gate, the depth sign (SurfaceGui "DepthSign") and the
---                 elevator prompt anchor (Attachment "PromptAnchor" on part "Gate")
+--   Headframe(o)  server, every yard: the elevator station over the shaft (it replaced the yard
+--                 Workshop): steel tower with freight doors, porch, machine room with the spoked
+--                 head sheave ("Wheel"), counterweight, UPGRADE TREE kiosk (S.Kiosk), the depth
+--                 sign (SurfaceGui "DepthSign"), depth lamps and the elevator prompt anchor
+--                 (Attachment "PromptAnchor" on part "Gate"); o.Annex adds the hoist house over
+--                 the old Workshop lot behind the shaft
+--   Depot(cf)     server, yards whose Workshop stood on the far side: ore depot on that lot
 --   Shell()       server, every yard: the always-present rock column under the island that
 --                 encloses the four levels (floors, walls, slabs, stalactites; <= 12 parts/level)
 --   Winch(slotCF) server: rope winch over a kennel pit while the dogs dig in the mine
@@ -16,9 +20,9 @@ local C = Color3.fromRGB
 local V = Vector3.new
 local CF = CFrame.new
 local ANG = CFrame.Angles
+local rad = math.rad
 local S = {}
 
-local STEEL = C(150, 58, 42) -- headframe paint (deep rust red)
 local STEEL_DARK = C(96, 40, 32)
 local IRON = C(70, 74, 82)
 local SAFETY = C(244, 192, 44)
@@ -65,163 +69,333 @@ local function collide(part: BasePart, on: boolean?)
 end
 
 ------------------------------------------------------------------------------------------------
--- Headframe (server)
+-- Elevator station (server): "Headframe"
 ------------------------------------------------------------------------------------------------
--- Built around the shaft centre on the ground; local +x = design +x' (towards the hoist),
--- local +z = design +z (towards the yard centre).
-function S.Headframe(): Model
+-- The mine elevator of every yard, built over the shaft (design x' 16..24, z -40..-32) where the
+-- old steel headframe stood; it replaces the yard Workshop (MineWorld moves the Workshop out of
+-- the yard and the UPGRADE TREE prompt onto the station's kiosk). Pieces, walkway (-x') first:
+--   UPGRADE kiosk  x' 8..10.4, z -33..-30: terminal with the UPGRADE TREE prompt anchor (S.Kiosk)
+--   porch          x' 10.3..14.8, z -42.4..-29.6: plated deck, canopy with lamps, arrows, the
+--                  surface stop (Layout.SurfaceArrival x' 12.2) stands under the canopy
+--   tower          x' 14.65..25.35, z -41.35..-30.65, to y 21.2: steel tower round the shaft,
+--                  freight doors (vertical bi-parting, client-animated), glowing frame, the
+--                  "Gate" lintel (NavTarget, Attachment "PromptAnchor"), MINE ELEVATOR sign,
+--                  depth lamps "DepthLamp1..5" (MineWorld colours them), glass window onto the
+--                  cage, the depth sign (SurfaceGui "DepthSignGui") and down-chevrons on +z
+--   machine room   y 21.2..27.3 with lit windows, the head sheave (Model "Wheel", part "Axle")
+--                  on the roof, the counterweight (Model "Counterweight", client-animated) in a
+--                  channel on the +x' face
+--   annex          (options.Annex: yards whose Workshop stood behind the shaft) the hoist house
+--                  over the old Workshop lot, x' 16..32.4, z -62.6..-42, with its chimney
+-- Every part is anchored; only what a player can bump into collides (and the canopy, so the
+-- default camera's occlusion keeps out of the tower). Nothing collides inside the shaft opening.
+-- Local design space: x' (+ towards the yard fence), z (+ towards the yard centre), y = world y.
+local RUST = C(186, 72, 50)
+local RUST_DARK = C(118, 44, 36)
+local CREAM = C(240, 226, 196)
+local ROOF = C(58, 66, 86)
+local BRICK = C(194, 104, 76)
+local CAVE = C(110, 214, 255) -- cave glow (caverns crystal blue)
+local WARM = C(255, 220, 150)
+local GOLD = C(255, 196, 54)
+local TEAL = C(44, 150, 128)
+local INK = C(28, 26, 30)
+
+-- UPGRADE TREE kiosk: MineWorld moves the yard's UpgradeAnchor / UpgradeInteractionZone here.
+S.Kiosk = {
+	Anchor = V(8.0, 4.4, -31.6),
+	Zone = CF(4.6, 5.5, -31.0),
+	ZoneSize = V(7.6, 9, 5.2),
+}
+-- The client cage's hoist rope ends in the machine room floor (MineClient fits it every move).
+S.RopeTopY = 21.2
+S.CageHeight = 8.2
+-- Freight doors: how far each leaf slides (studs, world Y) to close the doorway.
+S.DoorTravel = 4.5
+
+local function surfaceGui(part: BasePart, name: string, face: Enum.NormalId, pps: number, maxDistance: number): (SurfaceGui, Frame)
+	local gui = Instance.new("SurfaceGui")
+	gui.Name = name
+	gui.Face = face
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = pps
+	gui.LightInfluence = 0
+	gui.MaxDistance = maxDistance
+	gui.Parent = part
+	local bg = Instance.new("Frame")
+	bg.Name = "Back"
+	bg.Size = UDim2.fromScale(1, 1)
+	bg.BackgroundColor3 = C(26, 22, 22)
+	bg.BorderSizePixel = 0
+	bg.Parent = gui
+	return gui, bg
+end
+
+local function text(parent: Instance, name: string, value: string, x: number, y: number, w: number, h: number, color: Color3, font: Enum.Font?, noTranslate: boolean?): TextLabel
+	local t = Instance.new("TextLabel")
+	t.Name = name
+	t.BackgroundTransparency = 1
+	t.Position = UDim2.fromScale(x, y)
+	t.Size = UDim2.fromScale(w, h)
+	t.Font = font or Enum.Font.GothamBlack
+	t.TextScaled = true
+	t.TextColor3 = color
+	t.Text = value
+	t.TextStrokeTransparency = 0.6
+	if noTranslate then
+		t:SetAttribute("NoTranslate", true)
+	end
+	t.Parent = parent
+	return t
+end
+
+-- Yellow / black hazard band on a face: a yellow strip with dark diagonal stripes.
+-- cf: centre of the band's front face, its X axis along the band, -Z out of the face.
+local function hazard(b: any, cf: CFrame, length: number, height: number, name: string)
+	b:Box(V(length, height, 0.08), cf, SAFETY, "SmoothPlastic", { Name = name, CastShadow = false })
+	b:Detail(function()
+		local n = math.floor(length / 1.1)
+		for i = 1, n do
+			local x = -length / 2 + (i - 0.5) * length / n
+			b:Box(V(0.32, height * 1.15, 0.04), cf * CF(x, 0, -0.05) * ANG(0, 0, rad(-40)), INK, "SmoothPlastic", { Name = name .. "Stripe", CastShadow = false })
+		end
+	end)
+end
+
+-- A neon "V" chevron pointing down: centre of the V's arms, in the plane of cf (cf -Z out).
+local function chevron(b: any, cf: CFrame, size: number, color: Color3, name: string)
+	for _, k in { -1, 1 } do
+		b:Box(V(0.42 * size, 2.0 * size, 0.2), cf * CF(k * 0.62 * size, 0, 0) * ANG(0, 0, rad(-k * 40)), color, "Neon", { Name = name, CastShadow = false })
+	end
+end
+
+-- Glowing cave crystals (a small cluster of prisms) standing on cf.
+local function crystals(b: any, cf: CFrame, scale: number, count: number)
+	local spec = { { 0, 0, 0, 0.55, 2.2 }, { 0.5, 0.2, 0.3, 0.4, 1.5 }, { -0.45, -0.25, 0.4, 0.36, 1.2 }, { 0.15, -0.5, -0.5, 0.32, 1.0 } }
+	for i = 1, math.min(count, #spec) do
+		local s = spec[i]
+		local lean = ANG(rad(s[3] * 30), rad(i * 67), rad(-s[2] * 35))
+		b:Prism(cf * CF(s[2] * scale, 0, s[3] * scale) * lean, s[4] * scale, s[5] * scale, s[4] * scale * 0.9, i == 1 and CAVE or C(170, 236, 255), i == 1 and "Neon" or "Glass", { Name = "StationCrystal", CastShadow = false })
+	end
+end
+
+local function boulder(b: any, cf: CFrame, size: Vector3, tone: Color3)
+	b:Ellipsoid(size, cf, tone, "Slate", { Name = "StationRock" })
+end
+
+-- The hoist house over the old Workshop lot (design x' 16..32.4, z -62.6..-42).
+local function annex(b: any)
+	local x0, x1, z0, z1 = 16.2, 32.2, -62.4, -42.2
+	local cx, cz = (x0 + x1) / 2, (z0 + z1) / 2
+	local w, d = x1 - x0, z1 - z0
+	local base, eave = 1.8, 12.0
+	collide(b:Box(V(w + 0.4, 0.9, d + 0.4), CF(cx, 1.35, cz), CONCRETE, "Concrete", { Name = "HoistPlinth" }))
+	local hgt = eave - base
+	local yc = (base + eave) / 2
+	collide(b:Box(V(w, hgt, 0.6), CF(cx, yc, z1 - 0.3), BRICK, "Brick", { Name = "HoistWall" }))
+	collide(b:Box(V(w, hgt, 0.6), CF(cx, yc, z0 + 0.3), BRICK, "Brick", { Name = "HoistWall" }))
+	collide(b:Box(V(0.6, hgt, d - 1.2), CF(x0 + 0.3, yc, cz), BRICK, "Brick", { Name = "HoistWall" }))
+	collide(b:Box(V(0.6, hgt, d - 1.2), CF(x1 - 0.3, yc, cz), BRICK, "Brick", { Name = "HoistWall" }))
+	for _, x in { x0, x1 } do
+		for _, z in { z0, z1 } do
+			b:Box(V(1.1, hgt + 0.6, 1.1), CF(x, yc + 0.3, z), CREAM, "Concrete", { Name = "HoistPilaster" })
+		end
+	end
+	-- Cornice and the gable roof (ridge along x', the slopes face the yard and the back).
+	b:Box(V(w + 1.4, 0.6, d + 0.8), CF(cx, eave + 0.3, cz), CREAM, "Concrete", { Name = "HoistCornice" })
+	b:Roof(V(w + 1.2, 3.6, d + 0.6), CF(cx, eave + 0.6 + 1.8, cz), ROOF, "Slate", { Name = "HoistRoof" })
+	-- Roof lantern: a raised clerestory with glowing panes along the ridge.
+	b:Box(V(9, 1.6, 2.6), CF(cx, eave + 0.6 + 3.6 + 0.2, cz), CREAM, "Concrete", { Name = "HoistLantern" })
+	for _, k in { -1, 1 } do
+		b:Box(V(7.6, 0.9, 0.12), CF(cx, eave + 4.5, cz + k * 1.32), WARM, "Neon", { Name = "HoistLanternGlow", CastShadow = false })
+	end
+	b:Box(V(9.6, 0.35, 3.2), CF(cx, eave + 5.35, cz), ROOF, "Slate", { Name = "HoistLanternCap" })
+	-- Lit arched windows on the yard face (right of the tower) and the fence side.
+	local function window(cf: CFrame, width: number, height: number)
+		b:Box(V(width, height, 0.12), cf, WARM, "Neon", { Name = "HoistWindow", CastShadow = false })
+		b:CylZ(0.12, width, cf * CF(0, height / 2, 0), WARM, "Neon", { Name = "HoistWindowArch", CastShadow = false })
+		b:Box(V(width + 0.6, 0.3, 0.5), cf * CF(0, -height / 2 - 0.15, 0.1), CREAM, "Concrete", { Name = "HoistSill" })
+		b:Detail(function()
+			b:Box(V(0.14, height, 0.16), cf * CF(0, 0, -0.04), RUST_DARK, "Metal", { Name = "HoistMullion" })
+			b:Box(V(width, 0.14, 0.16), cf * CF(0, 0.2, -0.04), RUST_DARK, "Metal", { Name = "HoistMullion" })
+		end)
+	end
+	for _, x in { 26.6, 30.85 } do
+		window(CF(x, 6.4, z1 + 0.04), 1.5, 4.6)
+	end
+	for _, z in { -46.5, -52.3, -58.1 } do
+		window(CF(x1 + 0.04, 6.4, z) * ANG(0, math.pi / 2, 0), 2.2, 4.6)
+	end
+	-- Door with a lamp and a little step on the yard face.
+	b:Box(V(2.3, 4.6, 0.2), CF(28.8, 4.1, z1 + 0.05), C(92, 60, 40), "WoodPlanks", { Name = "HoistDoor" })
+	b:Box(V(2.9, 0.4, 0.4), CF(28.8, 6.6, z1 + 0.15), CREAM, "Concrete", { Name = "HoistDoorHead" })
+	b:Box(V(0.6, 0.6, 0.4), CF(28.8, 7.3, z1 + 0.25), WARM, "Neon", { Name = "HoistDoorLamp", CastShadow = false })
+	-- Chimney stack with bands and a warning light, a little smoke.
+	local stack = CF(29.6, 0, -58.6)
+	for i = 0, 3 do
+		b:CylY(4.6, 2.3 - i * 0.12, stack * CF(0, eave + 1.5 + i * 4.5, 0), i % 2 == 0 and RUST or CREAM, "Brick", { Name = "Chimney" })
+	end
+	local stackTop = eave + 1.5 + 3 * 4.5 + 2.3
+	b:CylY(0.6, 2.4, stack * CF(0, stackTop + 0.3, 0), RUST_DARK, "Metal", { Name = "ChimneyCap" })
+	local warn = b:Ball(0.7, stack * CF(0, stackTop + 1.0, 0), C(255, 60, 40), "Neon", { Name = "ChimneyBeacon", CastShadow = false })
+	local smoke = Instance.new("ParticleEmitter")
+	smoke.Name = "ChimneySmoke"
+	smoke.Texture = "rbxasset://textures/particles/smoke_main.dds"
+	smoke.Rate = 1.2
+	smoke.Lifetime = NumberRange.new(5, 8)
+	smoke.Speed = NumberRange.new(1.5, 2.5)
+	smoke.SpreadAngle = Vector2.new(8, 8)
+	smoke.Size = NumberSequence.new(1.6, 6)
+	smoke.Color = ColorSequence.new(C(200, 200, 205))
+	smoke.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.7), NumberSequenceKeypoint.new(1, 1) })
+	smoke.RotSpeed = NumberRange.new(-12, 12)
+	smoke.Rotation = NumberRange.new(0, 360)
+	smoke.LightInfluence = 1
+	smoke.EmissionDirection = Enum.NormalId.Top
+	smoke.Parent = warn
+	-- Cable gantry from the machine room down to the hoist house roof.
+	for _, x in { 22.8, 25.0 } do
+		b:Beam(V(x, 22.0, -41.6), V(x, 16.4, -51.0), 0.35, RUST_DARK, "Metal", { Name = "Gantry" })
+		b:Rod(V(x + 0.6, 22.4, -41.6), V(x + 0.6, 16.8, -51.0), 0.22, ROPE, "Metal", { Name = "GantryCable" })
+	end
+	b:Detail(function()
+		for i = 1, 3 do
+			local t = i / 4
+			local p = V(23.9, 22.0 + (16.4 - 22.0) * t, -41.6 + (-51.0 + 41.6) * t)
+			b:Box(V(2.6, 0.22, 0.3), CF(p), RUST_DARK, "Metal", { Name = "GantryTie" })
+		end
+		-- Crates and a barrel by the door.
+		b:Box(V(1.3, 1.3, 1.3), CF(26.4, 1.65, -41.3) * ANG(0, rad(12), 0), C(150, 104, 60), "WoodPlanks", { Name = "Crate" })
+	end)
+end
+
+function S.Headframe(options: { Annex: boolean? }?): Model
 	local b = Forge.Builder("MineHeadframe")
 	local s = Layout.Shaft
-	local O = CF(s.X, Layout.GroundY, s.Z)
-	local h = s.Half -- 4
-	-- COLLAR: concrete curb around the 8 x 8 opening, steel corner plates.
-	local cw, ch = 1.6, 0.8
-	for i, row in { { 0, -(h + cw / 2), 2 * h + 2 * cw, cw }, { 0, h + cw / 2, 2 * h + 2 * cw, cw }, { -(h + cw / 2), 0, cw, 2 * h }, { h + cw / 2, 0, cw, 2 * h } } do
-		collide(b:Box(V(row[3], ch, row[4]), O * CF(row[1], ch / 2, row[2]), CONCRETE, "Concrete", { Name = "Collar" .. i }))
-	end
-	for _, x in { -1, 1 } do
-		for _, z in { -1, 1 } do
-			b:Box(V(cw + 0.1, 0.12, cw + 0.1), O * CF(x * (h + cw / 2), ch + 0.06, z * (h + cw / 2)), IRON, "DiamondPlate", { Name = "CollarPlate" })
-		end
-	end
-	-- Edge of the opening: a dark band reads as depth from above.
-	b:Box(V(2 * h, 0.05, 0.25), O * CF(0, ch + 0.03, h - 0.12), SAFETY, "SmoothPlastic", { Name = "EdgeStripe" })
-	b:Box(V(2 * h, 0.05, 0.25), O * CF(0, ch + 0.03, -h + 0.12), SAFETY, "SmoothPlastic", { Name = "EdgeStripe" })
+	local SX, SZ, G = s.X, s.Z, Layout.GroundY
+	local TC, TOP = 4.7, 21.2 -- column centre offset from the shaft axis, tower body top
+	local front = SX - TC - 0.65 -- x' 14.65: front face of the tower (the walkway side)
 
-	-- TOWER: four legs tapering from the collar corners to the head platform.
-	local top = 17
-	local footR, headR = h + 0.8, 2.6
-	local function leg(x, z, y)
-		local f = (y - ch) / (top - ch)
-		local r = footR + (headR - footR) * f
-		return O * V(x * r, y, z * r)
-	end
+	------------------------------------------------------------------------------------------------
+	-- TOWER: four columns round the 8 x 8 opening, panel walls, the doorway on -x'.
 	for _, x in { -1, 1 } do
 		for _, z in { -1, 1 } do
-			b:Beam(leg(x, z, ch), leg(x, z, top), 0.7, STEEL, "Metal", { Name = "Leg" })
-			b:Box(V(1.3, 0.3, 1.3), CF(leg(x, z, ch) + V(0, 0.15, 0)), IRON, "Metal", { Name = "LegShoe" })
+			collide(b:Box(V(1.3, TOP - G, 1.3), CF(SX + x * TC, (G + TOP) / 2, SZ + z * TC), RUST_DARK, "Metal", { Name = "TowerColumn" }))
+			b:Box(V(1.7, 0.5, 1.7), CF(SX + x * TC, G + 0.25, SZ + z * TC), CONCRETE, "Concrete", { Name = "ColumnFoot" })
 		end
 	end
-	-- Girts at two heights on every face, X braces (the gate face -x is open below the first girt).
-	local girts = { ch, 6.2, 11.6, top }
-	for gi = 2, 3 do
-		local y = girts[gi]
-		for _, pair in { { { -1, -1 }, { 1, -1 } }, { { -1, 1 }, { 1, 1 } }, { { -1, -1 }, { -1, 1 } }, { { 1, -1 }, { 1, 1 } } } do
-			b:Beam(leg(pair[1][1], pair[1][2], y), leg(pair[2][1], pair[2][2], y), 0.45, STEEL_DARK, "Metal", { Name = "Girt" })
-		end
+	local span = 2 * TC - 1.3 -- 8.1 between the columns
+	local wallY, wallH = (G + TOP) / 2, TOP - G
+	collide(b:Box(V(0.6, wallH, span), CF(SX + 4.6, wallY, SZ), RUST, "Metal", { Name = "TowerWall" }))
+	collide(b:Box(V(span, wallH, 0.6), CF(SX, wallY, SZ - 4.6), RUST, "Metal", { Name = "TowerWall" }))
+	-- +z wall with a tall window onto the cage (the yard watches the elevator).
+	local wz = SZ + 4.6
+	collide(b:Box(V(span, 1.2, 0.6), CF(SX, G + 0.6, wz), RUST, "Metal", { Name = "TowerWall" }))
+	collide(b:Box(V(span, TOP - 9.8, 0.6), CF(SX, (9.8 + TOP) / 2, wz), RUST, "Metal", { Name = "TowerWall" }))
+	for _, k in { -1, 1 } do
+		collide(b:Box(V(1.85, 7.6, 0.6), CF(SX + k * 3.125, 6.0, wz), RUST, "Metal", { Name = "TowerWall" }))
 	end
-	for gi = 1, 3 do
-		local y0, y1 = girts[gi], girts[gi + 1]
-		for _, face in { { { -1, -1 }, { 1, -1 } }, { { -1, 1 }, { 1, 1 } }, { { 1, -1 }, { 1, 1 } }, { { -1, -1 }, { -1, 1 } } } do
-			local gateFace = face[1][1] == -1 and face[2][1] == -1
-			if not (gateFace and gi == 1) then
-				local a0, a1 = face[1], face[2]
-				b:Beam(leg(a0[1], a0[2], y0), leg(a1[1], a1[2], y1), 0.3, STEEL_DARK, "Metal", { Name = "Brace" })
-				if gi ~= 2 or not gateFace then
-					b:Beam(leg(a1[1], a1[2], y0), leg(a0[1], a0[2], y1), 0.3, STEEL_DARK, "Metal", { Name = "Brace" })
+	collide(b:Box(V(4.4, 7.6, 0.15), CF(SX, 6.0, wz + 0.15), C(170, 225, 255), "Glass", { Name = "ShaftWindow", Transparency = 0.6, CastShadow = false }))
+	for _, row in { { 0, 9.9, 4.9, 0.3 }, { 0, 2.1, 4.9, 0.3 }, { -2.35, 6.0, 0.3, 8.0 }, { 2.35, 6.0, 0.3, 8.0 } } do
+		b:Box(V(row[3], row[4], 0.25), CF(SX + row[1], row[2], wz + 0.38), CREAM, "Metal", { Name = "WindowFrame" })
+	end
+	-- Header panel over the doorway (the door opening: z -40..-32, y 1..10).
+	collide(b:Box(V(0.6, TOP - 10, span), CF(SX - 4.6, (10 + TOP) / 2, SZ), RUST, "Metal", { Name = "TowerWall" }))
+	-- Cream bands round the tower and a concrete skirting.
+	for _, y in { 10.4, 16.0 } do
+		b:Box(V(0.25, 0.45, span + 2.6), CF(SX + TC + 0.78, y, SZ), CREAM, "Metal", { Name = "TowerBand" })
+		b:Box(V(span + 2.6, 0.45, 0.25), CF(SX, y, SZ - TC - 0.78), CREAM, "Metal", { Name = "TowerBand" })
+	end
+	b:Box(V(span + 2.6, 0.45, 0.25), CF(SX, 16.0, SZ + TC + 0.78), CREAM, "Metal", { Name = "TowerBand" })
+	b:Box(V(0.4, 0.9, span), CF(SX + TC + 0.3, G + 0.45, SZ), CONCRETE, "Concrete", { Name = "Skirting" })
+	b:Box(V(span, 0.9, 0.4), CF(SX, G + 0.45, SZ - TC - 0.3), CONCRETE, "Concrete", { Name = "Skirting" })
+	b:Detail(function()
+		-- Rivets down the corner columns.
+		for _, x in { -1, 1 } do
+			for _, z in { -1, 1 } do
+				for y = 3, 19, 4 do
+					b:Ball(0.28, CF(SX + x * (TC + 0.66), y, SZ + z * TC), IRON, "Metal", { Name = "Rivet", CastShadow = false })
 				end
 			end
 		end
-	end
-
-	-- HEAD PLATFORM: steel deck reaching out over the backstays, yellow railing.
-	local deckX0, deckX1 = -3.2, 5.8
-	local deckCF = O * CF((deckX0 + deckX1) / 2, top + 0.2, 0)
-	b:Box(V(deckX1 - deckX0, 0.4, 6.2), deckCF, IRON, "DiamondPlate", { Name = "HeadDeck" })
-	for _, z in { -3, 3 } do
-		b:Box(V(deckX1 - deckX0, 0.2, 0.2), O * CF((deckX0 + deckX1) / 2, top + 1.6, z), SAFETY, "Metal", { Name = "Rail" })
-	end
-	b:Box(V(0.2, 0.2, 6.2), O * CF(deckX0, top + 1.6, 0), SAFETY, "Metal", { Name = "Rail" })
-	for _, x in { deckX0, deckX1 } do
-		for _, z in { -3, 3 } do
-			b:Box(V(0.2, 1.6, 0.2), O * CF(x, top + 1.0, z), SAFETY, "Metal", { Name = "RailPost" })
+		-- Service ladder up the -z face to the machine room.
+		for _, x in { 22.0, 23.1 } do
+			b:Box(V(0.18, TOP - G, 0.18), CF(x, (G + TOP) / 2, SZ - TC - 0.95), SAFETY, "Metal", { Name = "LadderRail" })
 		end
-	end
-	-- Warning beacon.
-	b:Ball(0.7, O * CF(deckX0 + 0.4, top + 2.1, -3), C(255, 70, 40), "Neon", { Name = "Beacon" })
+		for y = 2.5, TOP - 1, 1.6 do
+			b:Box(V(1.1, 0.12, 0.12), CF(22.55, y, SZ - TC - 0.95), IRON, "Metal", { Name = "LadderRung" })
+		end
+	end)
 
-	-- HEAD SHEAVE: the big spoked wheel, its rim tangent over the shaft centre.
-	local R = 3.4
-	local wheelC = O * CF(R, top + 0.4 + R + 0.5, 0)
-	for _, z in { -1.1, 1.1 } do
-		b:Box(V(1.4, R + 0.6, 0.5), wheelC * CF(0, -(R + 0.6) / 2, z), STEEL_DARK, "Metal", { Name = "Bearing" })
+	------------------------------------------------------------------------------------------------
+	-- DOORWAY: threshold, glowing frame, the hazard lintel "Gate", call panel, freight doors.
+	collide(b:Box(V(1.3, 0.12, 8), CF(front + 0.65, G + 0.04, SZ), SAFETY, "DiamondPlate", { Name = "Threshold" }))
+	b:Detail(function()
+		for i = -3, 3 do
+			b:Box(V(1.32, 0.04, 0.3), CF(front + 0.65, G + 0.11, SZ + i * 1.1) * ANG(0, rad(40), 0), INK, "SmoothPlastic", { Name = "ThresholdStripe", CastShadow = false })
+		end
+	end)
+	for _, k in { -1, 1 } do
+		b:Box(V(0.14, 9.0, 0.3), CF(front - 0.06, G + 4.5, SZ + k * 3.95), WARM, "Neon", { Name = "DoorGlow", CastShadow = false })
 	end
-	local wheel = b:Folder("Wheel")
-	b:Ring(wheelC * ANG(math.pi / 2, 0, 0), R, 0.5, IRON, "Metal", 18, { Name = "Rim" })
-	b:Ring(wheelC * ANG(math.pi / 2, 0, 0), R - 0.55, 0.22, SAFETY, "Metal", 14, { Name = "Groove" })
-	for i = 0, 7 do
-		local a = i / 8 * 2 * math.pi
-		b:Rod(wheelC.Position, (wheelC * CF(math.cos(a) * (R - 0.3), math.sin(a) * (R - 0.3), 0)).Position, 0.24, IRON, "Metal", { Name = "Spoke" })
-	end
-	b:CylZ(1.0, 1.1, wheelC, SAFETY, "Metal", { Name = "Hub" })
-	b:CylZ(2.6, 0.35, wheelC, IRON, "Metal", { Name = "Axle" })
-	b:Into(b.Model)
-	wheel:SetAttribute("SpinAxisZ", true)
-
-	-- BACKSTAYS from the head down to the ground towards the hoist (+x).
-	local stayFoot = 11.2
-	for _, z in { -2.8, 2.8 } do
-		b:Beam(O * V(deckX1 - 0.3, top, z), O * V(stayFoot, ch, z * 1.25), 0.6, STEEL, "Metal", { Name = "Backstay" })
-		collide(b:Box(V(1.6, 0.8, 1.6), O * CF(stayFoot, 0.4, z * 1.25), CONCRETE, "Concrete", { Name = "StayFooting" }))
-	end
-	b:Beam(O * V(8.4, 6.2, -3.3), O * V(8.4, 6.2, 3.3), 0.4, STEEL_DARK, "Metal", { Name = "StayTie" })
-
-	-- HOIST: winding drum on a concrete base, motor housing.
-	local hoist = O * CF(8.4, 0, 0)
-	collide(b:Box(V(3.6, 0.7, 5.6), hoist * CF(0, 0.35, 0), CONCRETE, "Concrete", { Name = "HoistBase" }))
-	for _, z in { -2.2, 2.2 } do
-		b:Box(V(1.6, 2.1, 0.5), hoist * CF(0, 1.75, z), IRON, "Metal", { Name = "DrumStand" })
-	end
-	b:CylZ(4.0, 2.4, hoist * CF(0, 2.5, 0), C(60, 60, 64), "Metal", { Name = "Drum" })
-	for _, z in { -1.9, 1.9 } do
-		b:CylZ(0.25, 3.0, hoist * CF(0, 2.5, z), SAFETY, "Metal", { Name = "DrumFlange" })
-	end
-	collide(b:Box(V(1.8, 1.7, 1.6), hoist * CF(1.7, 1.55, -1.7), C(66, 108, 74), "Metal", { Name = "Motor" }))
-
-	-- CABLES: wheel -> drum, and the hoist rope down the shaft centre to the collar.
-	local rimTop = wheelC * CF(math.cos(math.rad(35)) * R, math.sin(math.rad(35)) * R, 0)
-	b:Rod(rimTop.Position, (hoist * CF(-0.2, 3.65, 0)).Position, 0.18, ROPE, "Metal", { Name = "Cable" })
-	b:Rod((wheelC * CF(-R, 0, 0)).Position, (O * CF(0, ch + 1.2, 0)).Position, 0.18, ROPE, "Metal", { Name = "HoistRope" })
-
-	-- GATE on the walkway side (-x): posts, striped bar, call panel with a lamp.
-	local gateX = -(h + cw)
-	for _, z in { -h, h } do
-		collide(b:Box(V(0.5, 3.6, 0.5), O * CF(gateX - 0.3, ch + 1.8, z), SAFETY, "Metal", { Name = "GatePost" }))
-	end
-	local gate = b:Box(V(0.3, 0.35, 2 * h), O * CF(gateX - 0.3, ch + 3.3, 0), C(30, 30, 30), "Metal", { Name = "Gate" })
-	for i = -3, 3 do
-		b:Box(V(0.32, 0.37, 0.55), O * CF(gateX - 0.3, ch + 3.3, i * 1.1), SAFETY, "SmoothPlastic", { Name = "GateStripe" })
-	end
-	local panel = b:Box(V(0.3, 1.4, 1.0), O * CF(gateX - 0.6, ch + 1.6, -h - 0.9), C(52, 56, 62), "Metal", { Name = "CallPanel" })
-	b:Box(V(0.12, 0.35, 0.35), panel.CFrame * CF(-0.18, 0.25, 0), C(80, 255, 120), "Neon", { Name = "CallLamp" })
-	b:Box(V(0.5, ch + 0.9, 0.5), O * CF(gateX - 0.6, (ch + 0.9) / 2, -h - 0.9), IRON, "Metal", { Name = "PanelPost" })
+	b:Box(V(0.14, 0.3, 8.2), CF(front - 0.06, G + 9.0, SZ), WARM, "Neon", { Name = "DoorGlow", CastShadow = false })
+	local gate = collide(b:Box(V(1.0, 1.0, span + 2.8), CF(front + 0.25, 10.5, SZ), SAFETY, "Metal", { Name = "Gate" }))
+	hazard(b, CF(front - 0.27, 10.5, SZ) * ANG(0, math.pi / 2, 0), span + 2.6, 0.8, "GateHazard")
 	local promptAnchor = Instance.new("Attachment")
 	promptAnchor.Name = "PromptAnchor"
-	promptAnchor.Position = V(-0.6, -1.2, 0)
+	-- In the doorway, in front of the doors at chest height (design x' 13, y 4.4).
+	promptAnchor.Position = V(13.0 - (front + 0.25), 4.4 - 10.5, 0)
 	promptAnchor.Parent = gate
-
-	-- SAFETY RAIL round the other three sides of the collar.
-	local rr = h + cw + 0.4
-	for _, row in { { 0, -rr, 2 * rr, 0.18 }, { 0, rr, 2 * rr, 0.18 }, { rr, 0, 0.18, 2 * rr } } do
-		b:Box(V(row[3], 0.18, row[4]), O * CF(row[1], ch + 2.2, row[2]), SAFETY, "Metal", { Name = "CollarRail" })
+	-- Call panel on the left jamb: a big green "down" button.
+	local panel = b:Box(V(0.25, 1.8, 1.0), CF(front - 0.15, 4.6, SZ - TC), C(46, 50, 58), "Metal", { Name = "CallPanel" })
+	b:Ball(0.55, panel.CFrame * CF(-0.16, 0.35, 0), C(80, 255, 130), "Neon", { Name = "CallButton", CastShadow = false })
+	b:Ball(0.4, panel.CFrame * CF(-0.14, -0.35, 0), C(255, 196, 70), "Neon", { Name = "CallButton", CastShadow = false })
+	-- Freight doors (open: the upper leaf sits behind the header panel, the lower leaf under the
+	-- threshold). MineClient slides them shut while the cage is away (attribute Slide = Y move).
+	local doors = b:Folder("Doors")
+	local leafX = SX - 4.12
+	local travel = S.DoorTravel
+	for _, spec in { { "DoorUpper", 1, -travel }, { "DoorLower", -1, travel } } do
+		local leaf = b:Folder(spec[1])
+		leaf:SetAttribute("Slide", spec[3])
+		local open = spec[2] * travel
+		local y = G + travel / 2 + (spec[2] > 0 and travel or 0) + open -- closed centre + open offset
+		b:Box(V(0.24, travel, 8.1), CF(leafX, y, SZ), RUST_DARK, "Metal", { Name = "DoorLeaf", CastShadow = false })
+		local edge = spec[2] > 0 and -travel / 2 + 0.35 or travel / 2 - 0.35
+		hazard(b, CF(leafX - 0.13, y + edge, SZ) * ANG(0, math.pi / 2, 0), 8.0, 0.6, "DoorHazard")
+		if spec[2] > 0 then
+			b:Box(V(0.26, 0.7, 3.4), CF(leafX, y + 0.6, SZ), C(30, 44, 60), "Glass", { Name = "DoorSlot", CastShadow = false })
+		else
+			b:Box(V(0.26, 0.9, 8.1), CF(leafX, y - travel / 2 + 0.6, SZ), IRON, "DiamondPlate", { Name = "DoorKick", CastShadow = false })
+		end
+		b:Into(doors)
 	end
-	for _, p in { { -rr, -rr }, { rr, -rr }, { -rr, rr }, { rr, rr } } do
-		b:Box(V(0.22, 2.2, 0.22), O * CF(p[1], ch + 1.1, p[2]), SAFETY, "Metal", { Name = "CollarRailPost" })
+	b:Into(b.Model)
+
+	------------------------------------------------------------------------------------------------
+	-- FRONT FACE above the canopy: MINE ELEVATOR sign and the depth lamps.
+	local sign = b:Box(V(0.3, 3.8, span + 1.4), CF(front - 0.2, 16.3, SZ), C(30, 26, 26), "Metal", { Name = "ElevatorSign" })
+	b:Box(V(0.4, 0.3, span + 1.8), sign.CFrame * CF(0, 2.05, 0), SAFETY, "Metal", { Name = "SignTrim" })
+	b:Box(V(0.4, 0.3, span + 1.8), sign.CFrame * CF(0, -2.05, 0), SAFETY, "Metal", { Name = "SignTrim" })
+	local _, signBg = surfaceGui(sign, "ElevatorSignGui", Enum.NormalId.Left, 50, 160)
+	local signStroke = Instance.new("UIStroke")
+	signStroke.Color = GOLD
+	signStroke.Thickness = 6
+	signStroke.Parent = signBg
+	text(signBg, "Title", "MINE ELEVATOR", 0.05, 0.08, 0.9, 0.5, C(255, 236, 170))
+	text(signBg, "Arrows", "▼   ▼   ▼", 0.1, 0.6, 0.8, 0.32, CAVE, Enum.Font.GothamBlack, true)
+	local plate = b:Box(V(0.3, 1.5, span), CF(front - 0.15, 19.4, SZ), C(24, 22, 26), "Metal", { Name = "DepthPlate" })
+	for i = 1, 5 do
+		local theme = Themes[i]
+		b:Ball(0.85, plate.CFrame * CF(-0.25, 0, (i - 3) * 1.55), theme.Accent, "Neon", { Name = "DepthLamp" .. i, CastShadow = false })
 	end
 
-	-- FLOODLIGHTS on the upper girt, aimed into the shaft and at the collar.
-	for _, z in { -1, 1 } do
-		local lamp = b:Box(V(0.9, 0.6, 0.9), CF(leg(-1, z, 11.6) + V(0.6, -0.5, -z * 0.6)), C(255, 236, 190), "Neon", { Name = "Floodlight", CastShadow = false })
-		local light = b:Light(lamp, C(255, 226, 170), 22, 1.6, "Spot")
-		;(light :: SpotLight).Face = Enum.NormalId.Bottom
-		;(light :: SpotLight).Angle = 80
-	end
-
-	-- DEPTH SIGN on the +z face (towards the yard), between the legs.
-	local signY = 8.6
-	local sign = b:Box(V(5.2, 2.9, 0.3), O * CF(0, signY, footR - (footR - headR) * (signY - ch) / (top - ch) + 0.35), C(36, 30, 26), "Metal", { Name = "DepthSign" })
-	b:Box(V(5.6, 0.3, 0.45), sign.CFrame * CF(0, 1.6, 0), SAFETY, "Metal", { Name = "SignTrim" })
-	b:Box(V(5.6, 0.3, 0.45), sign.CFrame * CF(0, -1.6, 0), SAFETY, "Metal", { Name = "SignTrim" })
+	------------------------------------------------------------------------------------------------
+	-- +Z FACE (towards the yard): the depth sign, down-chevrons and the paw emblem.
+	local signZ = SZ + TC + 0.8
+	local depthSign = b:Box(V(7.2, 4.4, 0.3), CF(SX, 13.0, signZ), C(36, 30, 26), "Metal", { Name = "DepthSign" })
+	b:Box(V(7.6, 0.3, 0.45), depthSign.CFrame * CF(0, 2.35, 0), SAFETY, "Metal", { Name = "SignTrim" })
+	b:Box(V(7.6, 0.3, 0.45), depthSign.CFrame * CF(0, -2.35, 0), SAFETY, "Metal", { Name = "SignTrim" })
 	-- The sign faces +z: its Back face (+Z local) points at the yard.
 	local gui = Instance.new("SurfaceGui")
 	gui.Name = "DepthSignGui"
@@ -229,8 +403,8 @@ function S.Headframe(): Model
 	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
 	gui.PixelsPerStud = 60
 	gui.LightInfluence = 0.1
-	gui.MaxDistance = 140
-	gui.Parent = sign
+	gui.MaxDistance = 160
+	gui.Parent = depthSign
 	local bg = Instance.new("Frame")
 	bg.Name = "Back"
 	bg.Size = UDim2.fromScale(1, 1)
@@ -242,24 +416,290 @@ function S.Headframe(): Model
 	stroke.Color = Themes[1].Accent
 	stroke.Thickness = 8
 	stroke.Parent = bg
-	local function label(name, text, y, h2, color, font)
-		local t = Instance.new("TextLabel")
-		t.Name = name
-		t.BackgroundTransparency = 1
-		t.Size = UDim2.fromScale(0.92, h2)
-		t.Position = UDim2.fromScale(0.04, y)
-		t.Font = font or Enum.Font.GothamBlack
-		t.TextScaled = true
-		t.TextColor3 = color
-		t.Text = text
-		t.TextStrokeTransparency = 0.5
-		t.Parent = bg
-		return t
+	text(bg, "Caption", "DOGS DIG AT", 0.04, 0.06, 0.92, 0.2, C(255, 226, 170), Enum.Font.GothamBold)
+	text(bg, "Layer", Themes[1].Title, 0.04, 0.3, 0.92, 0.42, Themes[1].Accent)
+	text(bg, "Depth", Themes[1].Depth, 0.04, 0.74, 0.92, 0.2, C(230, 230, 236), Enum.Font.GothamBold)
+	for i, y in { 18.6, 17.0 } do
+		chevron(b, CF(SX, y, signZ + 0.05) * ANG(0, math.pi, 0), i == 1 and 0.9 or 1.0, CAVE, "DownChevron")
 	end
-	label("Caption", "DOGS DIG AT", 0.06, 0.2, C(255, 226, 170), Enum.Font.GothamBold)
-	label("Layer", Themes[1].Title, 0.3, 0.42, Themes[1].Accent)
-	label("Depth", Themes[1].Depth, 0.74, 0.2, C(230, 230, 236), Enum.Font.GothamBold)
 
+	------------------------------------------------------------------------------------------------
+	-- MACHINE ROOM on top of the tower, lit windows all round.
+	local mr0, mr1 = TOP, 27.0
+	b:Box(V(12.2, 0.6, 12.2), CF(SX, mr0 + 0.3, SZ), STEEL_DARK, "Metal", { Name = "MachineFloor" })
+	local lowTop, winTop = mr0 + 1.9, mr0 + 4.2
+	for _, f in { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } } do
+		local alongX = f[1] == 0
+		local cf = CF(SX + f[1] * 5.6, 0, SZ + f[2] * 5.6)
+		local function piece(name: string, len: number, y0: number, y1: number, offset: number, color: Color3, mat: string)
+			local size = alongX and V(len, y1 - y0, 0.4) or V(0.4, y1 - y0, len)
+			local off = alongX and V(offset, 0, 0) or V(0, 0, offset)
+			b:Box(size, cf * CF(off.X, (y0 + y1) / 2, off.Z), color, mat, { Name = name })
+		end
+		piece("MachineWall", 11.2, mr0 + 0.6, lowTop, 0, CREAM, "Concrete")
+		piece("MachineWall", 11.2, winTop, mr1, 0, CREAM, "Concrete")
+		for i = -1, 1 do
+			piece("MachineWindow", 2.6, lowTop, winTop, i * 3.5, WARM, "Neon")
+		end
+		for i = -1, 1, 2 do
+			piece("MachineMullion", 0.9, lowTop, winTop, i * 1.75, CREAM, "Concrete")
+		end
+	end
+	b:Box(V(10.6, winTop - lowTop, 10.6), CF(SX, (lowTop + winTop) / 2, SZ), C(40, 36, 34), "SmoothPlastic", { Name = "MachineCore", CastShadow = false })
+	for _, x in { -1, 1 } do
+		for _, z in { -1, 1 } do
+			b:Box(V(0.8, mr1 - mr0, 0.8), CF(SX + x * 5.6, (mr0 + mr1) / 2, SZ + z * 5.6), RUST_DARK, "Metal", { Name = "MachinePost" })
+		end
+	end
+	b:Box(V(13.2, 0.3, 13.2), CF(SX, mr1 + 0.05, SZ), SAFETY, "Metal", { Name = "RoofTrim" })
+	b:Box(V(13.0, 0.5, 13.0), CF(SX, mr1 + 0.45, SZ), ROOF, "Slate", { Name = "MachineRoof" })
+	local roofY = mr1 + 0.7
+	-- DOGROTS paw emblem on the yard side of the machine room.
+	local paw = CF(SX, mr0 + 3.05, SZ + 5.85)
+	b:Disc(paw * ANG(math.pi / 2, 0, 0), 2.6, 0.2, INK, "Metal", { Name = "PawBadge" })
+	b:Ellipsoid(V(1.0, 0.8, 0.2), paw * CF(0, -0.3, 0.12), GOLD, "Neon", { Name = "PawPad", CastShadow = false })
+	for i = -1.5, 1.5 do
+		local a = rad(i * 32)
+		b:Ball(0.42, paw * CF(math.sin(a) * 0.82, 0.25 + math.cos(a) * 0.45, 0.12), GOLD, "Neon", { Name = "PawToe", CastShadow = false })
+	end
+	-- Beacons on the roof corners.
+	for _, z in { -1, 1 } do
+		b:Box(V(0.3, 1.4, 0.3), CF(SX - 5.9, roofY + 0.7, SZ + z * 5.9), IRON, "Metal", { Name = "BeaconMast" })
+		b:Ball(0.75, CF(SX - 5.9, roofY + 1.6, SZ + z * 5.9), C(255, 70, 40), "Neon", { Name = "Beacon", CastShadow = false })
+	end
+	b:Detail(function()
+		b:Box(V(2.2, 1.2, 1.6), CF(SX - 2.6, roofY + 0.6, SZ - 3.6), IRON, "Metal", { Name = "RoofVent" })
+		b:Box(V(2.4, 0.2, 1.8), CF(SX - 2.6, roofY + 1.3, SZ - 3.6), STEEL_DARK, "Metal", { Name = "RoofVentCap" })
+	end)
+
+	------------------------------------------------------------------------------------------------
+	-- HEAD SHEAVE on an A-frame on the roof; its rim is tangent over the shaft axis (the cage
+	-- rope) on one side and over the counterweight channel on the other.
+	local R = 3.4
+	local wheelC = CF(SX + R, roofY + R + 0.9, SZ)
+	for _, z in { -1.5, 1.5 } do
+		for _, x in { SX + 0.6, SX + 2 * R - 0.6 } do
+			b:Beam(V(x, roofY, SZ + z), V(SX + R, wheelC.Y, SZ + z * 0.95), 0.45, RUST, "Metal", { Name = "SheaveLeg" })
+		end
+		b:Box(V(1.0, 1.0, 0.5), CF(SX + R, wheelC.Y, SZ + z * 0.95), STEEL_DARK, "Metal", { Name = "Bearing" })
+	end
+	b:Beam(V(SX + 0.9, roofY + 1.0, SZ - 1.5), V(SX + 0.9, roofY + 1.0, SZ + 1.5), 0.3, RUST_DARK, "Metal", { Name = "SheaveTie" })
+	b:Beam(V(SX + 2 * R - 0.9, roofY + 1.0, SZ - 1.5), V(SX + 2 * R - 0.9, roofY + 1.0, SZ + 1.5), 0.3, RUST_DARK, "Metal", { Name = "SheaveTie" })
+	local wheel = b:Folder("Wheel")
+	b:Ring(wheelC * ANG(math.pi / 2, 0, 0), R, 0.5, IRON, "Metal", 18, { Name = "Rim" })
+	b:Ring(wheelC * ANG(math.pi / 2, 0, 0), R - 0.55, 0.22, SAFETY, "Metal", 14, { Name = "Groove" })
+	for i = 0, 7 do
+		local a = i / 8 * 2 * math.pi
+		b:Rod(wheelC.Position, (wheelC * CF(math.cos(a) * (R - 0.3), math.sin(a) * (R - 0.3), 0)).Position, 0.24, i % 2 == 0 and RUST or IRON, "Metal", { Name = "Spoke" })
+	end
+	b:CylZ(1.0, 1.1, wheelC, SAFETY, "Metal", { Name = "Hub" })
+	b:CylZ(2.9, 0.35, wheelC, IRON, "Metal", { Name = "Axle" })
+	b:Into(b.Model)
+	wheel:SetAttribute("SpinAxisZ", true)
+	b:Rod(V(SX, wheelC.Y, SZ), V(SX, roofY - 0.1, SZ), 0.2, ROPE, "Metal", { Name = "HoistRope" })
+
+	------------------------------------------------------------------------------------------------
+	-- COUNTERWEIGHT channel on the +x' face; the weight rides it when the cage moves.
+	local cwX = SX + 2 * R -- x' 26.8, under the sheave's far rim
+	b:Box(V(0.3, 19.6, 3.4), CF(SX + TC + 0.85, G + 10.2, SZ), STEEL_DARK, "Metal", { Name = "ChannelBack" })
+	for _, k in { -1, 1 } do
+		b:Box(V(2.6, 19.6, 0.3), CF(cwX - 0.2, G + 10.2, SZ + k * 1.55), SAFETY, "Metal", { Name = "ChannelRail" })
+	end
+	b:Box(V(2.8, 0.4, 3.6), CF(cwX - 0.2, G + 0.2, SZ), CONCRETE, "Concrete", { Name = "ChannelBuffer" })
+	local cwY = 12.0
+	local cw = b:Folder("Counterweight")
+	cw:SetAttribute("Travel", 7.5)
+	b:Box(V(2.0, 3.0, 2.4), CF(cwX - 0.1, cwY, SZ), STEEL_DARK, "Metal", { Name = "Weight" })
+	for _, y in { -0.8, 0.8 } do
+		b:Box(V(2.05, 0.45, 2.45), CF(cwX - 0.1, cwY + y, SZ), SAFETY, "SmoothPlastic", { Name = "WeightBand" })
+	end
+	b:Box(V(0.5, 0.6, 0.5), CF(cwX, cwY + 1.8, SZ), IRON, "Metal", { Name = "WeightHook" })
+	b:Into(b.Model)
+	local counterRope = b:Rod(V(cwX, wheelC.Y, SZ), V(cwX, cwY + 2.1, SZ), 0.18, ROPE, "Metal", { Name = "CounterRope" })
+	counterRope:SetAttribute("TopY", wheelC.Y)
+
+	------------------------------------------------------------------------------------------------
+	-- PORCH: plated deck, canopy on two posts, pendant lamps, floor arrows.
+	local px0, px1 = 10.6, front + 0.15
+	collide(b:Box(V(px1 - px0, 0.12, 12), CF((px0 + px1) / 2, G + 0.04, SZ), IRON, "DiamondPlate", { Name = "PorchDeck" }))
+	for i = 0, 1 do
+		local x = 12.0 + i * 1.5
+		for _, k in { -1, 1 } do
+			b:Box(V(0.36, 0.03, 1.7), CF(x, G + 0.115, SZ + k * 0.62) * ANG(0, rad(-k * 42), 0), SAFETY, "SmoothPlastic", { Name = "FloorArrow", CastShadow = false })
+		end
+	end
+	b:Detail(function()
+		for i = 0, 5 do
+			b:Box(V(0.4, 0.03, 2.0), CF(px0 + 0.25, G + 0.115, SZ - 5 + i * 2), i % 2 == 0 and SAFETY or INK, "SmoothPlastic", { Name = "DeckEdge", CastShadow = false })
+		end
+	end)
+	for _, k in { -1, 1 } do
+		local z = SZ + k * 6.0
+		collide(b:Box(V(0.6, 10.0, 0.6), CF(10.9, G + 5.0, z), RUST_DARK, "Metal", { Name = "CanopyPost" }))
+		b:Box(V(0.9, 0.4, 0.9), CF(10.9, G + 0.2, z), CONCRETE, "Concrete", { Name = "CanopyPostFoot" })
+		b:Beam(V(10.9, 9.2, z), V(13.4, 10.95, z), 0.3, RUST_DARK, "Metal", { Name = "CanopyBrace" })
+	end
+	collide(b:Box(V(front - 10.3, 0.45, 12.8), CF((10.3 + front) / 2, 11.22, SZ), RUST, "Metal", { Name = "Canopy" }))
+	b:Box(V(0.3, 0.75, 12.8), CF(10.25, 11.1, SZ), SAFETY, "Metal", { Name = "CanopyFascia" })
+	b:Box(V(0.12, 0.14, 12.4), CF(10.06, 10.8, SZ), WARM, "Neon", { Name = "CanopyGlow", CastShadow = false })
+	b:Box(V(front - 10.3, 0.12, 12.9), CF((10.3 + front) / 2, 11.5, SZ), CREAM, "Metal", { Name = "CanopyTrim" })
+	for _, k in { -1, 1 } do
+		local z = SZ + k * 3.4
+		b:Box(V(0.12, 0.6, 0.12), CF(12.4, 10.7, z), IRON, "Metal", { Name = "LampStem" })
+		b:CylY(0.35, 1.0, CF(12.4, 10.35, z), STEEL_DARK, "Metal", { Name = "LampShade" })
+		local bulb = b:Ball(0.6, CF(12.4, 10.0, z), WARM, "Neon", { Name = "PorchLamp", CastShadow = false })
+		b:Light(bulb, C(255, 214, 150), 15, 1.15, "Point")
+	end
+
+	------------------------------------------------------------------------------------------------
+	-- UPGRADE TREE kiosk (MineWorld moves the yard's UpgradeAnchor in front of its screen).
+	local kx, kz = 9.25, -31.6
+	collide(b:Box(V(2.4, 0.3, 3.2), CF(kx, G + 0.15, kz), CONCRETE, "Concrete", { Name = "KioskPlinth" }))
+	collide(b:Box(V(1.5, 3.4, 2.4), CF(kx + 0.15, G + 0.3 + 1.7, kz), TEAL, "Metal", { Name = "KioskBody" }))
+	b:Box(V(1.6, 0.25, 2.5), CF(kx + 0.15, G + 3.75, kz), CREAM, "Metal", { Name = "KioskCap" })
+	local screen = b:Box(V(0.22, 1.7, 2.2), CF(kx - 0.68, G + 3.0, kz) * ANG(0, 0, rad(-16)), C(20, 30, 34), "Glass", { Name = "KioskScreen", CastShadow = false })
+	local _, screenBg = surfaceGui(screen, "KioskScreenGui", Enum.NormalId.Left, 60, 60)
+	screenBg.BackgroundColor3 = C(14, 40, 36)
+	text(screenBg, "Icon", "⬆", 0.3, 0.04, 0.4, 0.5, C(120, 255, 190), Enum.Font.GothamBlack, true)
+	text(screenBg, "Caption", "UPGRADE TREE", 0.05, 0.6, 0.9, 0.32, C(230, 255, 240))
+	b:Box(V(0.1, 1.9, 0.12), screen.CFrame * CF(-0.1, 0, 1.15), GOLD, "Neon", { Name = "KioskGlow", CastShadow = false })
+	b:Box(V(0.1, 1.9, 0.12), screen.CFrame * CF(-0.1, 0, -1.15), GOLD, "Neon", { Name = "KioskGlow", CastShadow = false })
+	for _, k in { -1, 1 } do
+		b:Box(V(0.2, 1.1, 0.2), CF(kx + 0.15, G + 4.4, kz + k * 1.1), IRON, "Metal", { Name = "KioskSignPost" })
+	end
+	local board = b:Box(V(0.3, 1.2, 3.2), CF(kx + 0.15, G + 5.5, kz), C(30, 26, 26), "Metal", { Name = "KioskSign" })
+	local _, boardBg = surfaceGui(board, "KioskSignGui", Enum.NormalId.Left, 50, 120)
+	local boardStroke = Instance.new("UIStroke")
+	boardStroke.Color = GOLD
+	boardStroke.Thickness = 5
+	boardStroke.Parent = boardBg
+	text(boardBg, "Title", "UPGRADES", 0.06, 0.12, 0.88, 0.76, GOLD)
+	b:Detail(function()
+		-- A glowing gear on the side of the kiosk.
+		local gear = CF(kx + 0.15, G + 2.3, kz + 1.22)
+		b:Disc(gear * ANG(math.pi / 2, 0, 0), 1.1, 0.08, GOLD, "Neon", { Name = "KioskGear", CastShadow = false })
+		for i = 0, 3 do
+			b:Box(V(1.5, 0.28, 0.08), gear * ANG(0, 0, i * math.pi / 4), GOLD, "Neon", { Name = "KioskGearTooth", CastShadow = false })
+		end
+	end)
+
+	------------------------------------------------------------------------------------------------
+	-- BASE: rocks with glowing cave crystals, glowing cracks: "the caves start right here".
+	local rock, rockDark = C(116, 126, 142), C(84, 92, 108)
+	boulder(b, CF(SX + 6.0, G + 0.7, SZ + 4.9) * ANG(0, rad(20), 0), V(3.0, 2.2, 2.4), rock)
+	boulder(b, CF(SX + 7.4, G + 0.5, SZ + 4.0) * ANG(0, rad(-30), 0), V(2.0, 1.5, 1.8), rockDark)
+	crystals(b, CF(SX + 6.2, G + 1.2, SZ + 4.8) * ANG(rad(-15), 0, rad(10)), 1.0, 4)
+	boulder(b, CF(front - 0.3, G + 0.6, SZ + 5.3) * ANG(0, rad(40), 0), V(2.2, 1.6, 1.4), rock)
+	crystals(b, CF(front - 0.2, G + 0.9, SZ + 5.2) * ANG(rad(-20), 0, 0), 0.7, 3)
+	local glowRock = b:Ellipsoid(V(1.0, 0.7, 1.0), CF(SX + 6.3, G + 1.8, SZ + 4.8), CAVE, "Neon", { Name = "StationCrystalCore", CastShadow = false })
+	b:Light(glowRock, CAVE, 11, 1.2, "Point")
+	for i, c in { { 25.9, -33.2, 25 }, { 27.6, -39.0, -15 }, { 28.0, -40.9, 60 }, { 31.0, -38.6, -70 } } do
+		local cf = CF(c[1], G + 0.03, c[2]) * ANG(0, rad(c[3]), 0)
+		b:Box(V(2.6, 0.04, 0.22), cf, CAVE, "Neon", { Name = "GlowCrack", CastShadow = false })
+		b:Box(V(1.4, 0.04, 0.16), cf * CF(1.6, 0, 0.35) * ANG(0, rad(i % 2 == 0 and 35 or -35), 0), CAVE, "Neon", { Name = "GlowCrack", CastShadow = false })
+	end
+
+	------------------------------------------------------------------------------------------------
+	-- +X' SIDE: transformer, cable conduits into the tower, barrels and crates.
+	local tf = CF(30.7, G, -35.1)
+	collide(b:Box(V(3.0, 3.2, 3.4), tf * CF(0, 1.6, 0), C(66, 108, 74), "Metal", { Name = "Transformer" }))
+	b:Box(V(3.2, 0.3, 3.6), tf * CF(0, 3.35, 0), STEEL_DARK, "Metal", { Name = "TransformerLid" })
+	for _, z in { -0.9, 0.9 } do
+		b:CylY(0.8, 0.5, tf * CF(-0.6, 3.9, z), CREAM, "Ceramic", { Name = "Insulator" })
+	end
+	-- Lightning bolt on the transformer's yard side.
+	for i, seg in { { -0.25, 0.5, 25 }, { 0.1, 0, -30 }, { -0.1, -0.5, 25 } } do
+		b:Box(V(0.25, 0.75, 0.06), tf * CF(seg[1], 1.7 + seg[2], 1.72) * ANG(0, 0, rad(seg[3])), SAFETY, "Neon", { Name = "Bolt" .. i, CastShadow = false })
+	end
+	for _, y in { 2.4, 2.9 } do
+		b:Rod(V(29.2, y, -33.9), V(SX + TC + 0.7, y + 1.4, -33.9), 0.22, STEEL_DARK, "Metal", { Name = "Conduit" })
+	end
+	b:Detail(function()
+		for i = 0, 3 do
+			b:Box(V(0.12, 2.4, 3.0), tf * CF(1.56, 1.6, -1.2 + i * 0.8), IRON, "Metal", { Name = "Fin" })
+		end
+	end)
+	collide(b:CylY(1.7, 1.3, CF(31.1, G + 0.85, -31.0), C(60, 110, 160), "Metal", { Name = "Barrel" }))
+	collide(b:CylY(1.7, 1.3, CF(31.7, G + 0.85, -32.4), RUST, "Metal", { Name = "Barrel" }))
+	collide(b:Box(V(1.6, 1.6, 1.6), CF(29.3, G + 0.8, -30.95) * ANG(0, rad(15), 0), C(150, 104, 60), "WoodPlanks", { Name = "Crate" }))
+	b:Box(V(1.2, 1.2, 1.2), CF(29.4, G + 2.2, -30.9) * ANG(0, rad(-10), 0), C(170, 122, 72), "WoodPlanks", { Name = "Crate" })
+
+	------------------------------------------------------------------------------------------------
+	-- WALKWAY SIDE: lamp post with a "down to the mine" arrow sign.
+	local postCF = CF(9.2, G, -41.4)
+	collide(b:Box(V(0.4, 7.4, 0.4), postCF * CF(0, 3.7, 0), STEEL_DARK, "Metal", { Name = "SignPost" }))
+	b:Box(V(0.9, 1.0, 0.9), postCF * CF(0, 7.7, 0), WARM, "Neon", { Name = "PostLantern", CastShadow = false })
+	b:Box(V(1.2, 0.25, 1.2), postCF * CF(0, 8.3, 0), STEEL_DARK, "Metal", { Name = "PostLanternCap" })
+	local arrow = b:Box(V(0.2, 1.1, 3.6), postCF * CF(0.15, 5.4, 1.4), C(30, 26, 26), "Metal", { Name = "ArrowSign" })
+	local _, arrowBg = surfaceGui(arrow, "ArrowSignGui", Enum.NormalId.Left, 50, 90)
+	arrowBg.BackgroundColor3 = C(40, 34, 30)
+	text(arrowBg, "Title", "DOWN TO THE MINE", 0.04, 0.1, 0.92, 0.8, C(255, 226, 170))
+
+	if options and options.Annex then
+		annex(b)
+	end
+
+	local model = b:Finish()
+	return model
+end
+
+------------------------------------------------------------------------------------------------
+-- Ore depot (server, the mirrored yards): fills the old Workshop lot when the Workshop stood on
+-- the far side of the yard from the shaft. origin: the lot centre on the ground, -Z = towards the
+-- back fence (the depot faces the yard). Ore carts on a siding, a hopper, crates, a lamp and a
+-- sign pointing at the mine elevator (which is on the other side: design +x').
+------------------------------------------------------------------------------------------------
+function S.Depot(origin: CFrame, arrow: string?): Model
+	local b = Forge.Builder("MineDepot")
+	local O = origin
+	collide(b:Box(V(14.6, 0.7, 12.6), O * CF(0, 1.55, -0.6), CONCRETE, "Concrete", { Name = "DepotPlatform" }))
+	b:Box(V(14.8, 0.15, 0.4), O * CF(0, 1.95, 5.6), SAFETY, "SmoothPlastic", { Name = "DepotEdge", CastShadow = false })
+	local top = 1.9
+	-- Siding along x'.
+	for _, z in { 2.1, 3.7 } do
+		b:Box(V(13.6, 0.22, 0.22), O * CF(0, top + 0.31, z), C(120, 110, 100), "Metal", { Name = "Rail" })
+	end
+	for i = -3, 3 do
+		b:Box(V(0.5, 0.2, 2.6), O * CF(i * 1.95, top + 0.1, 2.9), TIMBER_DARK, "WoodPlanks", { Name = "Sleeper" })
+	end
+	b:Box(V(0.6, 0.9, 2.4), O * CF(-6.9, top + 0.45, 2.9), SAFETY, "Metal", { Name = "BufferStop" })
+	local loads = { CAVE, GOLD }
+	for i, x in { -3.4, 2.2 } do
+		local cart = O * CF(x, top, 2.9)
+		collide(b:Box(V(3.0, 1.5, 2.2), cart * CF(0, 1.25, 0), C(96, 70, 48), "WoodPlanks", { Name = "OreCart" }))
+		b:Box(V(3.2, 0.25, 2.4), cart * CF(0, 2.05, 0), IRON, "Metal", { Name = "CartRim" })
+		for _, p in { { -1.0, -1.1 }, { 1.0, -1.1 }, { -1.0, 1.1 }, { 1.0, 1.1 } } do
+			b:CylZ(0.25, 0.8, cart * CF(p[1], 0.45, p[2]), C(40, 40, 44), "Metal", { Name = "CartWheel" })
+		end
+		for k = 0, 2 do
+			b:Ellipsoid(V(0.9, 0.7, 0.9), cart * CF(-0.8 + k * 0.8, 2.25, (k % 2 == 0) and 0.3 or -0.3), k == 1 and loads[i] or C(70, 72, 80), k == 1 and "Neon" or "Slate", { Name = "CartLoad", CastShadow = false })
+		end
+	end
+	-- Ore hopper on a timber trestle at the back.
+	local hopper = O * CF(1.0, top, -3.4)
+	for _, x in { -1.8, 1.8 } do
+		for _, z in { -1.6, 1.6 } do
+			collide(b:Box(V(0.5, 6.4, 0.5), hopper * CF(x, 3.2, z), TIMBER, "WoodPlanks", { Name = "HopperLeg" }))
+		end
+	end
+	b:Box(V(4.6, 2.2, 4.0), hopper * CF(0, 7.5, 0), C(110, 76, 46), "WoodPlanks", { Name = "Hopper" })
+	b:Wedge(V(3.6, 1.6, 3.2), hopper * CF(0, 5.6, 0) * ANG(math.pi, 0, 0), C(96, 64, 40), "WoodPlanks", { Name = "HopperChute" })
+	b:Ellipsoid(V(4.2, 1.2, 3.4), hopper * CF(0, 8.6, 0), C(70, 72, 80), "Slate", { Name = "OrePile" })
+	crystals(b, hopper * CF(-0.6, 8.8, 0.2), 0.6, 3)
+	-- Crates and a lamp post with a sign towards the elevator.
+	collide(b:Box(V(1.8, 1.8, 1.8), O * CF(-5.6, top + 0.9, -3.6) * ANG(0, rad(10), 0), C(150, 104, 60), "WoodPlanks", { Name = "Crate" }))
+	b:Box(V(1.4, 1.4, 1.4), O * CF(-5.5, top + 2.5, -3.5) * ANG(0, rad(-14), 0), C(170, 122, 72), "WoodPlanks", { Name = "Crate" })
+	collide(b:Box(V(1.6, 1.6, 1.6), O * CF(-3.6, top + 0.8, -4.4) * ANG(0, rad(-6), 0), C(140, 96, 56), "WoodPlanks", { Name = "Crate" }))
+	local post = O * CF(6.6, top, 4.9)
+	collide(b:Box(V(0.4, 7.2, 0.4), post * CF(0, 3.6, 0), STEEL_DARK, "Metal", { Name = "DepotLampPost" }))
+	local lantern = b:Box(V(0.9, 1.0, 0.9), post * CF(0, 7.6, 0), WARM, "Neon", { Name = "DepotLantern", CastShadow = false })
+	b:Light(lantern, C(255, 214, 150), 14, 1.0, "Point")
+	b:Box(V(1.2, 0.25, 1.2), post * CF(0, 8.2, 0), STEEL_DARK, "Metal", { Name = "DepotLanternCap" })
+	local sign = b:Box(V(3.8, 1.2, 0.2), post * CF(-1.6, 5.4, 0.25), C(30, 26, 26), "Metal", { Name = "DepotSign" })
+	local _, bg = surfaceGui(sign, "DepotSignGui", Enum.NormalId.Back, 50, 90)
+	bg.BackgroundColor3 = C(40, 34, 30)
+	text(bg, "Title", "MINE ELEVATOR", 0.03, 0.1, 0.76, 0.8, C(255, 226, 170))
+	text(bg, "Arrow", arrow or "►", 0.8, 0.05, 0.17, 0.9, SAFETY, Enum.Font.GothamBlack, true)
 	local model = b:Finish()
 	return model
 end
