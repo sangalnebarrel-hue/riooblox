@@ -1,11 +1,17 @@
 -- Builds the NUCLEAR MUTATION MACHINE in the Mutation Lab (docs/LAB.md): a glass tube from the hall
--- floor through the roof skylight, stacked metal rings, a heavy pedestal with a loading door, a top cap
--- with coils, antenna and warning lights, a liquid column and energy core, a lift and a placer arm, and
--- the console with the ACTIVATE button. Server-only geometry (MutationMachineWorld.server runs Install);
--- tools/qa scenes call Build directly. Moving parts carry fixed names the client cinematic animates
--- (Modules.LabPresentation): Lift.{Carriage,Mast,Platform}, IntakeDoor, Rotor1/Rotor2 (RotorHub root,
--- welded), ChamberLiquid, LiquidSurface, EnergyRail1..4, PlacerArm.{Turret,Upper,Fore,Claw},
--- ButtonGuard, ButtonDome, LeverL/LeverR, GaugeNeedle*, screens ScreenL/ScreenR/MainSign.
+-- floor through the roof skylight, stacked metal rings, a heavy pedestal with a loading door, a liquid
+-- column and energy core, a lift and a placer arm; above the roof the giant reactor column (a twisted
+-- hyperboloid cooling tower: steel lattice, glass drums with glowing joint rings, a coolant pool, the
+-- plasma column with a DNA double helix, a crown with tesla coils, steam and the beacon spire); in the
+-- hall the mega console (command desk with ACTIVATE, wings with key matrices, knobs, the master switch
+-- and the throttle bank, instrument towers with screens, meters and gauges). Server-only geometry
+-- (MutationMachineWorld.server runs Install); tools/qa scenes call Build directly. Moving parts carry
+-- fixed names the client cinematic animates (Modules.LabPresentation): Lift.{Carriage,Mast,Platform},
+-- IntakeDoor, Rotor1/Rotor2 (RotorHub root, welded), ChamberLiquid, LiquidSurface, EnergyRail1..4,
+-- PlacerArm.{Turret,Upper,Fore,Claw}, ButtonGuard, ButtonDome, LeverL/LeverR, Throttle1..4 and
+-- MasterSwitch (Swing attribute), GaugeNeedle*, screens ScreenL/ScreenR/MainSign; the idle show lights
+-- UpperBandGlow (Band), Helix*, Core, UpperLiquid, PoolSurface, PanelKey, PanelLamp, MeterSeg (Index),
+-- WingGlow/DeskGlow and the panels' Led (Row / Col) and Bar (Index) frames.
 -- Old geometry is never deleted: hidden parts keep their original values in MutationMachine_*
 -- attributes (Uninstall restores them).
 local RS = game:GetService("ReplicatedStorage")
@@ -15,7 +21,7 @@ local P = Forge.Palette
 
 local B = {}
 B.Prefix = "MutationMachine_"
-B.MaxParts = 450
+B.MaxParts = 1300
 
 local F = L.Frame
 local T = L.Tube
@@ -231,70 +237,197 @@ local function buildRotor(b: any, name: string, y: number)
 	b:Into(b.Model)
 end
 
-local function buildRoofAndColumn(b: any)
+------------------------------------------------------------------------------------------------
+-- The giant column above the roof (Layout.Tower): a hyperboloid cooling tower
+------------------------------------------------------------------------------------------------
+local W = L.Tower
+local STEAM = "rbxasset://textures/particles/smoke_main.dds"
+
+local function emitter(part: BasePart, name: string, spec: { [string]: any }): ParticleEmitter
+	local e = Instance.new("ParticleEmitter")
+	e.Name = name
+	for k, v in spec do
+		(e :: any)[k] = v
+	end
+	e.Parent = part
+	return e
+end
+local function holder(b: any, name: string, size: Vector3, cf: CFrame): BasePart
+	return b:Box(size, cf, COL.Teal, "SmoothPlastic", { Name = name, Transparency = 1, CastShadow = false })
+end
+
+-- Flat panel between two horizontal chords (a glass facet of a drum) centred at angle a: inner-circle
+-- radii r0 at height y0 and r1 at y1, width w (the wider chord, so the drum has no gaps).
+local function facet(b: any, a: number, r0: number, y0: number, r1: number, y1: number, w: number, color: Color3, mat: string, opts: { [string]: any }?): BasePart
+	local u = Vector3.new(math.cos(a), 0, math.sin(a))
+	local p0 = u * r0 + Vector3.new(0, y0, 0)
+	local p1 = u * r1 + Vector3.new(0, y1, 0)
+	local tangent = Vector3.new(-math.sin(a), 0, math.cos(a))
+	return b:Box(Vector3.new(w, (p1 - p0).Magnitude + 0.06, 0.3), F * CFrame.fromMatrix((p0 + p1) / 2, tangent, (p1 - p0).Unit), color, mat, opts)
+end
+
+local function buildTower(b: any)
 	b:Folder("Column")
+	-- Neck through the roof, the roof deck over the cut skylight (world X 122.5..142, Z 466.5..487.5)
+	-- and the collar where the tube exits.
 	local neckBottom = T.GlassTop + 1.6
 	b:CylY(T.UpperBottom - 1.4 - neckBottom, 17.6, at(0, (neckBottom + T.UpperBottom - 1.4) / 2, 0), COL.Gun, "Metal", { Name = "Neck" })
-	-- Roof deck over the cut skylight (world X 122.5..142, Z 466.5..487.5) and the collar where the tube exits.
 	b:Box(Vector3.new(19.5, 0.9, 21), at(-0.75, 35.85, 0), COL.GunDark, "DiamondPlate", named("RoofDeck", SOLID))
 	b:CylY(1.4, 20.2, at(0, T.UpperBottom - 0.7, 0), COL.Gun, "Metal", named("RoofCollar", SOLID))
 	b:Accent(b:CylY(0.25, 20.6, at(0, T.UpperBottom - 1.3, 0), COL.Teal, "Neon", { Name = "RoofGlow" }))
-	-- Upper column: glass, glowing liquid and the core (the district landmark).
-	local h = T.UpperTop - T.UpperBottom
-	b:CylY(h, T.Radius * 2, at(0, T.UpperBottom + h / 2, 0), COL.Glass, "Glass", { Name = "UpperGlass", Transparency = 0.55, CastShadow = false })
-	b:CylY(h - 1.6, 15.8, at(0, T.UpperBottom + h / 2 - 0.6, 0), L.Liquid, "Neon", { Name = "UpperLiquid", Transparency = 0.42, CastShadow = false })
-	b:Accent(b:CylY(T.UpperTop + 2 - (T.UpperBottom - 1.6), 2.2, at(0, (T.UpperTop + 2 + T.UpperBottom - 1.6) / 2, 0), C3(205, 255, 240), "Neon", { Name = "Core", CastShadow = false }))
-	local holder = b:Box(Vector3.new(0.2, 0.2, 0.2), at(0, 62, 0), COL.Teal, "SmoothPlastic", { Name = "CoreLightPart", Transparency = 1, CastShadow = false })
-	local light = b:Light(holder, COL.Teal, 40, 2.2, "Point")
-	light.Name = "CoreLight"
-	for _, y in { 49.2, 61.2, 73.2 } do
-		b:CylY(1.3, 19.4, at(0, y, 0), COL.Gun, "Metal", { Name = "UpperBand" })
-		b:Accent(b:CylY(0.25, 19.8, at(0, y, 0), COL.Teal, "Neon", { Name = "UpperBandGlow" }))
+	local n = W.Facets
+	-- Foot ring on the roof and the buttresses around it (they stay inside the roof's air handlers).
+	local footR = L.TowerRadius(W.Bottom)
+	ring(b, (W.Plinth + W.Bottom) / 2, footR - 0.3, W.Bottom - W.Plinth, 2.4, n, COL.GunDark, "Metal", named("TowerFoot", SOLID))
+	for i = 0, 7 do
+		local a = (i + 0.5) * math.pi / 4
+		local out = Vector3.new(math.cos(a), 0, math.sin(a))
+		-- Wedge: the tall face (local +Z) leans on the foot ring, the slope runs down outwards.
+		b:Wedge(Vector3.new(1.2, 4.2, 2.6), F * CFrame.fromMatrix(polar(a, footR + 1.2, W.Plinth + 2.1), out:Cross(Vector3.new(0, 1, 0)), Vector3.new(0, 1, 0)), COL.Gun, "Metal", { Name = "FootButtress" })
 	end
-	for i = 0, 3 do
-		local a = math.rad(i * 90)
-		b:Box(Vector3.new(0.8, h, 0.8), F * CFrame.new(polar(a, 9.0, T.UpperBottom + h / 2)), COL.Steel, "Metal", { Name = "UpperRib" })
+	-- Glass shell: one drum of flat facets between each pair of joints, a glowing ring at every joint
+	-- (UpperBandGlow, attribute Band = joint index from the foot: the client's rainbow waves climb them).
+	for i = 1, #W.Drums - 1 do
+		local y0, y1 = W.Drums[i], W.Drums[i + 1]
+		local r0, r1 = L.TowerRadius(y0) - W.Inset, L.TowerRadius(y1) - W.Inset
+		local w = 2 * math.max(r0, r1) * math.tan(math.pi / n) + 0.08
+		for k = 0, n - 1 do
+			facet(b, k * 2 * math.pi / n, r0, y0, r1, y1, w, COL.Glass, "Glass", { Name = "TowerGlass", Transparency = 0.62, CastShadow = false })
+		end
 	end
-	-- Struts from the deck corners to the first band.
-	for _, corner in { Vector3.new(-10, 36.3, -10), Vector3.new(-10, 36.3, 10), Vector3.new(8.5, 36.3, -10), Vector3.new(8.5, 36.3, 10) } do
-		local dir = Vector3.new(corner.X, 0, corner.Z).Unit
-		local top = Vector3.new(dir.X * 9.6, 49.2, dir.Z * 9.6)
-		b:Rod(L.World(corner), L.World(top), 0.9, COL.Steel, "Metal", { Name = "Strut" })
-		b:Box(Vector3.new(1.8, 0.4, 1.8), F * CFrame.new(corner + Vector3.new(0, 0.2, 0)), COL.GunDark, "Metal", { Name = "StrutFoot" })
+	for i, y in W.Drums do
+		local glow = ring(b, y, L.TowerRadius(y) - 0.45, 0.8, 1.1, n, COL.Teal, "Neon", { Name = "UpperBandGlow", CastShadow = false })
+		for _, p in glow do
+			p:SetAttribute("Band", i)
+		end
+		b:Accent(glow)
 	end
+	-- The twisted steel lattice: both families of the hyperboloid's straight generators, foot -> waist
+	-- -> crown (a Shukhov tower; the rods stay just outside the glass).
+	for section = 1, 2 do
+		for k = 0, W.Rods - 1 do
+			for _, s in { 1, -1 } do
+				local p0, p1 = L.TowerRod(section, k, s)
+				b:Rod(L.World(p0), L.World(p1), 0.7, COL.Steel, "Metal", { Name = "TowerRod" })
+			end
+		end
+	end
+	-- Coolant pool at the foot (UpperLiquid), the plasma column on the axis (Core) in its glass sheath.
+	local poolBottom = T.UpperBottom + 0.1
+	local poolR = L.TowerGlass(W.PoolTop) - 0.35
+	b:CylY(W.PoolTop - poolBottom, poolR * 2, at(0, (W.PoolTop + poolBottom) / 2, 0), L.Liquid, "Neon", { Name = "UpperLiquid", Transparency = 0.45, CastShadow = false })
+	b:Accent(b:CylY(0.2, poolR * 2 + 0.1, at(0, W.PoolTop, 0), COL.Teal, "Neon", { Name = "PoolSurface", Transparency = 0.2, CastShadow = false }))
+	local coreBottom = T.UpperBottom - 1.6
+	b:Accent(b:CylY(W.Hub - coreBottom, 2.6, at(0, (W.Hub + coreBottom) / 2, 0), C3(205, 255, 240), "Neon", { Name = "Core", CastShadow = false }))
+	b:CylY(W.Top - W.PoolTop, 5.2, at(0, (W.Top + W.PoolTop) / 2, 0), COL.Glass, "Glass", { Name = "CoreSheath", Transparency = 0.72, CastShadow = false })
+	-- DNA double helix around the plasma column: two strands of glowing bases, backbones and rungs.
+	local H = W.Helix
+	local dy = H.Pitch * H.Step / 360
+	local count = math.floor((H.Top - H.Bottom) / dy)
+	local last: { Vector3 }? = nil
+	for i = 0, count do
+		local y = H.Bottom + i * dy
+		local a = math.rad(i * H.Step)
+		local pa, pb = polar(a, H.Radius, y), polar(a + math.pi, H.Radius, y)
+		b:Accent(b:Ball(1.5, F * CFrame.new(pa), COL.Teal, "Neon", { Name = "HelixA", CastShadow = false }))
+		b:Accent(b:Ball(1.5, F * CFrame.new(pb), COL.Hazard, "Neon", { Name = "HelixB", CastShadow = false }))
+		b:Rod(L.World(pa), L.World(pb), 0.3, C3(225, 255, 245), "Neon", { Name = "HelixRung", Transparency = 0.35, CastShadow = false })
+		if last then
+			b:Rod(L.World(last[1]), L.World(pa), 0.42, COL.Teal, "Neon", { Name = "HelixSpineA", Transparency = 0.2, CastShadow = false })
+			b:Rod(L.World(last[2]), L.World(pb), 0.42, COL.Hazard, "Neon", { Name = "HelixSpineB", Transparency = 0.2, CastShadow = false })
+		end
+		last = { pa, pb }
+	end
+	-- Light of the pool and its bubbles.
+	b:Light(holder(b, "CoreLightPart", Vector3.new(0.2, 0.2, 0.2), at(0, 52, 0)), COL.Teal, 48, 2.4, "Point").Name = "CoreLight"
+	emitter(holder(b, "PoolBubbleSource", Vector3.new(poolR * 1.3, 0.2, poolR * 1.3), at(0, poolBottom + 1.2, 0)), "PoolBubbles", {
+		Rate = 14,
+		Lifetime = NumberRange.new(2.5, 4),
+		Speed = NumberRange.new(4, 8),
+		SpreadAngle = Vector2.new(6, 6),
+		EmissionDirection = Enum.NormalId.Top,
+		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.35), NumberSequenceKeypoint.new(1, 0.9) }),
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(0.85, 0.4), NumberSequenceKeypoint.new(1, 1) }),
+		Color = ColorSequence.new(C3(220, 255, 245)),
+		LightEmission = 1,
+		LightInfluence = 0,
+	})
 	b:Into(b.Model)
 end
 
-local function buildCap(b: any)
+-- The crown: heavy rim with a glowing lip, struts to the hub, tesla coils, warning lights, the spire with
+-- the beacon and the cooling-tower steam (Steam: white plumes; SteamGlow: the column's colour).
+local function buildCrown(b: any)
 	b:Folder("Cap")
-	local top = T.UpperTop
-	b:CylY(2.6, 20, at(0, top + 1.3, 0), COL.GunDark, "Metal", { Name = "CapBase" })
-	b:Accent(b:CylY(0.3, 20.4, at(0, top + 0.15, 0), COL.Teal, "Neon", { Name = "CapGlow" }))
-	b:Ellipsoid(Vector3.new(14.5, 8, 14.5), at(0, top + 3.8, 0), COL.Steel, "Metal", { Name = "CapDome" })
+	local top = W.Top
+	local n = W.Facets
+	local rimR = L.TowerRadius(top)
+	ring(b, top + 0.9, rimR - 0.2, 1.8, 2.0, n, COL.GunDark, "Metal", { Name = "CrownRim" })
+	b:Accent(ring(b, top + 1.95, rimR - 0.2, 0.3, 2.1, n, COL.Teal, "Neon", { Name = "CapGlow", CastShadow = false }))
+	local hub = Vector3.new(0, W.Hub, 0)
+	for i = 0, 7 do
+		local a = math.rad(i * 45 + 22.5)
+		b:Rod(L.World(polar(a, rimR - 0.7, top + 1.8)), L.World(hub), 0.9, COL.Steel, "Metal", { Name = "CrownStrut" })
+	end
+	b:Ball(4.2, at(0, W.Hub, 0), COL.GunDark, "Metal", { Name = "CrownHub" })
+	b:Accent(b:CylY(0.5, 4.7, at(0, W.Hub, 0), COL.Teal, "Neon", { Name = "CapGlow", CastShadow = false }))
 	-- Four tesla coils on the rim.
 	for i = 0, 3 do
 		local a = math.rad(45 + i * 90)
-		local base = polar(a, 8.2, top + 2.6)
-		b:CylY(4.2, 1.1, F * CFrame.new(base + Vector3.new(0, 2.1, 0)), COL.Copper, "Metal", { Name = "Coil" })
-		b:Ellipsoid(Vector3.new(2.8, 0.8, 2.8), F * CFrame.new(base + Vector3.new(0, 4.4, 0)), COL.Light, "Metal", { Name = "CoilTorus" })
-		b:Accent(b:Ball(0.9, F * CFrame.new(base + Vector3.new(0, 5.0, 0)), COL.Teal, "Neon", { Name = "CoilSpark" }))
+		local base = polar(a, rimR - 0.2, top + 1.8)
+		b:CylY(5.0, 1.3, F * CFrame.new(base + Vector3.new(0, 2.5, 0)), COL.Copper, "Metal", { Name = "Coil" })
+		b:Ellipsoid(Vector3.new(3.2, 0.9, 3.2), F * CFrame.new(base + Vector3.new(0, 5.2, 0)), COL.Light, "Metal", { Name = "CoilTorus" })
+		b:Accent(b:Ball(1.1, F * CFrame.new(base + Vector3.new(0, 5.9, 0)), COL.Teal, "Neon", { Name = "CoilSpark" }))
 		b:Detail(function()
-			b:CylY(0.25, 1.7, F * CFrame.new(base + Vector3.new(0, 1.0, 0)), COL.GunDark, "Metal", { Name = "CoilWinding" })
-			b:CylY(0.25, 1.7, F * CFrame.new(base + Vector3.new(0, 2.6, 0)), COL.GunDark, "Metal", { Name = "CoilWinding" })
+			b:CylY(0.3, 1.9, F * CFrame.new(base + Vector3.new(0, 1.2, 0)), COL.GunDark, "Metal", { Name = "CoilWinding" })
+			b:CylY(0.3, 1.9, F * CFrame.new(base + Vector3.new(0, 3.1, 0)), COL.GunDark, "Metal", { Name = "CoilWinding" })
 		end)
 	end
-	-- Warning lights around the cap and the antenna with the red beacon (a machine light).
+	-- Warning lights on the rim's outer face and the spire with the red beacon (a machine light).
 	for i = 0, 3 do
-		local a = math.rad(i * 90)
-		b:Accent(b:Box(Vector3.new(1.4, 0.9, 0.45), tangentFrame(a, 10.05, top + 1.3), COL.Red, "Neon", { Name = "WarningLight" .. (i + 1) }))
+		b:Accent(b:Box(Vector3.new(1.8, 1.0, 0.45), tangentFrame(math.rad(i * 90), rimR + 0.95, top + 0.9), COL.Red, "Neon", { Name = "WarningLight" .. (i + 1) }))
 	end
-	b:CylY(T.Top - 0.6 - (top + 7.4), 0.6, at(0, (T.Top - 0.6 + top + 7.4) / 2, 0), COL.Light, "Metal", { Name = "Antenna" })
-	for _, y in { top + 12.8, top + 15.4 } do
-		b:Box(Vector3.new(3.2, 0.25, 0.25), at(0, y, 0), COL.Light, "Metal", { Name = "AntennaBar" })
-		b:Box(Vector3.new(0.25, 0.25, 3.2), at(0, y, 0), COL.Light, "Metal", { Name = "AntennaBar" })
+	b:CylY(T.Top - 0.8 - (W.Hub + 2), 0.9, at(0, (T.Top - 0.8 + W.Hub + 2) / 2, 0), COL.Light, "Metal", { Name = "Antenna" })
+	for _, y in { W.Hub + 9, W.Hub + 15 } do
+		b:Box(Vector3.new(4.2, 0.3, 0.3), at(0, y, 0), COL.Light, "Metal", { Name = "AntennaBar" })
+		b:Box(Vector3.new(0.3, 0.3, 4.2), at(0, y, 0), COL.Light, "Metal", { Name = "AntennaBar" })
 	end
-	local beacon = b:Ball(1.6, at(0, T.Top, 0), COL.Red, "Neon", { Name = "Beacon", CastShadow = false })
-	b:Light(beacon, COL.Red, 32, 3, "Point").Name = "BeaconLight"
+	local beacon = b:Ball(2.4, at(0, T.Top, 0), COL.Red, "Neon", { Name = "Beacon", CastShadow = false })
+	b:Light(beacon, COL.Red, 44, 3, "Point").Name = "BeaconLight"
+	b:Light(holder(b, "CrownLightPart", Vector3.new(0.2, 0.2, 0.2), at(0, top - 3, 0)), COL.Teal, 56, 2.2, "Point").Name = "CrownLight"
+	local vent = holder(b, "SteamVent", Vector3.new(rimR * 1.3, 0.2, rimR * 1.3), at(0, top + 1.2, 0))
+	emitter(vent, "Steam", {
+		Texture = STEAM,
+		Rate = 3,
+		Lifetime = NumberRange.new(10, 15),
+		Speed = NumberRange.new(7, 11),
+		SpreadAngle = Vector2.new(10, 10),
+		EmissionDirection = Enum.NormalId.Top,
+		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 9), NumberSequenceKeypoint.new(0.4, 22), NumberSequenceKeypoint.new(1, 38) }),
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.08, 0.55), NumberSequenceKeypoint.new(0.6, 0.75), NumberSequenceKeypoint.new(1, 1) }),
+		Color = ColorSequence.new(C3(236, 242, 248), C3(200, 210, 222)),
+		Acceleration = Vector3.new(1.6, 0.4, 0.8),
+		Drag = 0.25,
+		RotSpeed = NumberRange.new(-12, 12),
+		Rotation = NumberRange.new(0, 360),
+		LightEmission = 0.05,
+		LightInfluence = 0.7,
+	})
+	emitter(vent, "SteamGlow", {
+		Texture = STEAM,
+		Rate = 1.2,
+		Lifetime = NumberRange.new(5, 8),
+		Speed = NumberRange.new(5, 8),
+		SpreadAngle = Vector2.new(8, 8),
+		EmissionDirection = Enum.NormalId.Top,
+		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 6), NumberSequenceKeypoint.new(1, 24) }),
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.1, 0.6), NumberSequenceKeypoint.new(1, 1) }),
+		Color = ColorSequence.new(COL.Teal),
+		RotSpeed = NumberRange.new(-20, 20),
+		Rotation = NumberRange.new(0, 360),
+		LightEmission = 0.7,
+		LightInfluence = 0,
+	})
 	b:Into(b.Model)
 end
 
@@ -370,8 +503,16 @@ local function buildArm(b: any)
 	b:Into(b.Model)
 end
 
-local function gauge(b: any, z: number, y: number, index: number)
-	local x = L.Console.DeskFront - 0.08
+------------------------------------------------------------------------------------------------
+-- The mega console
+------------------------------------------------------------------------------------------------
+local RAINBOW = { C3(255, 70, 90), C3(255, 150, 40), C3(255, 225, 60), C3(80, 235, 120), C3(60, 220, 255), C3(120, 120, 255), C3(220, 90, 255) }
+local function rainbow(i: number): Color3
+	return RAINBOW[(i - 1) % #RAINBOW + 1]
+end
+
+-- Round gauge facing -X (the operator); the needle turns about the pivot's X axis.
+local function gauge(b: any, x: number, y: number, z: number, index: number)
 	b:Cyl(0.16, 1.75, at(x, y, z), COL.GunDark, "Metal", { Name = "GaugeRim" })
 	b:Cyl(0.18, 1.45, at(x - 0.03, y, z), C3(232, 240, 228), "SmoothPlastic", { Name = "GaugeFace" })
 	local pivot = at(x - 0.14, y, z)
@@ -386,15 +527,82 @@ local function screen(b: any, name: string, cf: CFrame, w: number, h: number): B
 	return s
 end
 
+-- Panel furniture on a surface frame (Y = the panel's normal). PanelKey caps, PanelLamp domes and the
+-- glow strips are what the client's idle show and the cinematic light up.
+local function key(b: any, cf: CFrame, d: number, color: Color3, round: boolean?)
+	if round then
+		b:Disc(cf * CFrame.new(0, 0.06, 0), d + 0.2, 0.12, COL.Black, "Metal", { Name = "KeyCollar" })
+		b:Accent(b:Disc(cf * CFrame.new(0, 0.17, 0), d, 0.22, color, "Neon", { Name = "PanelKey" }))
+	else
+		b:Accent(b:Box(Vector3.new(d, 0.16, d), cf * CFrame.new(0, 0.08, 0), color, "Neon", { Name = "PanelKey" }))
+	end
+end
+local function lamp(b: any, cf: CFrame, d: number, color: Color3)
+	b:Accent(b:Ellipsoid(Vector3.new(d, d * 0.8, d), cf, color, "Neon", { Name = "PanelLamp", CastShadow = false }))
+end
+local function toggle(b: any, cf: CFrame, up: boolean)
+	b:Box(Vector3.new(0.5, 0.12, 0.36), cf * CFrame.new(0, 0.06, 0), COL.Light, "Metal", { Name = "ToggleBase" })
+	b:Box(Vector3.new(0.09, 0.5, 0.09), cf * CFrame.new(0, 0.12, 0) * CFrame.Angles(0, 0, math.rad(up and -24 or 24)) * CFrame.new(0, 0.25, 0), COL.Light, "Metal", { Name = "ToggleLever" })
+end
+local function knob(b: any, cf: CFrame, d: number)
+	b:Disc(cf * CFrame.new(0, 0.2, 0), d, 0.4, COL.Black, "SmoothPlastic", { Name = "Knob" })
+	b:Box(Vector3.new(0.1, 0.08, d * 0.42), cf * CFrame.new(0, 0.42, -d * 0.22), COL.Hazard, "Neon", { Name = "KnobMark" })
+end
+
+-- Screen furniture (SurfaceGui frames, no parts): LED grids (Frames named Led, attributes Row / Col)
+-- and equalizers (Frames named Bar, attribute Index, standing on the box's floor).
+local function frame(parent: Instance, name: string, pos: UDim2, size: UDim2, color: Color3, corner: number?): Frame
+	local f = Instance.new("Frame")
+	f.Name = name
+	f.Position = pos
+	f.Size = size
+	f.BackgroundColor3 = color
+	f.BorderSizePixel = 0
+	if corner then
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(corner, 0)
+		c.Parent = f
+	end
+	f.Parent = parent
+	return f
+end
+local function leds(gui: Instance, x: number, y: number, w: number, h: number, rows: number, cols: number)
+	local box = frame(gui, "LedMatrix", UDim2.fromScale(x, y), UDim2.fromScale(w, h), COL.Black)
+	box.BackgroundTransparency = 0.2
+	for r = 1, rows do
+		for c = 1, cols do
+			local led = frame(box, "Led", UDim2.fromScale((c - 0.85) / cols, (r - 0.85) / rows), UDim2.fromScale(0.7 / cols, 0.7 / rows), Color3.fromHSV(((c + r) / (cols + rows)) % 1, 0.7, 1), 0.3)
+			led:SetAttribute("Row", r)
+			led:SetAttribute("Col", c)
+		end
+	end
+end
+local function bars(gui: Instance, x: number, y: number, w: number, h: number, count: number)
+	local box = frame(gui, "Scope", UDim2.fromScale(x, y), UDim2.fromScale(w, h), C3(8, 16, 24))
+	for i = 1, count do
+		local bar = frame(box, "Bar", UDim2.fromScale((i - 0.9) / count, 1), UDim2.fromScale(0.8 / count, 0.25 + 0.6 * ((i * 7) % 5) / 5), Color3.fromHSV(i / count, 0.75, 1))
+		bar.AnchorPoint = Vector2.new(0, 1)
+		bar:SetAttribute("Index", i)
+	end
+end
+
+-- The console (operator side): the command desk with ACTIVATE in the middle, wings either side of the
+-- walkway (knobs, key matrices, the master switch and the throttle bank, LED panels) and the two
+-- instrument towers behind the desk (reactor / odds screens, level meters, gauges, keys, lamps).
+-- Moving parts for the cinematic: ButtonGuard, ButtonDome, LeverL/LeverR, Throttle1..4 and
+-- MasterSwitch (folders turned about their pivot's Z axis by the Swing attribute), GaugeNeedle1..4.
 local function buildConsole(b: any)
 	local K = L.Console
 	local console = b:Folder("Console")
-	-- Deck and the operator dais.
-	b:Box(Vector3.new(16, 0.5, 20), at(-19, 0.25, 0), COL.GunDark, "DiamondPlate", named("ConsoleDeck", SOLID))
-	b:Box(Vector3.new(4, 0.35, 10), at(-29, 0.175, 0), COL.Gun, "DiamondPlate", named("OperatorDais", SOLID))
+	-- Deck under the whole U and the operator dais.
+	local deckFrom, deckTo = K.WingFrom - 0.5, -11
+	local deckW = 2 * K.WingOuter + 0.8
+	b:Box(Vector3.new(deckTo - deckFrom, 0.5, deckW), at((deckFrom + deckTo) / 2, 0.25, 0), COL.GunDark, "DiamondPlate", named("ConsoleDeck", SOLID))
+	b:Box(Vector3.new(0.3, 0.12, deckW), at(deckFrom + 0.15, 0.56, 0), COL.Hazard, "SmoothPlastic", { Name = "DeckEdge" })
+	b:Box(Vector3.new(4, 0.25, 10), at(-29, 0.625, 0), COL.Gun, "DiamondPlate", named("OperatorDais", SOLID))
 	b:Detail(function()
 		for i = 0, 4 do
-			b:Box(Vector3.new(0.9, 0.06, 2), at(-30.6 + 0, 0.38, -4 + i * 2), i % 2 == 0 and COL.Hazard or COL.Black, "SmoothPlastic", { Name = "DaisHazard" })
+			b:Box(Vector3.new(0.9, 0.06, 2), at(-30.6, 0.77, -4 + i * 2), i % 2 == 0 and COL.Hazard or COL.Black, "SmoothPlastic", { Name = "DaisHazard" })
 		end
 	end)
 	-- Command desk: body, sloped top (rises toward the tube), back.
@@ -429,19 +637,108 @@ local function buildConsole(b: any)
 		lever.WorldPivot = base
 		b:Into(console)
 	end
-	b:Detail(function()
-		for i, spec in { { -1.4, -1.8, COL.Teal }, { -1.4, 1.8, COL.Hazard }, { -0.2, -5.0, P.Green }, { -0.2, 5.0, COL.Orange }, { 1.3, -5.0, COL.Teal }, { 1.3, 5.0, COL.Teal } } do
-			b:Accent(b:Box(Vector3.new(0.6, 0.16, 0.6), S * CFrame.new(spec[1], 0.08, spec[2]), spec[3], "Neon", { Name = "DeskKey" .. i }))
-		end
-	end)
-	-- Side wings with tall angled screens and gauges.
+	for i, spec in { { -1.4, -1.8, COL.Teal }, { -1.4, 1.8, COL.Hazard }, { -0.2, -5.0, P.Green }, { -0.2, 5.0, COL.Orange }, { 1.3, -5.0, COL.Teal }, { 1.3, 5.0, COL.Teal } } do
+		b:Accent(b:Box(Vector3.new(0.6, 0.16, 0.6), S * CFrame.new(spec[1], 0.08, spec[2]), spec[3], "Neon", { Name = "DeskKey" .. i }))
+	end
+	-- A row of toggles in front of the levers and two trim knobs behind them.
 	for _, side in { -1, 1 } do
-		local z = side * 8.2
-		b:Box(Vector3.new(12, 2.7, 3.6), at(-21, 1.85, z), COL.Gun, "Metal", named("WingDesk", SOLID))
-		b:Wedge(Vector3.new(3.6, 0.9, 12), at(-21, 3.65, z) * CFrame.Angles(0, math.pi / 2, 0), COL.GunDark, "Metal", { Name = "WingSlope" })
-		b:Box(Vector3.new(1.0, 4.4, 1.0), at(-16.0, 5.0, side * 8.4), COL.GunDark, "Metal", { Name = "ScreenPost" })
-		local yaw = side < 0 and math.rad(33.7) or -math.rad(33.7)
-		local s = screen(b, side < 0 and "ScreenL" or "ScreenR", at(-16.4, 9.4, side * 8.4) * CFrame.Angles(0, yaw, 0), 7.6, 4.8)
+		for i, z in { 2.6, 3.3, 4.0 } do
+			toggle(b, S * CFrame.new(-1.65, 0, side * z), (i + (side > 0 and 1 or 0)) % 2 == 0)
+		end
+		knob(b, S * CFrame.new(1.45, 0, side * 2.45), 0.75)
+	end
+
+	-- Wings (the U arms either side of the walkway).
+	local wingLen = K.WingTo - K.WingFrom
+	local wingX = (K.WingFrom + K.WingTo) / 2
+	local depth = K.WingOuter - K.WingInner
+	local rise = K.WingHigh - K.WingLow
+	local tilt = math.atan(rise / depth)
+	local panelH = 2.8
+	for _, side in { -1, 1 } do
+		local zMid = side * (K.WingInner + K.WingOuter) / 2
+		local desk = b:Box(Vector3.new(wingLen, K.WingLow, depth), at(wingX, K.WingLow / 2, zMid), COL.Gun, "Metal", named("WingDesk", SOLID))
+		b:Wedge(Vector3.new(wingLen, rise, depth), at(wingX, K.WingLow + rise / 2, zMid) * CFrame.Angles(0, side < 0 and math.pi or 0, 0), COL.GunDark, "Metal", named("WingSlope", SOLID))
+		b:Accent(b:Box(Vector3.new(wingLen - 0.4, 0.22, 0.12), at(wingX, K.WingLow - 0.35, side * (K.WingInner - 0.06)), COL.Teal, "Neon", { Name = "WingGlow" }))
+		-- Frame on the slope: X along the wing (toward the tube), Y = its normal; v is measured outwards.
+		local surface = at(wingX, K.WingLow + rise / 2, zMid) * CFrame.Angles(-side * tilt, 0, 0)
+		local function on(u: number, v: number): CFrame
+			return surface * CFrame.new(u, 0, side * v)
+		end
+		-- Knob bank (behind the operator), a key matrix beside the operator, lamps along the low edge.
+		for i, v in { -1.2, 0, 1.2 } do
+			knob(b, on(-5.1, v), 0.85)
+			key(b, on(-3.85, v), 0.6, rainbow(i + (side > 0 and 3 or 0)), true)
+		end
+		for r, v in { -1.3, 0, 1.3 } do
+			for c = 1, 5 do
+				key(b, on(-3.0 + (c - 1) * 0.95, v), 0.62, rainbow(c + r + (side > 0 and 2 or 0)))
+			end
+		end
+		for i = 1, 6 do
+			lamp(b, on(-5.5 + (i - 1) * 2.2, -1.95) * CFrame.new(0, 0.12, 0), 0.42, rainbow(i + (side > 0 and 4 or 0)))
+		end
+		if side > 0 then
+			-- Throttle bank by the command desk: four levers leaning back to the operator, pushed toward
+			-- the tube during the cinematic.
+			for i = 1, 4 do
+				local base = on(3.6, -1.35 + (i - 1) * 0.9)
+				b:Box(Vector3.new(2.2, 0.12, 0.36), base * CFrame.new(0, 0.06, 0), COL.Black, "SmoothPlastic", { Name = "ThrottleSlot" })
+				local lever = b:Folder("Throttle" .. i)
+				local pivotCF = base * CFrame.new(0, 0.12, 0)
+				local handle = pivotCF * CFrame.Angles(0, 0, math.rad(28))
+				b:Box(Vector3.new(0.16, 1.5, 0.16), handle * CFrame.new(0, 0.75, 0), COL.Light, "Metal", { Name = "ThrottleRod" })
+				b:Box(Vector3.new(0.34, 0.34, 0.6), handle * CFrame.new(0, 1.55, 0), rainbow(i * 2), "SmoothPlastic", { Name = "ThrottleGrip" })
+				lever.WorldPivot = pivotCF
+				lever:SetAttribute("Swing", math.rad(-56))
+				b:Into(console)
+			end
+		else
+			-- Master knife switch (rests open; the cinematic slams it shut) and two big keys.
+			local hingeU, contactU = 1.9, 4.5
+			b:Box(Vector3.new(contactU - hingeU + 1.0, 0.12, 1.5), on((hingeU + contactU) / 2, 0) * CFrame.new(0, 0.06, 0), COL.Black, "SmoothPlastic", { Name = "SwitchBase" })
+			b:Box(Vector3.new(0.3, 0.5, 0.9), on(hingeU, 0) * CFrame.new(0, 0.37, 0), COL.Copper, "Metal", { Name = "SwitchHinge" })
+			b:Box(Vector3.new(0.3, 0.5, 0.9), on(contactU, 0) * CFrame.new(0, 0.37, 0), COL.Copper, "Metal", { Name = "SwitchContact" })
+			local switch = b:Folder("MasterSwitch")
+			local pivotCF = on(hingeU, 0) * CFrame.new(0, 0.5, 0)
+			local blade = pivotCF * CFrame.Angles(0, 0, math.rad(65))
+			local len = contactU - hingeU
+			b:Box(Vector3.new(len + 0.3, 0.1, 0.5), blade * CFrame.new(len / 2, 0, 0), COL.Copper, "Metal", { Name = "SwitchBlade" })
+			b:Cyl(0.9, 0.34, blade * CFrame.new(len + 0.2, 0.45, 0) * CFrame.Angles(0, 0, math.pi / 2), COL.Red, "SmoothPlastic", { Name = "SwitchHandle" })
+			switch.WorldPivot = pivotCF
+			switch:SetAttribute("Swing", math.rad(-65))
+			b:Into(console)
+			key(b, on(5.4, -0.9), 0.7, COL.Red, true)
+			key(b, on(5.4, 0.9), 0.7, P.Green, true)
+		end
+		-- Upright LED panel along the outer edge (faces the walkway) with a row of lamps on top.
+		local panel = b:Box(Vector3.new(wingLen - 0.8, panelH, 0.5), at(wingX, K.WingHigh + panelH / 2 - 0.1, side * (K.WingOuter - 0.25)), COL.GunDark, "Metal", { Name = "WingPanel" })
+		local pg = surfaceGui(panel, side > 0 and Enum.NormalId.Front or Enum.NormalId.Back, 36)
+		local titles = side < 0 and { "COOLANT", "PLASMA", "DNA SYNC" } or { "RADIATION", "GENOME", "OVERDRIVE" }
+		for i, text in titles do
+			label(pg, "Title" .. i, text, UDim2.fromScale(0.02 + (i - 1) * 0.33, 0.03), UDim2.fromScale(0.3, 0.22), i == 2 and COL.Hazard or COL.Teal)
+		end
+		leds(pg, 0.02, 0.3, 0.55, 0.65, 3, 14)
+		bars(pg, 0.6, 0.3, 0.38, 0.65, 12)
+		for i = 1, 7 do
+			lamp(b, at(wingX - 5.1 + (i - 1) * 1.7, K.WingHigh + panelH - 0.1 + 0.2, side * (K.WingOuter - 0.25)), 0.5, rainbow(i + (side > 0 and 2 or 5)))
+		end
+		-- The wing's back end faces the hall entrance.
+		local rear = surfaceGui(desk, Enum.NormalId.Left, 36)
+		label(rear, "Title", "☢ DOGROTS REACTOR ☢", UDim2.fromScale(0.05, 0.08), UDim2.fromScale(0.9, 0.3), COL.Hazard)
+		leds(rear, 0.08, 0.45, 0.84, 0.45, 2, 8)
+	end
+
+	-- Instrument towers behind the command desk (the gap between them keeps the bay and the tube in view).
+	local towerX = (K.TowerFront + K.TowerBack) / 2
+	local towerD = K.TowerBack - K.TowerFront
+	local towerW = K.TowerOuter - K.TowerInner
+	for _, side in { -1, 1 } do
+		local zc = side * (K.TowerInner + K.TowerOuter) / 2
+		b:Box(Vector3.new(towerD, K.TowerTop - 0.5, towerW), at(towerX, (K.TowerTop + 0.5) / 2, zc), COL.Gun, "Metal", named("InstrumentTower", SOLID))
+		b:Box(Vector3.new(towerD + 0.4, 0.4, towerW + 0.4), at(towerX, K.TowerTop + 0.2, zc), COL.GunDark, "Metal", { Name = "TowerCap" })
+		local sw, sh = 5.6, 3.4
+		local s = screen(b, side < 0 and "ScreenL" or "ScreenR", at(K.TowerFront - 0.2, 8.6, side * (K.TowerOuter - 0.3 - sw / 2)), sw, sh)
 		local gui = surfaceGui(s, Enum.NormalId.Left, 34)
 		if side < 0 then
 			label(gui, "Title", "REACTOR", UDim2.fromScale(0.05, 0.05), UDim2.fromScale(0.9, 0.24), COL.Hazard)
@@ -463,9 +760,27 @@ local function buildConsole(b: any)
 				label(gui, "Odds" .. i, (pct >= 1 and string.format("%.0f%%", pct) or string.format("%.1f%%", pct)), UDim2.fromScale(0.6, y), UDim2.fromScale(0.32, 0.11), color, Enum.TextXAlignment.Right)
 			end
 		end
-		gauge(b, side * 7.3, 2.15, side < 0 and 1 or 3)
-		gauge(b, side * 9.1, 2.15, side < 0 and 2 or 4)
+		-- Level meter by the gap (MeterSeg Index 1..8 from the bottom), gauges and keys under the screen,
+		-- three lamps on the roof.
+		local mz = side * (K.TowerInner + 0.55)
+		b:Box(Vector3.new(0.1, 5.7, 1.1), at(K.TowerFront - 0.03, 7.65, mz), COL.Black, "SmoothPlastic", { Name = "MeterBack" })
+		for i = 1, 8 do
+			local seg = b:Box(Vector3.new(0.12, 0.52, 0.8), at(K.TowerFront - 0.09, 5.1 + (i - 0.5) * 0.66, mz), Color3.fromHSV(0.33 - (i - 1) / 7 * 0.33, 0.85, 1), "Neon", { Name = "MeterSeg", CastShadow = false })
+			seg:SetAttribute("Index", i)
+			b:Accent(seg)
+		end
+		gauge(b, K.TowerFront - 0.08, 5.8, side * 5.55, side < 0 and 1 or 3)
+		gauge(b, K.TowerFront - 0.08, 5.8, side * 7.45, side < 0 and 2 or 4)
+		for r, y in { 5.3, 6.25 } do
+			for c, z in { 9.1, 10.05 } do
+				key(b, at(K.TowerFront, y, side * z) * CFrame.Angles(0, 0, math.pi / 2), 0.62, rainbow(r * 2 + c + (side > 0 and 3 or 0)), true)
+			end
+		end
+		for i, z in { 4.6, 7.1, 9.6 } do
+			lamp(b, at(towerX, K.TowerTop + 0.6, side * z), 0.8, ({ COL.Red, COL.Hazard, P.Green })[i])
+		end
 	end
+
 	-- Hanging title sign over the console (faces the entrance).
 	local sign = screen(b, "MainSign", at(-11.6, 28.4, 0), 12, 4.2)
 	local sg = surfaceGui(sign, Enum.NormalId.Left, 30)
@@ -475,14 +790,14 @@ local function buildConsole(b: any)
 		b:Rod(L.World(Vector3.new(-11.3, 30.6, cable[1])), L.World(Vector3.new(-11.3, cable[2], cable[1])), 0.22, COL.Black, "Metal", { Name = "SignCable" })
 	end
 	local spot = b:Box(Vector3.new(1.2, 0.3, 1.2), at(-12.4, 26.15, 0), COL.GunDark, "Metal", { Name = "ConsoleLamp" })
-	local console = b:Light(spot, C3(200, 230, 255), 24, 1.6, "Spot") :: SpotLight
-	console.Name = "ConsoleLight"
-	console.Face = Enum.NormalId.Bottom
-	console.Angle = 80
-	-- Floor cables from the console wings to the pedestal.
+	local light = b:Light(spot, C3(200, 230, 255), 24, 1.6, "Spot") :: SpotLight
+	light.Name = "ConsoleLight"
+	light.Face = Enum.NormalId.Bottom
+	light.Angle = 80
+	-- Floor cables from the instrument towers to the pedestal.
 	for _, side in { -1, 1 } do
-		local c1 = L.World(Vector3.new(-14, 0.3, side * 9.6))
-		local c2 = L.World(Vector3.new(-11.5, 0.3, side * 11.2))
+		local c1 = L.World(Vector3.new(K.TowerBack + 0.2, 0.75, side * 9.6))
+		local c2 = L.World(Vector3.new(-11.5, 0.3, side * 11.6))
 		local c3 = L.World(polar(side < 0 and math.rad(-128) or math.rad(128), 12.2, 0.3))
 		b:Rod(c1, c2, 0.6, COL.Black, "SmoothPlastic", { Name = "FloorCable" })
 		b:Rod(c2, c3, 0.6, COL.Black, "SmoothPlastic", { Name = "FloorCable" })
@@ -502,8 +817,8 @@ function B.Build(parent: Instance?): Model
 	for _, r in T.Rotors do
 		buildRotor(b, r.Name, r.Y)
 	end
-	buildRoofAndColumn(b)
-	buildCap(b)
+	buildTower(b)
+	buildCrown(b)
 	buildLift(b)
 	buildArm(b)
 	buildConsole(b)

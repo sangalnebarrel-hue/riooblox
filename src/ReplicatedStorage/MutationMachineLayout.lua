@@ -8,7 +8,7 @@
 -- The console's operator stands at local x ~ -29 and looks +X at the tube.
 local M = {}
 
-M.Version = 1
+M.Version = 2
 M.Name = "MutationMachine" -- the model under Workspace.DOGROTS_District.05_MutationLab
 M.Origin = Vector3.new(133, 2.2, 477)
 M.Frame = CFrame.new(M.Origin)
@@ -27,10 +27,71 @@ M.Tube = {
 	Rails = 4, -- vertical energy rails inside the glass (EnergyRail1..4)
 	RailRadius = 7.5,
 	InjectorTip = 25.4, -- the core's tip hanging from the membrane
-	UpperBottom = 37.6, -- the glass column above the roof
-	UpperTop = 85.8,
-	Top = 104.0, -- the warning beacon on the antenna
+	UpperBottom = 37.6, -- top of the roof deck: the giant column (M.Tower) starts here
+	UpperTop = 218.0, -- the giant column's crown rim (M.Tower.Top)
+	Top = 252.0, -- the warning beacon on the spire
 }
+
+-- The giant reactor column above the roof (the district landmark): a cooling-tower hyperboloid. A twisted
+-- steel lattice of straight rods (both families of the hyperboloid's generators; they turn 45 degrees per
+-- section and meet at the foot, the waist and the crown), a faceted glass shell just inside it (drums
+-- between the Drums joints, glowing rings at the joints), a coolant pool, a plasma column with the core
+-- and a DNA double helix, a flared crown with a glowing rim, tesla coils, steam and the beacon spire.
+-- Radii are the lattice's. The roof's air handlers (r >= 19 below local y 43) limit the foot's radius.
+M.Tower = {
+	Plinth = 36.3, -- bottom of the roof plinth (on the roof deck and the roof rails)
+	Bottom = 38.4, -- lattice foot (top of the foot ring)
+	Waist = 175.0, -- narrowest height
+	Top = 218.0, -- crown rim
+	WaistRadius = 11.8, -- the foot and the crown are WaistRadius * sqrt(2) (16.7)
+	Inset = 1.0, -- glass radius = lattice radius - Inset (the rods stay outside the glass)
+	Rods = 20, -- per family and section (the 45-degree turn is 2.5 rod spacings: the families meet)
+	Facets = 16, -- glass panels per drum and segments per ring
+	Drums = { 38.4, 65.7, 93.0, 120.3, 147.6, 175.0, 189.3, 203.7, 218.0 }, -- glass joints (rings between)
+	PoolTop = 64.0, -- coolant pool at the column's foot
+	Helix = { Bottom = 82, Top = 206, Radius = 5.6, Pitch = 32, Step = 45 }, -- degrees per ball
+	Hub = 228.0, -- where the crown struts meet under the spire
+}
+M.Tower.RimRadius = M.Tower.WaistRadius * math.sqrt(2)
+
+-- Lattice radius of the giant column at local height y (two hyperbolas meeting at the waist).
+function M.TowerRadius(y: number): number
+	local W = M.Tower
+	local c = y < W.Waist and (W.Waist - W.Bottom) or (W.Top - W.Waist)
+	local t = (y - W.Waist) / c
+	return W.WaistRadius * math.sqrt(1 + t * t)
+end
+-- Radius of the glass shell (its facets' inner circle) at local height y: linear between the joints.
+function M.TowerGlass(y: number): number
+	local W = M.Tower
+	local d = W.Drums
+	for i = 1, #d - 1 do
+		if y <= d[i + 1] or i == #d - 1 then
+			local f = math.clamp((y - d[i]) / (d[i + 1] - d[i]), 0, 1)
+			local r0, r1 = M.TowerRadius(d[i]), M.TowerRadius(d[i + 1])
+			return r0 + (r1 - r0) * f - W.Inset
+		end
+	end
+	return W.WaistRadius - W.Inset
+end
+-- Ends (local) of lattice rod k (0..Rods-1) of family s (1 or -1) in section 1 (foot..waist) or
+-- 2 (waist..crown): straight generators of x^2 + z^2 = a^2 (1 + t^2), y = Waist + c t.
+function M.TowerRod(section: number, k: number, s: number): (Vector3, Vector3)
+	local W = M.Tower
+	local a = W.WaistRadius
+	local theta = k * 2 * math.pi / W.Rods
+	local cos, sin = math.cos(theta), math.sin(theta)
+	local function point(t: number, c: number): Vector3
+		local x, z = a, s * a * t
+		return Vector3.new(x * cos - z * sin, W.Waist + c * t, x * sin + z * cos)
+	end
+	if section == 1 then
+		local c = W.Waist - W.Bottom
+		return point(-1, c), point(0, c)
+	end
+	local c = W.Top - W.Waist
+	return point(0, c), point(1, c)
+end
 
 -- Loading door: a segment of the intake ring facing the console (-X). It drops into the pedestal.
 M.Door = { Bottom = 4.8, Top = 10.7, Radius = 9.6, Width = 6.2, Drop = 6.8 }
@@ -59,20 +120,37 @@ M.Arm = {
 	Place = Vector3.new(-16, 11.0, 0),
 }
 
--- Console (operator side). The ACTIVATE button sits on the sloped command desk.
+-- Console (operator side). The ACTIVATE button sits on the sloped command desk. The mega desk wraps
+-- around the operator: wings (U arms) either side of the walkway (|z| < WingInner stays free) and two
+-- instrument towers behind the command desk. The gap between the towers (|z| < TowerInner, up to the
+-- screens' bottom) keeps the loading bay and the tube in view for the operator and the Load / Chamber
+-- camera shots; nothing above the towers' screens is near the Chamber orbit (eye y 18.5).
 M.Console = {
-	DeskFront = -27, -- front face of the desks (operator side)
+	DeskFront = -27, -- front face of the command desk (operator side)
 	SlopeBottom = 3.6,
 	SlopeTop = 4.8,
 	SlopeFrom = -27,
 	SlopeTo = -23,
 	ButtonU = 0, -- along the slope from its middle
 	LeverZ = 3.7,
+	WingFrom = -34.0, -- wings: x range, |z| range, slope heights (inner edge low, outer edge high)
+	WingTo = -21.6,
+	WingInner = 6.6,
+	WingOuter = 10.8,
+	WingLow = 3.0,
+	WingHigh = 4.4,
+	TowerFront = -21.5, -- instrument towers: x range (front faces the operator), |z| range, height
+	TowerBack = -19.6,
+	TowerInner = 3.4,
+	TowerOuter = 10.8,
+	TowerTop = 10.6,
 }
 M.Console.SlopeAngle = math.atan((M.Console.SlopeTop - M.Console.SlopeBottom) / (M.Console.SlopeTo - M.Console.SlopeFrom))
 -- Frame on the sloped desk surface at the ACTIVATE button (UpVector = surface normal, tilted to the operator).
 M.Console.Slope = CFrame.new((M.Console.SlopeFrom + M.Console.SlopeTo) / 2, (M.Console.SlopeBottom + M.Console.SlopeTop) / 2, 0)
 	* CFrame.Angles(0, 0, M.Console.SlopeAngle)
+-- The ACTIVATE button (local): the console's colour waves start here.
+M.Console.Button = M.Console.Slope.Position
 -- Where LabService's InteractionAnchor (the ACTIVATE prompt, LabAccess reach) is moved to.
 M.Anchor = Vector3.new(-25.3, 5.7, 0)
 

@@ -6,8 +6,11 @@
 --                    The dog stays in the tube (with the world's variant highlight) until P.Release().
 --   P.Skip()         tap / click / Space during the cinematic also skips (straight to the burst, then out)
 --   P.Release()      the result card closed: the dog leaves, the machine returns to idle
---   P.StartWorld()   once per client (LabPrompt.client): idle motion while near the machine, localized
---                    screens, and the short public effect when another player mutates a dog
+--   P.StartWorld()   once per client (LabPrompt.client): idle motion while near the machine (the giant
+--                    column's slow rainbow spiral, helix and pool hues, the living console: keys, lamps,
+--                    meters, LED panels), localized screens, and the public effect when another player
+--                    mutates a dog (the chamber burst in the hall; a charge and a rainbow front climbing
+--                    the column to a coloured steam puff at the crown for everyone within SHOW_RANGE)
 --   P.Cue(key, part) a lab sound (LabAudioConfig), quieter during world events
 -- Everything the cinematic changes on the server's machine parts is remembered and restored; effect parts
 -- are pooled (one folder, created once); a dog clone and its animation player exist only while shown.
@@ -236,6 +239,40 @@ local function rig(m)
  k.ArmParts={};if k.Arm then for _,n in{'Turret','Upper','Fore','Claw'}do k.ArmParts[n]=k.Arm:FindFirstChild(n)end end
  k.Guard=find(m,'ButtonGuard');k.Dome=find(m,'ButtonDome');k.LeverL=find(m,'LeverL');k.LeverR=find(m,'LeverR')
  k.Needles={};for i=1,4 do local p=find(m,'GaugeNeedle'..i);if p then table.insert(k.Needles,p)end end
+ -- The idle show, the public surge and the console frenzy (MutationMachineBuild names): tower joint
+ -- rings (Y, angle A in turns), helix parts, console keys / lamps / meters / glow strips, the panels'
+ -- LED and equalizer frames, the throttle bank and the master switch.
+ k.Bands={};k.Helix={};k.Keys={};k.Lamps={};k.Meters={};k.Strips={};k.Leds={};k.Bars={};k.Throttles={}
+ local inv=k.Frame:Inverse()
+ for _,d in m:GetDescendants()do
+  local n=d.Name
+  if d:IsA('BasePart')then
+   if n=='UpperBandGlow'then
+    local p=inv*d.Position
+    table.insert(k.Bands,{P=d,Y=p.Y,A=math.atan2(p.Z,p.X)/(2*math.pi)})
+   elseif string.sub(n,1,5)=='Helix'then
+    local p=inv*d.Position
+    table.insert(k.Helix,{P=d,Y=p.Y,S=(n=='HelixB'or n=='HelixSpineB')and .5 or 0,Rung=n=='HelixRung'})
+   elseif n=='PanelKey'or string.sub(n,1,7)=='DeskKey'then
+    local p=inv*d.Position
+    table.insert(k.Keys,{P=d,U=p.X*.05+math.abs(p.Z)*.04,Phase=math.random()*6.28,F=.6+math.random()*1.4})
+   elseif n=='PanelLamp'then
+    table.insert(k.Lamps,{P=d,Phase=math.random(),F=.3+math.random()*.8,H=math.random()})
+   elseif n=='MeterSeg'then
+    local p=inv*d.Position
+    table.insert(k.Meters,{P=d,I=d:GetAttribute('Index')or 1,Seed=p.Z>0 and 7.3 or 2.1})
+   elseif n=='WingGlow'then
+    table.insert(k.Strips,{P=d,Phase=math.random()})
+   end
+  elseif d:IsA('Frame')then
+   if n=='Led'then table.insert(k.Leds,{F=d,R=d:GetAttribute('Row')or 1,C=d:GetAttribute('Col')or 1,Seed=math.random()*10})
+   elseif n=='Bar'then table.insert(k.Bars,{F=d,I=d:GetAttribute('Index')or 1,Seed=math.random()*10,W=d.Size.X.Scale})end
+  elseif d:IsA('Model')and(string.match(n,'^Throttle%d$')or n=='MasterSwitch')then
+   table.insert(k.Throttles,{M=d,Swing=tonumber(d:GetAttribute('Swing'))or 0,Order=tonumber(string.match(n,'%d'))or 0})
+  end
+ end
+ k.PoolSurface=find(m,'PoolSurface');k.CrownLight=find(m,'CrownLight');k.SteamGlow=find(m,'SteamGlow')
+ k.Center=k.W(Vector3.new(0,16,0))
  k.Labels={}
  for _,screen in{'ScreenL','ScreenR','MainSign','DeskPlate'}do
   local part=find(m,screen);local gui=part and part:FindFirstChild('Display')
@@ -292,10 +329,133 @@ local function placeDog(k,x,deckY,yaw)
 end
 
 ------------------------------------------------------------------------------------------------
+-- The show: the giant column's rainbow and the living console
+------------------------------------------------------------------------------------------------
+-- Tower: a rainbow spiral turns slowly up the joint rings, the helix strands run two counter-rainbows,
+-- the core and the coolant pool drift through pale hues. Console: keys chase a rainbow, lamps breathe
+-- in slowly wandering colours, meters bounce, the panels' LEDs and equalizers dance. calm (Reduced
+-- Motion): slow hues, no blinking. frenzy (0..1, the cinematic): faster, brighter, flashes in `color`.
+local SHOW_RANGE=900 -- studs from the hall: the column is the district landmark
+local DIM=Color3.fromRGB(16,24,30)
+local function hsv(h,s,v)return Color3.fromHSV(h%1,s,math.clamp(v,0,1))end
+local function touchShow(k,console,tower)
+ if tower then
+  for _,b in k.Bands do touch(b.P,'Color')end
+  for _,h in k.Helix do touch(h.P,'Color')end
+  for _,o in{k.UpperLiquid,k.PoolSurface,k.Core,k.CoreLight,k.CrownLight,k.SteamGlow}do touch(o,'Color')end
+ end
+ if console then
+  for _,list in{k.Keys,k.Lamps,k.Meters,k.Strips}do for _,e in list do touch(e.P,'Color')end end
+  for _,e in k.Leds do touch(e.F,'BackgroundColor3')end
+  for _,e in k.Bars do touch(e.F,'BackgroundColor3','Size')end
+  for _,n in k.Needles do touch(n,'CFrame')end
+ end
+end
+local function towerShow(k,t,calm)
+ local s=calm and .25 or 1
+ for _,b in k.Bands do if b.P.Parent then b.P.Color=hsv(b.A-t*.05*s-b.Y*.004,.6,1)end end
+ for _,h in k.Helix do
+  if h.P.Parent then h.P.Color=h.Rung and hsv(t*.04*s+h.Y*.006,.22,1)or hsv(t*.06*s+h.Y*.006+h.S,.7,1)end
+ end
+ local pool=hsv(.45+t*.012*s,.55,.95)
+ if k.UpperLiquid then k.UpperLiquid.Color=pool:Lerp(L.Liquid,.35)end
+ if k.PoolSurface then k.PoolSurface.Color=hsv(.5+t*.012*s,.4,1)end
+ if k.Core then k.Core.Color=hsv(t*.03*s,.18,1)end
+ if k.CoreLight then k.CoreLight.Color=pool end
+ if k.CrownLight then k.CrownLight.Color=hsv(-t*.05*s-L.Tower.Top*.004,.6,1)end
+ return pool
+end
+local function consoleShow(k,t,calm,frenzy,color,gui)
+ local s=calm and .3 or 1
+ local fast=1+frenzy*4
+ for _,e in k.Keys do
+  local v=calm and .9 or .55+.45*math.max(0,math.sin(t*e.F*fast+e.Phase))
+  local c=hsv(e.U-t*.15*s*(1+frenzy*2),.65,v)
+  if color and frenzy>0 then c=c:Lerp(color,frenzy*(math.sin(t*18+e.Phase)>0 and .7 or .2))end
+  e.P.Color=c
+ end
+ for _,e in k.Lamps do
+  local w=calm and 1 or .5+.5*math.sin((t*e.F*fast+e.Phase)*2*math.pi)
+  w=w*w*(3-2*w)
+  local c=hsv(e.H+math.noise(t*.07*s,e.Phase*13.7)*.9,.75,1)
+  if color and frenzy>.5 then c=c:Lerp(color,.5)end
+  e.P.Color=DIM:Lerp(c,.22+.78*w)
+ end
+ for _,e in k.Meters do
+  local level=calm and .5 or math.clamp(.42+.6*math.noise(t*(1.4+frenzy*3),e.Seed)+frenzy*.45,0,1)
+  e.P.Color=e.I<=math.ceil(level*8)and hsv(.33-(e.I-1)/7*.33,.85,1)or DIM
+ end
+ for _,e in k.Strips do e.P.Color=hsv(e.Phase+t*.08*s*fast,.55,1)end
+ if not gui then return end
+ for _,e in k.Leds do
+  local v=calm and 1 or .35+.65*(.5+.5*math.sin(t*(2.2+frenzy*6)+e.C*.7+e.R*1.3+e.Seed))
+  e.F.BackgroundColor3=hsv((e.C+e.R)*.045-t*.1*s*fast,.7,v)
+ end
+ for _,e in k.Bars do
+  local h=calm and .5 or math.clamp(.2+.9*math.abs(math.noise(t*(1.8+frenzy*3),e.Seed))+frenzy*.3,.08,1)
+  e.F.Size=UDim2.fromScale(e.W,h)
+  e.F.BackgroundColor3=hsv(e.I/12+t*.07*s*fast,.75,1)
+ end
+end
+-- Idle gauges: the needles wander a little.
+local function needleShow(k,t)
+ for i,n in k.Needles do
+  local p=n:GetAttribute('Pivot')
+  if typeof(p)=='CFrame'then n.CFrame=p*CFrame.Angles(math.rad(-15+40*math.noise(t*.35,i*3.1)),0,0)*CFrame.new(0,.25,0)end
+ end
+end
+-- Puts the console back exactly (the cinematic's frenzy, the throttles and the master switch) while the
+-- chamber keeps the result until P.Release().
+local function restoreConsole(k)
+ local list={}
+ for _,group in{k.Keys,k.Lamps,k.Meters,k.Strips}do for _,e in group do table.insert(list,e.P)end end
+ for _,e in k.Leds do table.insert(list,e.F)end
+ for _,e in k.Bars do table.insert(list,e.F)end
+ for _,e in k.Throttles do table.insert(list,e.M)end
+ for _,o in list do
+  local saved2=saved[o]
+  if saved2 and o.Parent then
+   pcall(function()for key,v in pairs(saved2)do if key=='Pivot'then o:PivotTo(v)else(o::any)[key]=v end end end)
+  end
+  saved[o]=nil
+ end
+end
+-- Public surge: the charge climbs the column, then a rainbow front runs up and leaves the result colour.
+local function towerCharge(k,x)
+ local W=L.Tower
+ local front=W.Bottom+(W.Top-W.Bottom)*x*1.05
+ local lit,dark=Color3.fromRGB(190,255,240),L.Teal:Lerp(Color3.new(0,0,0),.6)
+ for _,b in k.Bands do set(b.P,'Color',b.Y<=front and lit:Lerp(L.Teal,math.clamp((front-b.Y)/60,0,.6))or dark)end
+ for _,h in k.Helix do set(h.P,'Color',h.Y<=front and lit or dark)end
+ if k.Core then set(k.Core,'Color',Color3.new(1,1,1))end
+end
+local function towerSurge(k,x,color,t)
+ local W=L.Tower
+ local front=W.Bottom+(W.Top+12-W.Bottom)*smooth(x)
+ local charged=Color3.fromRGB(190,255,240)
+ local function at(y,offset)
+  local d=front-y
+  if d<0 then return charged elseif d<34 then return hsv(d/34+t*.8+offset,.8,1)end
+  return color
+ end
+ for _,b in k.Bands do set(b.P,'Color',at(b.Y,b.A*.3))end
+ for _,h in k.Helix do set(h.P,'Color',at(h.Y,h.S))end
+ if k.Core then set(k.Core,'Color',color:Lerp(Color3.new(1,1,1),.5))end
+end
+local function crownBurst(k,color)
+ if k.SteamGlow and k.SteamGlow.Parent then
+  touch(k.SteamGlow,'Color');k.SteamGlow.Color=ColorSequence.new(color:Lerp(Color3.new(1,1,1),.3),color)
+  pcall(function()k.SteamGlow:Emit(14)end)
+ end
+ if k.CrownLight then set(k.CrownLight,'Color',color);set(k.CrownLight,'Brightness',6)end
+end
+
+------------------------------------------------------------------------------------------------
 -- Idle motion (near the machine) and the public pulse for other players
 ------------------------------------------------------------------------------------------------
-local idle={Tweens={},Running=false,Machine=nil}
+local idle={Tweens={},Running=false,Machine=nil,Show=nil}
 local function stopIdle()
+ if idle.Show then idle.Show:Disconnect();idle.Show=nil end
  for _,t in idle.Tweens do t:Cancel()end
  table.clear(idle.Tweens)
  if idle.Running then restoreAll()end
@@ -328,6 +488,25 @@ local function startIdle(m)
   f.Floor.CFrame=k.CF(CFrame.new(0,L.Tube.FloorTop+.3,0));f.Floor.Size=Vector3.new(12,.2,12)
   f.Bubbles.Color=ColorSequence.new(L.Teal);f.Bubbles.Rate=5;f.Bubbles.Enabled=true
  end
+ -- The show (throttled by distance: the column at up to 30 Hz, the console only while in the hall).
+ touchShow(k,true,true)
+ local low=lowFX()
+ local last,lastConsole,lastSteam=0,0,0
+ idle.Show=Run.Heartbeat:Connect(function()
+  local now=os.clock()
+  local camera=workspace.CurrentCamera
+  local dist=camera and(camera.CFrame.Position-k.Center).Magnitude or math.huge
+  local step=(dist<140 and 1/30 or dist<400 and 1/15 or 1/8)*(low and 2 or 1)
+  if now-last<step then return end
+  last=now
+  local pool=towerShow(k,now,still)
+  if dist<160 and now-lastConsole>=(low and 1/10 or 1/24)then
+   lastConsole=now
+   consoleShow(k,now,still,0,nil,not low)
+   if not still then needleShow(k,now)end
+  end
+  if k.SteamGlow and now-lastSteam>.5 then lastSteam=now;k.SteamGlow.Color=ColorSequence.new(pool:Lerp(Color3.new(1,1,1),.25),pool)end
+ end)
 end
 
 -- Another player's mutation: the chamber charges up and bursts in the result colour (cheap).
@@ -353,28 +532,41 @@ local function publicPulse(m,variant)
  if publicBusy or P.Playing or not m.Parent then return end
  local camera=workspace.CurrentCamera
  local k=rig(m)
- if not camera or(camera.CFrame.Position-k.W(Vector3.new(0,16,0))).Magnitude>170 then return end
+ local dist=camera and(camera.CFrame.Position-k.Center).Magnitude or math.huge
+ if dist>SHOW_RANGE then return end
+ -- In the hall: the chamber charges and bursts. Everyone in range: the charge climbs the column, a
+ -- rainbow front runs up to the crown and leaves the result colour, the crown puffs coloured steam.
+ local hall=dist<=170
  publicBusy=true
  local wasIdle=idle.Running;stopIdle()
  local color=colorOf(variant);local low=lowFX();local calm=reduced()
- local total=C.Machine.PublicBurst;local start=os.clock();local fired=false;local angle=0
+ local total=C.Machine.PublicBurst;local start=os.clock();local fired=false;local crowned=false;local angle=0
+ local surge=calm and 1.2 or 2.2
  local conn
  conn=Run.Heartbeat:Connect(function(dt)
   if conn~=publicConn then return end
   local t=os.clock()-start
-  if not m.Parent or P.Playing then t=total+2 end
+  if not m.Parent or P.Playing then t=total+surge+2 end
   if t<total then
    local x=t/total
    setGlow(k,L.Teal:Lerp(Color3.new(1,1,1),x*.35),.15-.15*x)
+   towerCharge(k,x)
    if k.Light then set(k.Light,'Brightness',1.4+x*3)end
-   if not calm then angle+=dt*(0.6+x*12);setRotors(k,angle)end
+   if hall and not calm then angle+=dt*(0.6+x*12);setRotors(k,angle)end
   elseif not fired then
    fired=true;setGlow(k,color,0)
    if k.Light then set(k.Light,'Brightness',7)end
-   burst(k,color,false,low or calm)
-   P.Cue('Pulse',k.M:FindFirstChild('ChamberLightPart',true))
-  elseif t<total+1.4 then
-   if k.Light then set(k.Light,'Brightness',lerp(7,1.4,(t-total)/1.4))end
+   if hall then
+    burst(k,color,false,low or calm)
+    P.Cue('Pulse',k.M:FindFirstChild('ChamberLightPart',true))
+   end
+  elseif t<total+surge then
+   local x=(t-total)/surge
+   towerSurge(k,x,color,t)
+   if not crowned and x>.85 then crowned=true;crownBurst(k,color)end
+   if k.Light then set(k.Light,'Brightness',lerp(7,1.4,math.min(1,x*1.6)))end
+  elseif t<total+surge+.6 then
+   towerSurge(k,1,color,t)
   else
    conn:Disconnect();publicConn=nil;restoreAll();publicBusy=false
    if wasIdle then task.defer(function()local mm=machine();if mm then startIdle(mm)end end)end
@@ -420,7 +612,7 @@ function P.StartWorld()
    if m then
     localizeScreens(m)
     local camera=workspace.CurrentCamera
-    local near=camera~=nil and(camera.CFrame.Position-m:GetPivot().Position).Magnitude<220
+    local near=camera~=nil and(camera.CFrame.Position-m:GetPivot().Position).Magnitude<SHOW_RANGE
     if near and not idle.Running and not P.Playing and not publicBusy and not shown then startIdle(m)
     elseif(not near or idle.Machine~=m)and idle.Running then stopIdle()end
    elseif idle.Running then
@@ -481,6 +673,7 @@ function P.Play(result)
  P.Release(true)
  local k=rig(m);local f=pool();resetPool()
  local calm=reduced();local low=lowFX()
+ touchShow(k,true,false)
  local before=result.BeforeDog or result.Dog
  local after=result.Dog or result.BeforeDog
  local fromVariant=before and before.Variant or'Normal'
@@ -630,6 +823,16 @@ function P.Play(result)
    elseif t>=t4 then color=toColor end
    local pulse=(t>=t4 and t<t5)and(math.floor(t*14)%2==0 and 0 or .3)or(.15-.15*span(t,t2,t4))
    setGlow(k,color,pulse)
+   -- The console goes wild (keys flash the reel colour, lamps race, meters peg), the master switch
+   -- slams shut with the button and the throttles go forward one by one as the lift rises.
+   consoleShow(k,os.clock(),calm,calm and 0 or(t<t5 and .35+.65*span(t,t2,t4)or 1-span(t,t5,t6)),color,not low)
+   if not calm then
+    for _,th in k.Throttles do
+     local base=saved[th.M]and saved[th.M].Pivot or th.M:GetPivot()
+     local a=th.Order==0 and span(t,.12,.3)or span(t,t2-.4+th.Order*.15,t2-.1+th.Order*.15)
+     pivot(th.M,base*CFrame.Angles(0,0,th.Swing*a))
+    end
+   end
    if k.Light then
     local b=1.4+3*span(t,t2,t4)
     if t>=t5 then b=lerp(10,2.6,span(t,t5,t5+.8))end
@@ -735,6 +938,7 @@ function P.Play(result)
   local s=o and saved[o]
   if s and o.Parent then pcall(function()if s.Pivot then o:PivotTo(s.Pivot)end;if s.CFrame then o.CFrame=s.CFrame end;if s.Color then o.Color=s.Color end end);saved[o]=nil end
  end
+ restoreConsole(k)
  local character=player.Character;local humanoid=character and character:FindFirstChildOfClass('Humanoid')
  camera.CameraType=oldType==Enum.CameraType.Scriptable and Enum.CameraType.Custom or oldType
  camera.CameraSubject=humanoid or oldSubject;camera.FieldOfView=oldFov

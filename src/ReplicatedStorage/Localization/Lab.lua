@@ -312,6 +312,13 @@ local Machine={
 	['☢ MUTATION MACHINE ☢']='☢ Мутационная машина ☢',
 	['READY · PRESS ACTIVATE']='Готово · нажми «Активация»',
 	['☢ NUCLEAR MUTATION MACHINE ☢']='☢ Ядерная мутационная машина ☢',
+	['☢ DOGROTS REACTOR ☢']='☢ Реактор DOGROTS ☢',
+	['COOLANT']='Охлаждение',
+	['PLASMA']='Плазма',
+	['DNA SYNC']='Синхр. ДНК',
+	['RADIATION']='Радиация',
+	['GENOME']='Геном',
+	['OVERDRIVE']='Форсаж',
 }
 
 local Templates={
