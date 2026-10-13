@@ -15,7 +15,7 @@ Routing.Locations={
  {Key='PlayerYards',Name='Your yard',Detail='Your dogs, digging and workshop'},
  {Key='WelcomeHub',Name='Welcome plaza',Detail='Arrival, community and DOG EXPRESS'},
  {Key='DogDex',Name='DogDex museum',Detail='100 good boys to discover'},
- {Key='MutationLab',Name='Mutation lab',Detail='Variants, ascension and research'},
+ {Key='MutationLab',Name='Mutation lab',Detail='Nuclear mutation machine'},
  {Key='GlobalDigSite',Name='Global event',Detail='COMING SOON',Sealed=true},
  {Key='RewardMachine',Name='DOG-O-MATIC PLAZA',Detail='DOG-O-MATIC rewards and odds'},
  {Key='Shops',Name='Paw market',Detail='Equipment, cosmetics and supplies'},

@@ -24,7 +24,7 @@ local exact = {
 	-- The previous map texts (kept for older labels).
 	["CLEAR MARKER"] = "УБРАТЬ МЕТКУ",
 	["CLEAR ROUTE"] = "УБРАТЬ МАРШРУТ",
-	["Variants, ascension and research"] = "Варианты, восхождение и исследования",
+	["Nuclear mutation machine"] = "Ядерная мутационная машина",
 	["SEALED / FUTURE AREA"] = "ЗАКРЫТО / БУДУЩАЯ ЗОНА",
 }
 

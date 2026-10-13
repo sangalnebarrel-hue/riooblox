@@ -264,6 +264,20 @@ local function liveObject(key: string, yard: Instance): Instance?
 		known = deco and deco:FindFirstChild("BestFinds")
 	elseif key == "Collector" then
 		known = yard:FindFirstChild("SellAnchor")
+	elseif key == "MineElevator" then
+		-- The mine is built under DOGROTS_District.MineWorks (tagged with the yard's YardId), not
+		-- inside the yard model; its elevator gate carries NavTarget = "MineElevator".
+		local works = yard.Parent and yard.Parent.Parent and yard.Parent.Parent:FindFirstChild("MineWorks")
+		local yardId = yard:GetAttribute("YardId")
+		for _, mine in ipairs(works and works:GetChildren() or {}) do
+			if yardId ~= nil and mine:GetAttribute("YardId") == yardId then
+				local headframe = mine:FindFirstChild("Headframe")
+				local gate = headframe and headframe:FindFirstChild("Gate", true)
+				if gate and gate:GetAttribute("NavTarget") == key then
+					known = gate
+				end
+			end
+		end
 	end
 	if known then
 		return known

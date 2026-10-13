@@ -85,6 +85,11 @@ local function build(yard: Model, layout: any)
 	local headframe = Structures.Headframe()
 	Structures.Place(headframe, layout)
 	headframe.Name = "Headframe"
+	-- "Show the way" (Navigation.PathGuide) points at the elevator gate.
+	local gatePart = headframe:FindFirstChild("Gate", true)
+	if gatePart then
+		gatePart:SetAttribute("NavTarget", "MineElevator")
+	end
 	tag(headframe)
 	setStreaming(headframe, Enum.ModelStreamingMode.Atomic)
 	headframe.Parent = root

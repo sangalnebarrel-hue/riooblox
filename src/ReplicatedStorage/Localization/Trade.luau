@@ -5,6 +5,8 @@
 -- Replies the trade shares with other systems ("Unlock this dog first", "Wait for delivery"...) keep
 -- their Russian in the dictionaries that already have them. tests/trade.luau checks every string.
 local Exact = {
+	-- Onboarding step 15 (Modules.OnboardingGuide) describes the new flow.
+	["Trading unlocks at Level 5 for both players. Invite a player, put dogs and finds on YOUR side, check the value bar, press READY, then HOLD CONFIRM after the short safety timer. Any change resets READY."] = "Обмен открывается, когда оба игрока достигли 5 уровня. Пригласи игрока, положи собак и находки на СВОЮ сторону, проверь шкалу ценности, нажми ГОТОВ и после короткого таймера УДЕРЖИВАЙ ПОДТВЕРДИТЬ. Любое изменение сбрасывает ГОТОВ.",
 	-- Invitations (Economy.Engine)
 	["Trade invitation sent"] = "Приглашение на обмен отправлено",
 	["Choose an online player"] = "Выбери игрока, который сейчас в игре",
