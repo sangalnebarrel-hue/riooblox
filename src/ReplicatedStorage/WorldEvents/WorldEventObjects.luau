@@ -88,10 +88,55 @@ local function chest(model,color,body,lid,band,cursed)
  piece(model,'Latch',Vector3.new(.55,.75,.22),base*CFrame.new(0,.45,-1.22),color,Enum.Material.Neon)
  local glow=piece(model,'TreasureGlow',Vector3.new(2.6,.3,1.6),base*CFrame.new(0,1.1,-.1),color,Enum.Material.Neon);glow.Transparency=.25
 end
+-- DOG RUSH runaway pup: a small golden puppy (about 2.6 studs tall, facing -Z) in a sub-model
+-- 'Visual' that clients hop and turn locally (WorldEventGameplayFX); the server keeps the
+-- InteractionCore (prompt) and the touch CatchZone still. 30 parts, all anchored and non-colliding.
+local function pup(model,color)
+ local m=Instance.new('Model');m.Name='Visual';m.Parent=model
+ local gold,light,dark,ink=C(255,196,58),C(255,232,170),C(214,140,38),C(36,28,30)
+ local function ball(name,d,cf,c,mat)local b=piece(m,name,Vector3.one*d,cf,c,mat or Enum.Material.SmoothPlastic,Enum.PartType.Ball);return b end
+ local function egg(name,size,cf,c,mat)return V.Ellipsoid(m,name,size,cf,c,mat or Enum.Material.SmoothPlastic)end
+ local body=egg('PupBody',Vector3.new(1.55,1.35,2.3),CFrame.new(0,1.3,.1),gold);body.Reflectance=.08
+ egg('PupChest',Vector3.new(1.1,1.05,.9),CFrame.new(0,1.25,-.72),light)
+ egg('PupBelly',Vector3.new(1.05,.5,1.5),CFrame.new(0,.82,.15),light)
+ local head=ball('PupHead',1.55,CFrame.new(0,2.2,-1.02),gold);head.Reflectance=.08
+ egg('PupMuzzle',Vector3.new(.86,.6,.72),CFrame.new(0,1.98,-1.68),light)
+ ball('PupNose',.32,CFrame.new(0,2.12,-2.04),ink)
+ egg('PupMouth',Vector3.new(.34,.08,.1),CFrame.new(0,1.8,-1.98),ink)
+ egg('PupTongue',Vector3.new(.24,.06,.3),CFrame.new(0,1.74,-1.96)*CFrame.Angles(-.5,0,0),C(255,120,140))
+ for _,x in ipairs({-1,1})do
+  ball('PupEye',.3,CFrame.new(x*.36,2.38,-1.66),ink)
+  ball('PupEyeShine',.11,CFrame.new(x*.33,2.44,-1.8),C(255,255,255),Enum.Material.Neon)
+  egg('PupCheek',Vector3.new(.26,.16,.08),CFrame.new(x*.58,2.08,-1.6),C(255,150,150))
+  egg('PupEar',Vector3.new(.5,1,.26),CFrame.new(x*.68,2.5,-.92)*CFrame.Angles(0,0,x*.55),dark)
+  for _,z in ipairs({-.68,.78})do
+   local leg=piece(m,'PupLeg',Vector3.new(.85,.44,.44),CFrame.new(x*.45,.48,z)*CFrame.Angles(0,0,math.pi/2),gold,Enum.Material.SmoothPlastic,Enum.PartType.Cylinder);leg.Reflectance=.05
+   egg('PupPaw',Vector3.new(.52,.26,.62),CFrame.new(x*.45,.13,z-.06),light)
+  end
+ end
+ local tailBase,tailTip=Vector3.new(0,1.62,1.02),Vector3.new(0,2.32,1.58)
+ egg('PupTail',Vector3.new(.32,.32,(tailTip-tailBase).Magnitude+.25),CFrame.lookAt((tailBase+tailTip)/2,tailTip),gold)
+ ball('PupTailTip',.36,CFrame.new(tailTip),light)
+ local collar=piece(m,'PupCollar',Vector3.new(.2,1.36,1.36),CFrame.new(0,1.72,-.66)*CFrame.Angles(.35,math.pi/2,0),C(232,48,72),Enum.Material.SmoothPlastic,Enum.PartType.Cylinder)
+ collar.Name='PupCollar'
+ ball('PupTag',.3,CFrame.new(0,1.42,-1.18),C(255,232,120),Enum.Material.Neon)
+ m.PrimaryPart=body
+ return m
+end
 function V.Build(kind,color)
  local model=Instance.new('Model');model.Name=kind
  local p=V.Part(model,'InteractionCore',Vector3.new(0,1,0),Vector3.new(5,1,5),color,Enum.Material.Slate);model.PrimaryPart=p;p.Transparency=1
- if kind=='BonePile'or kind=='GiantBone'then
+ if kind=='RunawayPup'then
+  local gold=C(255,206,84)
+  pup(model,gold)
+  local disc=halo(model,gold,2.2);disc.Transparency=.7
+  local zone=V.Part(model,'CatchZone',Vector3.new(0,2.6,0),Vector3.new(5.5,5,5.5),gold);zone.Transparency=1;zone.CanTouch=true
+  beacon(p,gold,13)
+  local glow=p:FindFirstChildOfClass('PointLight');if glow then glow.Range=9;glow.Brightness=1.1 end
+  local sparkle=V.Particles(p,C(255,236,150),5,.32);sparkle.Lifetime=NumberRange.new(.8,1.6);sparkle.Speed=NumberRange.new(.5,1.5)
+  model:SetAttribute('PupKind','Golden')
+  return model
+ elseif kind=='BonePile'or kind=='GiantBone'then
   local ivory=C(238,229,201)
   halo(model,color,3.2)
   for i=1,3 do bone(model,CFrame.new(0,.95+(i-1)*.62,0)*CFrame.Angles(0,(i-1)*math.pi/3+.35,0),4.6,.78,ivory)end
