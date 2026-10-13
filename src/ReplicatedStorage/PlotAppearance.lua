@@ -255,9 +255,11 @@ local function garden(parent,f,d,level,sx)
   local cf=f*CFrame.new(-22*sx,10,-21-K)*CFrame.Angles(0,math.pi/2,0)
   for i=1,6 do G.Ring(parent,cf,7+i*.22,.26,Color3.fromHSV(i/7,.55,1),Enum.Material.Neon)end
  elseif m=='Clock'then
-  for i=1,4 do local cf=f*CFrame.new(-20*sx,2,-15-i*7);G.Gear(parent,cf*CFrame.Angles(-math.pi/2,0,0),3,trim)end
+  -- gear i=1 (z -22) would cut through the Mining Corner's strength rack (MiningWorld v25+)
+  for i=2,4 do local cf=f*CFrame.new(-20*sx,2,-15-i*7);G.Gear(parent,cf*CFrame.Angles(-math.pi/2,0,0),3,trim)end
  elseif m=='Treasure'then
-  for i=1,3 do local cf=f*CFrame.new((-24+(i%2)*8)*sx,1.8,-12-i*10)
+  -- chest 1 stands between the level-8 pavilion columns, clear of the dig-site border and gym mat
+  for i=1,3 do local cf=f*CFrame.new((i==1 and -20 or -24+(i%2)*8)*sx,1.8,i==1 and -24.5 or -12-i*10)
    P(parent,'ExpeditionChest',Vector3.new(5,3,3.5),cf,body,Enum.Material.WoodPlanks)
    for _,x in ipairs({-1.7,1.7})do P(parent,'ChestBand',Vector3.new(.4,3.2,3.7),cf*CFrame.new(x,0,0),trim,Enum.Material.Metal)end
    P(parent,'ChestLock',Vector3.new(.7,.9,.3),cf*CFrame.new(0,0,1.9),trim,Enum.Material.Metal)

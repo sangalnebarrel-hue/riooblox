@@ -9,11 +9,12 @@ local Models=require(RS:WaitForChild('Mining'):WaitForChild('MiningModels'))
 local M=Config.Mining
 local yardsFolder=workspace:WaitForChild('DOGROTS_District'):WaitForChild('04_PlayerYards')
 
-local LAYOUT_VERSION=25
+local LAYOUT_VERSION=26
 -- v25 (DOGROTS pickaxe pack): a wider dig site stretched along the garden edge, with satellite
 -- ore outcrops (Attachments "OreSat*" on the core; the client draws them) around the main pile.
-local PAD_SIZE=Vector3.new(31,.5,20)
-local PAD_SHIFT=1 -- the pad centre sits this many studs towards the walkway from the corner frame
+-- v26: the pad ends 1 stud earlier on the walkway side, clear of the skins' walkway lamps.
+local PAD_SIZE=Vector3.new(31,.5,19)
+local PAD_SHIFT=.5 -- the pad centre sits this many studs towards the walkway from the corner frame (pad spans d -9..10)
 
 local function part(parent,name,size,cf,color,mat,props)
  local p=Models.Part(parent,name,size,cf,color,mat,props);return p
@@ -23,9 +24,11 @@ local function rgb(r,g,b)return Color3.fromRGB(r,g,b)end
 -- PLACEMENT ------------------------------------------------------------------------------------
 -- On the kennel end of the yard's CosmeticGarden (the raised grass patch next to kennel 1), as
 -- the owner asked after the Studio tests. PlotAppearance builds its garden centrepieces (level-8
--- pavilion, UFO, rainbow, clock gears) MINING_CLEARANCE studs deeper in the garden, so checked in
--- 3D against every stage (levels 1-9) and skin (14) in all 8 yards only the Earthquake skin's flat
--- ground crack reaches under the pad (hidden there, see coverGround).
+-- pavilion, UFO, rainbow, clock gears) MINING_CLEARANCE studs deeper in the garden and, for this
+-- bigger site, drops the first Time Warp gear and moves the first Treasure Fever chest (they stood
+-- in the strength rack / on the gym mat). Checked in 3D against every stage (levels 1-9) and skin
+-- (14) in all 8 yards, no decor touches the site: only the Earthquake skin's flat ground crack
+-- reaches under the pad (hidden there, see coverGround) and the rainbow passes high above a corner.
 -- Returns the corner CFrame and sx: LookVector points to the central walkway; local +X*sx points
 -- towards the kennels / street (yards 5-8 are mirror images of yards 1-4).
 local function placement(yard)
@@ -201,7 +204,7 @@ local function build(yard:Model):Model
  for i=-3,3 do part(root,'Sleeper',Vector3.new(2.4,.16,.45),at(13.4,top+.02,2.8)*CFrame.Angles(0,math.rad(-12),0)*CFrame.new(0,0,i*1.3),rgb(86,58,36),Enum.Material.WoodPlanks)end
  -- Lamp posts at the walkway corners light the bigger site at night.
  for i,k in ipairs({-14.6,14.6})do
-  local lp=at(k,top,10.2)
+  local lp=at(k,top,9.6) -- on Border1
   part(root,'SiteLampPost'..i,Vector3.new(.35,5.2,.35),lp*CFrame.new(0,2.6,0),rgb(40,36,34),Enum.Material.Metal,{CanCollide=true})
   local bulb=part(root,'SiteLamp'..i,Vector3.new(.8,.8,.8),lp*CFrame.new(0,5.4,0),rgb(255,206,130),Enum.Material.Neon,{CastShadow=false,Shape=Enum.PartType.Ball})
   local pl=Instance.new('PointLight');pl.Range=14;pl.Brightness=.9;pl.Color=rgb(255,196,130);pl.Shadows=false;pl.Parent=bulb
@@ -279,7 +282,10 @@ local function syncHeld(player)
  if def then
   local glove=(def.Visual or{}).Grip=='Glove'
   local mount=glove and'Glove'or(active and'Hand'or'Back')
-  if not held or held:GetAttribute('Level')~=level or held:GetAttribute('Mount')~=mount then
+  if mount=='Back'and character:FindFirstChild('DOGROTS_Accessory_Back')then
+   -- A worn Back item (EquipmentWorld) takes the back: show the pickaxe only while mining.
+   if held then held:Destroy()end
+  elseif not held or held:GetAttribute('Level')~=level or held:GetAttribute('Mount')~=mount then
    local model=Models.Pickaxe(def,level);model:SetAttribute('Level',level);model:SetAttribute('Mount',mount)
    if mount=='Back'then attach(character,'MiningHeldPickaxe',model,TORSO,BACK_GRIP)
    elseif mount=='Glove'then attach(character,'MiningHeldPickaxe',model,RIGHT,GLOVE_GRIP)

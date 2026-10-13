@@ -39,7 +39,11 @@ function Shop.new(ctx)
   Accent=Color3.fromRGB(242,146,38),
   MaxSize=Vector2.new(1080,740),
   NoTranslate=true,
-  OnClose=function()self.IsOpen=false;if spinConn then spinConn:Disconnect();spinConn=nil end end,
+  OnClose=function()
+   self.IsOpen=false;if spinConn then spinConn:Disconnect();spinConn=nil end
+   -- Stop PickFX animating the hidden preview every frame; Open -> Select -> setPreview builds and tracks a new one.
+   if preview then if ctx.PickFX then ctx.PickFX.Untrack(preview.Model)end;preview.Model:Destroy();preview=nil end
+  end,
  })
  local body=win.Body
 
@@ -105,43 +109,71 @@ function Shop.new(ctx)
  end
 
  -- LAYOUT ----------------------------------------------------------------------------------------
+ local fit=1 -- base scale of the showcase (Select's pop animates around it)
+ local popTween=nil
  local function layout()
   local info=win:GetLayout()
-  local W,H=math.max(300,info.Width),math.max(300,info.Height)
-  local phone=info.Phone or W<640
+  -- Body clips its children: never lay out past it (the floors only cover the no-size-yet fallback).
+  local W,H=math.max(300,info.Width),math.max(120,info.Height)
+  local stacked=info.Phone and not info.Landscape -- portrait only; landscape phones keep the list beside the showcase
   local rw,rh,lw,lh
-  if phone then
+  if stacked then
    rw,rh=W,math.floor(H*.64);lw,lh=W,H-rh-8
    right.Position=UDim2.fromOffset(0,0);left.Position=UDim2.fromOffset(0,rh+8)
   else
    lw=math.floor(math.clamp(W*.36,250,380));rw=W-lw-12;rh=H;lh=H
    left.Position=UDim2.fromOffset(0,0);right.Position=UDim2.fromOffset(lw+12,0)
   end
-  left.Size=UDim2.fromOffset(lw,lh);right.Size=UDim2.fromOffset(rw,rh)
+  left.Size=UDim2.fromOffset(lw,lh)
+  -- A showcase smaller than its design size is laid out at that size and scaled down to fit
+  -- (side by side, the stage and the info column each need ~260 px).
+  local short=not stacked and rh<480
+  if popTween then popTween:Cancel();popTween=nil end
+  fit=math.min(1,rh/(stacked and 490 or 340),short and rw/550 or 1);showScale.Scale=fit
+  rw,rh=math.floor(rw/fit),math.floor(rh/fit)
+  right.Size=UDim2.fromOffset(rw,rh)
   local pad=12
-  local stageH=math.floor(rh*(phone and .36 or .4))
-  stage.Position=UDim2.fromOffset(pad,pad);stage.Size=UDim2.fromOffset(rw-pad*2,stageH)
-  local y=pad+stageH+8
-  nameLabel.Position=UDim2.fromOffset(pad+4,y);nameLabel.Size=UDim2.fromOffset(rw-pad*2-8,phone and 26 or 32);y+=phone and 26 or 32
-  lore.Position=UDim2.fromOffset(pad+4,y);lore.Size=UDim2.fromOffset(rw-pad*2-8,phone and 30 or 38);y+=phone and 30 or 40
-  trait.Position=UDim2.fromOffset(pad+4,y);trait.Size=UDim2.fromOffset(rw-pad*2-8,22);y+=26
-  local bottomH=phone and 92 or 54
-  local statsH=math.max(60,rh-y-bottomH-pad)
-  statsFrame.Position=UDim2.fromOffset(pad+4,y);statsFrame.Size=UDim2.fromOffset(rw-pad*2-8,statsH)
   local grid=statsFrame:FindFirstChildOfClass('UIGridLayout')
-  local rows=3;local cellH=math.clamp(math.floor((statsH-12)/rows),30,44)
-  grid.CellSize=UDim2.new(.5,-6,0,cellH)
-  for _,st in ipairs(STATS)do st.Bar.Instance.Position=UDim2.fromOffset(0,math.max(18,cellH-16))end
+  local function placeStats(x,y,w,h)
+   statsFrame.Position=UDim2.fromOffset(x,y);statsFrame.Size=UDim2.fromOffset(w,h)
+   local cellH=math.clamp(math.floor((h-12)/3),30,44)
+   grid.CellSize=UDim2.new(.5,-6,0,cellH)
+   for _,st in ipairs(STATS)do st.Bar.Instance.Position=UDim2.fromOffset(0,math.max(18,cellH-16))end
+  end
   local by=rh-pad-46
-  if phone then
-   priceChip.Instance.Position=UDim2.fromOffset(pad,by-40);strengthChip.Instance.Position=UDim2.fromOffset(pad+150,by-40)
+  local function split(room)local bw=math.min(250,math.floor(room*.6));return bw,math.min(170,room-bw-12)end
+  local bw,tw=split(rw-330) -- desktop: BUY and TRY A HIT beside the chips
+  local chipsAbove=stacked or tw<110 -- no room for both buttons there: the chips get their own row above them
+  if chipsAbove then bw,tw=split(rw-pad*2)end
+  if short then
+   -- Landscape phone / low window: the model on the left, name, price, lore, trait and stats beside it.
+   local sw=math.floor((rw-pad*3)*.5);local x=pad*2+sw;local cw=rw-x-pad
+   stage.Position=UDim2.fromOffset(pad,pad);stage.Size=UDim2.fromOffset(sw,by-pad-8)
+   number.Visible=sw>=272 -- on a narrower stage '#16/16' runs into the rarity banner
+   nameLabel.Position=UDim2.fromOffset(x,pad);nameLabel.Size=UDim2.fromOffset(cw,28)
+   priceChip.Instance.Position=UDim2.fromOffset(x,pad+32);strengthChip.Instance.Position=UDim2.fromOffset(x+150,pad+32)
+   lore.Position=UDim2.fromOffset(x,pad+72);lore.Size=UDim2.fromOffset(cw,30)
+   trait.Position=UDim2.fromOffset(x,pad+104);trait.Size=UDim2.fromOffset(cw,22)
+   placeStats(x,pad+130,cw,by-8-(pad+130))
+  else
+   local bottomH=chipsAbove and 92 or 54
+   local stageH=math.floor(rh*(stacked and .36 or .4))
+   if not stacked then stageH=math.max(70,math.min(stageH,rh-pad-8-98-bottomH-pad-(3*34+12)))end -- the 3 stat rows always fit
+   stage.Position=UDim2.fromOffset(pad,pad);stage.Size=UDim2.fromOffset(rw-pad*2,stageH);number.Visible=true
+   local y=pad+stageH+8
+   nameLabel.Position=UDim2.fromOffset(pad+4,y);nameLabel.Size=UDim2.fromOffset(rw-pad*2-8,stacked and 26 or 32);y+=stacked and 26 or 32
+   lore.Position=UDim2.fromOffset(pad+4,y);lore.Size=UDim2.fromOffset(rw-pad*2-8,stacked and 30 or 38);y+=stacked and 30 or 40
+   trait.Position=UDim2.fromOffset(pad+4,y);trait.Size=UDim2.fromOffset(rw-pad*2-8,22);y+=26
+   placeStats(pad+4,y,rw-pad*2-8,math.max(60,rh-y-bottomH-pad))
+   local chipY=chipsAbove and by-40 or by+8
+   priceChip.Instance.Position=UDim2.fromOffset(pad,chipY);strengthChip.Instance.Position=UDim2.fromOffset(pad+150,chipY)
+  end
+  if stacked or short then
    action.Instance.Position=UDim2.fromOffset(pad,by);action.Instance.Size=UDim2.fromOffset(math.floor((rw-pad*3)*.62),46)
    tryButton.Instance.Position=UDim2.fromOffset(pad*2+math.floor((rw-pad*3)*.62),by);tryButton.Instance.Size=UDim2.fromOffset(math.floor((rw-pad*3)*.38),46)
   else
-   priceChip.Instance.Position=UDim2.fromOffset(pad,by+8);strengthChip.Instance.Position=UDim2.fromOffset(pad+150,by+8)
-   local bw=math.min(250,math.floor((rw-330)*.6));local tw=math.min(170,rw-330-bw-12)
    action.Instance.Position=UDim2.fromOffset(rw-pad-bw,by);action.Instance.Size=UDim2.fromOffset(bw,46)
-   tryButton.Instance.Position=UDim2.fromOffset(rw-pad-bw-12-tw,by);tryButton.Instance.Size=UDim2.fromOffset(math.max(110,tw),46)
+   tryButton.Instance.Position=UDim2.fromOffset(rw-pad-bw-12-tw,by);tryButton.Instance.Size=UDim2.fromOffset(tw,46)
   end
  end
  win.Resized:Connect(function()if self.IsOpen then layout()end end)
@@ -230,8 +262,8 @@ function Shop.new(ctx)
   self.RenderAction(s)
   renderTiles(s)
   if not instant and not Kit.Motion.Reduced()then
-   showScale.Scale=.97
-   TweenService:Create(showScale,TweenInfo.new(.22,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Scale=1}):Play()
+   showScale.Scale=fit*.97 -- pop around the fit scale, not 1, so it does not undo the fit
+   popTween=TweenService:Create(showScale,TweenInfo.new(.22,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Scale=fit});popTween:Play()
   end
  end
  function self.RenderAction(s)

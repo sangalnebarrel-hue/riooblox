@@ -49,6 +49,21 @@ function Combo.new(ctx)
  local counter=Instance.new('Frame');counter.Name='ComboCounter';counter.AnchorPoint=Vector2.new(1,.5);counter.Position=UDim2.new(1,-28,.42,0)
  counter.Size=UDim2.fromOffset(230,150);counter.BackgroundTransparency=1;counter.Visible=false;counter.ZIndex=70;counter.Parent=layer
  local counterScale=Instance.new('UIScale');counterScale.Parent=counter
+ -- Narrow landscape screens (phones): the centred 460 px ore panel (top ~46-58, ~130 px tall with its Stone pill) reaches
+ -- x = W/2+230 and would sit under the 230 px counter. Shrink the counter into the gap at the right edge;
+ -- where even half size does not fit, also drop it below the panel. UIScale scales around AnchorPoint (1,.5).
+ local rest=1
+ local function layoutCounter()
+  local size=gui.AbsoluteSize
+  if size.X>=1000 or size.Y*.42-75>=190 then rest=1;counter.Position=UDim2.new(1,-28,.42,0)
+  else
+   local room=(size.X/2-246)/230
+   rest=math.clamp(room,.5,.8)
+   counter.Position=UDim2.new(1,-10,0,math.floor(room<rest and math.max(size.Y*.42,190+75*rest)or size.Y*.42))
+  end
+  counterScale.Scale=rest
+ end
+ gui:GetPropertyChangedSignal('AbsoluteSize'):Connect(layoutCounter);layoutCounter()
  local caption=Instance.new('TextLabel');caption.Name='Caption';caption.BackgroundTransparency=1;caption.Size=UDim2.new(1,0,0,28)
  caption.FontFace=PIXEL;caption.TextScaled=true;caption.TextColor3=Color3.new(1,1,1);caption.TextStrokeTransparency=0;caption.TextStrokeColor3=C(20,24,48)
  caption.TextXAlignment=Enum.TextXAlignment.Right;caption.ZIndex=71;caption.Parent=counter
@@ -75,8 +90,8 @@ function Combo.new(ctx)
   big.Text='x'..n
   caption.Text=(label=='COMBO'and(ru()and'КОМБО'or'COMBO')or(ru()and'ПОВТОРЫ'or'REPS'))..(n>=10 and' 🔥'or'')
   if reduced()then return end
-  counterScale.Scale=1.35+math.min(.4,n*.01)
-  TweenService:Create(counterScale,TweenInfo.new(.22,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Scale=1}):Play()
+  counterScale.Scale=rest*(1.35+math.min(.4,n*.01))
+  TweenService:Create(counterScale,TweenInfo.new(.22,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Scale=rest}):Play()
   big.Rotation=math.random(-9,9)
   TweenService:Create(big,TweenInfo.new(.25,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Rotation=0}):Play()
  end

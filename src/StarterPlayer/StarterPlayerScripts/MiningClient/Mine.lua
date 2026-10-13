@@ -3,7 +3,7 @@
 -- scattered over the dig site), judge clicks/taps, swing the pickaxe and play predicted effects
 -- instantly (MiningClient.Combo: shockwave + endless "xN" combo, PickFX: the pickaxe's own hit),
 -- then apply the server's verdict (coins, crits, breaks). The camera orbits the dig site:
--- right mouse drag / one-finger swipe / right stick / Q-E, mouse wheel or pinch to zoom, R resets.
+-- right mouse drag / one-finger swipe / right stick / Z-C, mouse wheel or pinch to zoom, R resets.
 local Players=game:GetService('Players')
 local RunService=game:GetService('RunService')
 local UIS=game:GetService('UserInputService')
@@ -171,18 +171,20 @@ function Mine.new(ctx)
   local p,on=cam:WorldToViewportPoint(att.WorldPosition)
   return Vector2.new(p.X,p.Y),on
  end
- local function pickPoint()
+ -- Circles are drawn jittered off their points, so drawn centres (point + jitter) are compared.
+ local function pickPoint(jitter)
   local cam=workspace.CurrentCamera
   if not view then return nil end
   if not cam then return World.HitPoint(view,nil,usedPoints)end
   local live={}
   for _,c in pairs(active)do
-   if not c.Removed and c.Point and c.Point.Parent then table.insert(live,(screenPos(cam,c.Point)))end
+   if not c.Removed and c.Point and c.Point.Parent then table.insert(live,screenPos(cam,c.Point)+(c.Jitter or Vector2.zero)*CIRCLE)end
   end
+  local own=(jitter or Vector2.zero)*CIRCLE
   local avoid={};local free=0;local fallback,fallbackGap=nil,-1
   for _,att in ipairs(view.HitPoints or{})do
    if att.Parent then
-    local p=screenPos(cam,att)
+    local p=screenPos(cam,att)+own
     local gap=math.huge
     for _,q in ipairs(live)do gap=math.min(gap,(p-q).Magnitude)end
     if usedPoints[att]or gap<CIRCLE*.9 then avoid[att]=true else free+=1 end
@@ -292,10 +294,11 @@ function Mine.new(ctx)
  local function makeCircle(t)
   if active[t.Id]or judged[t.Id]then return end
   local c={Id=t.Id,Window=t.Window,LocalSpawn=t.LocalSpawn,Slot=t.Slot}
-  c.Point=pickPoint()
-  -- A random screen offset from the hit point: circles never sit on a fixed grid.
+  -- A random screen offset from the hit point: circles never sit on a fixed grid. Chosen before
+  -- the point so pickPoint keeps the drawn circle clear of the live ones.
   local a=math.random()*math.pi*2
   c.Jitter=Vector2.new(math.cos(a),math.sin(a)*.8)*(math.random()*JITTER)
+  c.Point=pickPoint(c.Jitter)
   local color=pickColor()
   local frame=Instance.new('Frame');frame.Name='Circle'..t.Id;frame.AnchorPoint=Vector2.new(.5,.5);frame.Size=UDim2.fromOffset(CIRCLE,CIRCLE)
   frame.BackgroundTransparency=1;frame.Visible=false;frame.ZIndex=math.max(21,1000000-t.Id);frame.Parent=circles
@@ -462,10 +465,13 @@ function Mine.new(ctx)
 
  -- CAMERA -------------------------------------------------------------------------------------
  -- An orbit around the dig site (the main pile and its satellites). The player turns it with the
- -- right mouse button / a swipe on empty screen / the right stick / Q-E, zooms with the wheel or
+ -- right mouse button / a swipe on empty screen / the right stick / Z-C, zooms with the wheel or
  -- a pinch, and R puts it back. The orbit never goes under the ground or into the pile.
- local orbit={Yaw=0,Pitch=0,Zoom=0,TYaw=0,TPitch=0,TZoom=0}
- local frameInfo=nil
+ -- Z/C rather than Q/E: E is the ProximityPrompt key, and keys are tracked from InputBegan so
+ -- typing in chat (processed input) never turns the camera.
+ local orbit={Yaw=0,Pitch=0,Zoom=0,TYaw=0,TPitch=0,TZoom=0,Keys={}}
+ local ORBIT_LEFT,ORBIT_RIGHT=Enum.KeyCode.Z,Enum.KeyCode.C
+ local frameInfo,fovTween=nil,nil
  local function focusPoint()
   local core=view and view.Core;if not core then return nil end
   local sum=(core:FindFirstChild('OreRoot')and core.OreRoot.WorldPosition or core.Position)*2;local n=2
@@ -505,9 +511,13 @@ function Mine.new(ctx)
    local a=math.clamp((os.clock()-t0)/.6,0,1);a=a*a*(3-2*a)
    return start:Lerp(goal,a)
   end
-  TweenService:Create(camera,TweenInfo.new(.6,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{FieldOfView=68}):Play()
+  if fovTween then fovTween:Cancel()end
+  fovTween=TweenService:Create(camera,TweenInfo.new(.6,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{FieldOfView=68})
+  fovTween:Play()
  end
  local function restoreCamera()
+  -- A still-running FOV tween would overwrite the restored FOV, so stop it first.
+  if fovTween then fovTween:Cancel();fovTween=nil end
   camera=workspace.CurrentCamera
   if camera and savedCamera then
    camera.CameraType=Enum.CameraType.Custom
@@ -529,11 +539,13 @@ function Mine.new(ctx)
   table.insert(connections,UIS.InputBegan:Connect(function(input,processed)
    if input.UserInputType==Enum.UserInputType.MouseButton2 then dragging=true
    elseif input.UserInputType==Enum.UserInputType.Touch and not processed then touches[input]=input.Position
-   elseif input.KeyCode==Enum.KeyCode.R and not processed then orbit.TYaw,orbit.TPitch,orbit.TZoom=0,0,0 end
+   elseif input.KeyCode==Enum.KeyCode.R and not processed then orbit.TYaw,orbit.TPitch,orbit.TZoom=0,0,0
+   elseif (input.KeyCode==ORBIT_LEFT or input.KeyCode==ORBIT_RIGHT)and not processed then orbit.Keys[input.KeyCode]=true end
   end))
   table.insert(connections,UIS.InputEnded:Connect(function(input)
    if input.UserInputType==Enum.UserInputType.MouseButton2 then dragging=false
-   elseif input.UserInputType==Enum.UserInputType.Touch then touches[input]=nil end
+   elseif input.UserInputType==Enum.UserInputType.Touch then touches[input]=nil
+   elseif input.KeyCode==ORBIT_LEFT or input.KeyCode==ORBIT_RIGHT then orbit.Keys[input.KeyCode]=nil end
   end))
   table.insert(connections,UIS.InputChanged:Connect(function(input,processed)
    if input.UserInputType==Enum.UserInputType.MouseMovement and dragging then orbitBy(input.Delta.X,input.Delta.Y)
@@ -559,8 +571,8 @@ function Mine.new(ctx)
   end))
  end
  local function updateOrbit(dt)
-  if UIS:IsKeyDown(Enum.KeyCode.Q)then orbit.TYaw+=dt*1.6 end
-  if UIS:IsKeyDown(Enum.KeyCode.E)then orbit.TYaw-=dt*1.6 end
+  if orbit.Keys[ORBIT_LEFT]and UIS:IsKeyDown(ORBIT_LEFT)then orbit.TYaw+=dt*1.6 end
+  if orbit.Keys[ORBIT_RIGHT]and UIS:IsKeyDown(ORBIT_RIGHT)then orbit.TYaw-=dt*1.6 end
   if orbit.Stick then orbitBy(orbit.Stick.X*dt*420,-orbit.Stick.Y*dt*300)end
   local k=math.min(1,dt*10)
   orbit.Yaw+=(orbit.TYaw-orbit.Yaw)*k;orbit.Pitch+=(orbit.TPitch-orbit.Pitch)*k;orbit.Zoom+=(orbit.TZoom-orbit.Zoom)*k
@@ -610,14 +622,14 @@ function Mine.new(ctx)
       sendHit(c,1,true)
      else
       local att=c.Point
-      if not att or not att.Parent then c.Point=pickPoint();att=c.Point end
+      if not att or not att.Parent then c.Point=pickPoint(c.Jitter);att=c.Point end
       if att and cam then
        local p,onScreen=cam:WorldToViewportPoint(att.WorldPosition)
        local j=c.Jitter or Vector2.zero
        c.Frame.Position=UDim2.fromOffset(p.X+j.X*CIRCLE,p.Y+j.Y*CIRCLE)
        c.Frame.Visible=onScreen
        if onScreen and not c.Shown then
-        c.Shown=true
+        c.Shown=true;c.PopDoneAt=now+.22
         TweenService:Create(c.Pop,TweenInfo.new(.22,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Scale=1}):Play()
        end
       end
@@ -627,7 +639,8 @@ function Mine.new(ctx)
       c.Ring.Color=inGold and Color3.fromRGB(255,240,160)or Color3.new(1,1,1)
       c.Ring.Thickness=inGold and 6 or 4
       if c.HaloGrad then c.HaloGrad.Rotation=(now*120+c.Id*37)%360 end
-      if inGold and c.Shown and c.Pop.Scale>=.99 then c.Pop.Scale=1+math.sin(now*30)*.04 end
+      -- Pulse in the gold window once the pop-in has finished, back to 1 outside it.
+      if c.Shown and now>=c.PopDoneAt then c.Pop.Scale=inGold and 1+math.sin(now*30)*.04 or 1 end
      end
     end
    end
@@ -718,7 +731,7 @@ function Mine.new(ctx)
   for _,c in pairs(active)do removeCircle(c,nil)end
   table.clear(active);table.clear(usedPoints);table.clear(sendQueue);table.clear(judged)
   overlay.Visible=false
-  dragging=false;table.clear(touches);orbit.Stick=nil
+  dragging=false;table.clear(touches);table.clear(orbit.Keys);orbit.Stick=nil
   restoreCamera()
   Anim.SetReady(false)
   if Combo then Combo.Reset()end

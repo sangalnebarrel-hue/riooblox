@@ -51,17 +51,26 @@ function Rules.Normalize(m,M)
  if type(m)~='table'then m=Rules.New(M)end
  local pickCount,weightCount=#M.Pickaxes,#M.Weights
  if (tonumber(m.Version)or 1)<3 then
-  local function remap(level)
-   level=int(level,0)
-   if level<1 then return 0 end
-   return LEGACY_PICKAXES[math.min(level,#LEGACY_PICKAXES)]
+  local v3=m.PickaxeV3
+  if type(v3)=='table'then
+   -- Already migrated, then re-saved as v2 by a server still running the 7-pickaxe build: its
+   -- PickaxeOwned/Level hold v3 indices (clamped to 7 there). Restore them, never remap twice.
+   m.PickaxeOwned=math.max(int(v3.Owned,0),int(m.PickaxeOwned,0));m.PickaxeLevel=int(v3.Level,0)
+  else
+   local function remap(level)
+    level=int(level,0)
+    if level<1 then return 0 end
+    return LEGACY_PICKAXES[math.min(level,#LEGACY_PICKAXES)]
+   end
+   m.PickaxeOwned=remap(m.PickaxeOwned);m.PickaxeLevel=remap(m.PickaxeLevel)
   end
-  m.PickaxeOwned=remap(m.PickaxeOwned);m.PickaxeLevel=remap(m.PickaxeLevel)
  end
  m.Strength=math.clamp(int(m.Strength,0),0,M.MaxStrength)
  m.PickaxeOwned=math.clamp(int(m.PickaxeOwned,0),0,pickCount)
  m.PickaxeLevel=math.clamp(int(m.PickaxeLevel,0),0,m.PickaxeOwned)
  if m.PickaxeOwned>0 and m.PickaxeLevel==0 then m.PickaxeLevel=m.PickaxeOwned end
+ -- v3 shadow: older servers keep this unknown field, so a v2 re-save is recognised above.
+ local v3=type(m.PickaxeV3)=='table'and m.PickaxeV3 or{};v3.Owned=m.PickaxeOwned;v3.Level=m.PickaxeLevel;m.PickaxeV3=v3
  m.WeightOwned=math.clamp(int(m.WeightOwned,0),0,weightCount)
  m.WeightLevel=math.clamp(int(m.WeightLevel,0),0,m.WeightOwned)
  if m.WeightOwned>0 and m.WeightLevel==0 then m.WeightLevel=m.WeightOwned end
