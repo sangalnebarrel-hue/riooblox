@@ -345,10 +345,11 @@ function Runtime.Snapshot(player)
   b.Seed=nil;b.Pool=nil;b.Variants=nil
  end
   local dex={};for id in pairs(p.DogDex)do local d=Definitions[id];if d and not d.Reserved and d.Available then dex[id]=Rules.Copy(d)end end
- local tradeId=Runtime.Engine.TradeByUser[player.UserId]
- local trade=tradeId and Runtime.Engine.Trades[tradeId]
- if trade and trade.Expires<=os.time() then Runtime.Engine:CancelTrade(player.UserId);trade=nil end
- local online={};for _,other in ipairs(Players:GetPlayers())do if other~=player and Runtime.Ready(other) then table.insert(online,{Id=other.UserId,Name=other.DisplayName,Username=other.Name,Level=other:GetAttribute('Level')or 1,Status=Runtime.Engine.TradeByUser[other.UserId]and 'Trading'or 'Online',Trades=Runtime.Views[other.UserId].Stats.CompletedTrades,Listings=Rules.Count(Runtime.Views[other.UserId].Listings)})end end
+ -- Trades 2.0 (docs/TRADE.md): expired invitations and idle sessions are pruned, then the session as
+ -- this player sees it (Engine.TradeView) and the online players with their invitation state.
+ Runtime.Engine:PruneTrades()
+ local tradeView=Runtime.Engine:TradeView(player.UserId)
+ local online=Runtime.TradePlayers(player)
  -- Per-dog stats and team income from the shared model (Rules.IncomeModel), the same numbers the
  -- HUD shows and offline earnings use. Luck is the real rare-loot luck (fraction, +0.25 = +25%).
  local okModel,model=pcall(Rules.IncomeModel,p,os.time())
@@ -359,8 +360,6 @@ function Runtime.Snapshot(player)
    DigsPerMin=m.DigsPerMin,Efficiency=m.Efficiency,LootPerMin=m.LootPerMin,ItemsPerMin=m.ItemsPerMin,ItemFindsPerMin=m.ItemFindsPerMin,Rolls=m.Rolls,Working=m.Assigned}
  end
  local features={};Rules.Features.Snapshot(Rules,p,features,os.time())
- local tradeView=trade and Rules.Copy(trade)
- if tradeView then tradeView.Details={};for _,offer in pairs(tradeView.Offers)do for uid,dog in pairs(offer.Details or {})do tradeView.Details[uid]=dog end end end
  return {Features=features,Profile=view,OfflineEarnings=Offline.Report(view),Meta=Rules.Meta(os.time()),Week=Rules.Week(os.time()),EventTotal=Runtime.EventTotal or 0,
   SellableItems=sellable,DogStats=dogStats,IncomeEstimate=income,IncomePerMinute=model.PerMinute,Storage=Rules.Storage(p,os.time()),EventEnds=345600+(Rules.Week(os.time())+1)*604800,Trade=tradeView,Players=online,Preview=memory,Now=os.time(),Dex=dex,GlobalRecords=Runtime.GlobalRecords or {},ServerRecords=Runtime.ServerRecords or {}}
 end
@@ -429,12 +428,8 @@ function Runtime.Request(player,action,a,requestId)
   elseif action=='CancelListing' then return engine.Market:Close(a.DogId,a.Id,id,receiptId)
   elseif action=='Roll' then return engine:Roll(id,a.Mode,receiptId)
   elseif action=='EventClaim' then return engine:EventClaim(id,a,receiptId)
-  elseif action=='TradeRequest' then
-   local invitation=engine:TradeRequest(id,a.Target)
-   local target=Players:GetPlayerByUserId(a.Target)
-   if target then Replicated.DogEconomyOpen:FireClient(target,'Trade','Trade invitation from '..player.DisplayName)end
-   return true,invitation
-  elseif action=='TradeCancel' then engine:CancelTrade(id);return true,{Message='Trade cancelled'}
+  elseif action=='TradeRequest' then return true,engine:TradeRequest(id,a.Target)
+  elseif action=='TradeCancel' then return true,engine:TradeCancel(id,a)
   elseif action=='Trade' then return true,engine:Trade(id,a.Action,a)
   else return engine:Action(id,action,a,receiptId)end
  end)
@@ -449,7 +444,12 @@ function Runtime.Request(player,action,a,requestId)
   elseif fastSale and success then patch=Runtime.RefreshSale(player,type(result)=='table'and result.FastSale or nil)
   elseif fastSale then
    -- Rejected sales do not need any world/profile projection.
-  elseif action=='Trade'or action=='BuyListing'or action=='CancelListing'or action=='Bid'then Runtime.RefreshAll()
+  elseif action=='BuyListing'or action=='CancelListing'or action=='Bid'then Runtime.RefreshAll()
+  elseif action=='Trade'or action=='TradeRequest'or action=='TradeCancel'then
+   -- Trade steps change no profile; a completed trade changed both.
+   if success and type(result)=='table'and result.CompletedWith then
+    Runtime.Refresh(player);local partner=Players:GetPlayerByUserId(result.CompletedWith);if partner then Runtime.Refresh(partner)end
+   end
   else Runtime.Refresh(player)end
   if success and action~='LabInfo'and action~='LabPreview'then
    if miningAction then
@@ -580,6 +580,37 @@ function Runtime.PushTo(player,kind,data)
  local push=Runtime.Push
  if push and player and player.Parent then push:FireClient(player,kind,data)end
 end
+-- TRADES 2.0 (docs/TRADE.md). The online players as `player` sees them in the trade window: the
+-- fields of the old list plus the invitation state (Engine.TradeRelation: InviteIn, InviteOut,
+-- Cooldown, CanInvite, Block).
+function Runtime.TradePlayers(player)
+ local engine=Runtime.Engine;local id=player.UserId;local out={}
+ local mine=Runtime.Views[id];local myLevel=mine and mine.Level or player:GetAttribute('Level')or 1
+ for _,other in ipairs(Players:GetPlayers())do if other~=player and Runtime.Ready(other)then
+  local view=Runtime.Views[other.UserId];local level=other:GetAttribute('Level')or 1
+  local row={Id=other.UserId,Name=other.DisplayName,Username=other.Name,Level=level,Status=engine.TradeByUser[other.UserId]and'Trading'or'Online',
+   Trades=view and view.Stats and view.Stats.CompletedTrades or 0,Listings=view and Rules.Count(view.Listings or{})or 0}
+  for key,value in pairs(engine:TradeRelation(id,other.UserId,myLevel,level))do row[key]=value end
+  table.insert(out,row)
+ end end
+ return out
+end
+-- Engine.OnTrade: pushes the new trade state to one player (DogEconomyPush 'Trade' = {Event, Trade =
+-- Engine.TradeView or nil, Players, Now}); an incoming invitation also sends 'TradeInvite', so the
+-- invitee gets a popup and no window opens by force. Event.Names holds the display names involved.
+function Runtime.PushTrade(id,event)
+ local player=Players:GetPlayerByUserId(id);if not(player and Runtime.Loaded[id])then return end
+ local payload=Rules.Copy(event);payload.Names={}
+ for _,key in ipairs({'By','From','To'})do
+  local uid=payload[key];local other=type(uid)=='number'and Players:GetPlayerByUserId(uid)
+  if other then payload.Names[tostring(uid)]=other.DisplayName end
+ end
+ local sender=type(payload.From)=='number'and Runtime.Views[payload.From];if sender then payload.FromLevel=sender.Level end
+ local listed,list=pcall(Runtime.TradePlayers,player)
+ Runtime.PushTo(player,'Trade',{Event=payload,Trade=Runtime.Engine:TradeView(id),Players=listed and list or nil,Now=os.time()})
+ if payload.Kind=='Invite'and payload.To==id then Runtime.PushTo(player,'TradeInvite',payload)end
+end
+Runtime.Engine.OnTrade=Runtime.PushTrade
 function Runtime.Start()
  if Runtime.Started then return end;Runtime.Started=true
  local push=Replicated:FindFirstChild('DogEconomyPush')or Instance.new('RemoteEvent');push.Name='DogEconomyPush';push.Parent=Replicated;Runtime.Push=push
