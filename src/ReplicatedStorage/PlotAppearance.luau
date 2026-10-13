@@ -66,7 +66,7 @@ local function tree(parent,cf,d,s)
  end
  lamp(parent,cf*CFrame.new(1.6*s,4.7*s,0),d,.4,false)
 end
-local function fence(parent,f,d,level)
+local function fence(parent,f,d,level,sx)
  local body,trim,glow=C.Color(d.Color),C.Color(d.Trim),C.Color(d.Glow);local m=d.Motif
  local ornate=level>=6;local height=ornate and 4.5 or 3.5
  local function segment(cf,length,index)
@@ -98,10 +98,10 @@ local function fence(parent,f,d,level)
   if i<8 then segment(f*CFrame.new(x,0,z-8)*CFrame.Angles(0,math.pi/2,0),16,i)end
  end end
  for _,side in ipairs({-1,1})do
-  if side==1 then
-   -- A low gallery sill keeps the three exhibits readable from the entrance.
-   P(parent,'GalleryBoundary',Vector3.new(24,.65,1.4),f*CFrame.new(22,.33,64),body,Enum.Material.Slate)
-   P(parent,'GalleryEdge',Vector3.new(24,.15,1.5),f*CFrame.new(22,.73,64),trim,Enum.Material.Metal)
+  if side==(sx or 1)then
+   -- A low gallery sill keeps the showcase readable from the entrance (mirrored with the stand).
+   P(parent,'GalleryBoundary',Vector3.new(24,.65,1.4),f*CFrame.new(22*side,.33,64),body,Enum.Material.Slate)
+   P(parent,'GalleryEdge',Vector3.new(24,.15,1.5),f*CFrame.new(22*side,.73,64),trim,Enum.Material.Metal)
   else
    for i=1,2 do local x=side*(10+(i-.5)*12);segment(f*CFrame.new(x,0,64),12,i)end
    post(f*CFrame.new(side*22,0,64),1)
@@ -137,44 +137,95 @@ local function gate(parent,f,d,level)
  end
  if grand then for i=1,3 do P(parent,'EntryStep',Vector3.new(15+i*.8,.3,1.2),cf*CFrame.new(0,.15-i*.05,2+i),body:Lerp(trim,.3),Enum.Material.Slate)end end
 end
+-- MY BEST FINDS stand (docs/PLOT_COSMETICS.md): glass display cases on pedestals in an arc, a
+-- nameplate on every pedestal, the best dog on a round plinth in front and, from stage 5, the
+-- raised crown case. Exhibits, nameplates (Economy.BestFinds) and rarity effects
+-- (StarterPlayerScripts.PlotCosmetics, tag DogrotsShowcase) are added later; the owner's walk-up
+-- prompt lives on the yard's ShowcaseAnchor (Economy.YardCommerce), which survives this rebuild.
+-- Stand frame: front (-Z) towards the gate, the viewer's left = +X; case 1 is the leftmost.
+A.ShowcaseCases={
+ {X=9.3,Z=-.2,Column=1.5},{X=4.5,Z=-2,Column=1.5},{X=-4.5,Z=-2,Column=1.5},{X=-9.3,Z=-.2,Column=1.5},
+ {X=0,Z=3.3,Column=4.3,Crown=true},
+}
+A.ShowcaseBonusStage=5
+-- Right side while entering the plot: the unused sixth kennel socket (yard frame x' = 20, z = 55).
+function A.ShowcaseFrame(f,sx)return f*CFrame.new(20*(sx or 1),0,55)*CFrame.Angles(0,math.pi,0)end
 local function showcase(parent,f,d,level,sx)
  sx=sx or 1
- local body,trim,glow,top=C.Color(d.Color),C.Color(d.Trim),C.Color(d.Glow),C.Color(d.Roof)
- local m=Instance.new('Model');m.Name='BestFinds';m:SetAttribute('Stage',level);m.Parent=parent
- -- Right side while entering the plot: the unused sixth kennel socket.
- local cf=f*CFrame.new(20*sx,0,55)*CFrame.Angles(0,math.pi,0);local premium=level>=6
- P(m,'ShowcaseFoundation',Vector3.new(23,.65,11),cf*CFrame.new(0,.33,0),body,premium and Enum.Material.Marble or Enum.Material.WoodPlanks)
- if level>=3 then P(m,'ShowcaseStep',Vector3.new(22,.32,2),cf*CFrame.new(0,.16,-6),trim,Enum.Material.Slate)end
- for _,x in ipairs({-11,11})do
-  P(m,'ShowcaseColumn',Vector3.new(.85,10.5,.85),cf*CFrame.new(x,5.6,3.6),body,Enum.Material.Metal)
-  if level>=4 then lamp(m,cf*CFrame.new(x,1,-3.6),d,.65,false)end
+ local body,trim,glow=C.Color(d.Color),C.Color(d.Trim),C.Color(d.Glow)
+ local m=Instance.new('Model');m.Name='BestFinds';m:SetAttribute('Stage',level)
+ pcall(function()m.ModelStreamingMode=Enum.ModelStreamingMode.Atomic end)
+ m.Parent=parent
+ local cf=A.ShowcaseFrame(f,sx);local premium=level>=6
+ local stone=premium and Enum.Material.Marble or Enum.Material.WoodPlanks
+ local function solid(p)p.CanCollide=true;return p end
+ P(m,'ShowcaseFoundation',Vector3.new(24,.65,12),cf*CFrame.new(0,.33,0),body,stone)
+ P(m,'ShowcaseRim',Vector3.new(24.3,.16,12.3),cf*CFrame.new(0,.62,0),trim,Enum.Material.Metal)
+ if level>=3 then P(m,'ShowcaseStep',Vector3.new(22,.32,1.6),cf*CFrame.new(0,.16,-6.8),trim,Enum.Material.Slate)end
+ -- Gallery wall with the title above it.
+ solid(P(m,'GalleryWall',Vector3.new(21.8,7.9,.6),cf*CFrame.new(0,.65+3.95,5.5),body:Lerp(Color3.new(0,0,0),.18),stone))
+ P(m,'GalleryWallTrim',Vector3.new(22.2,.35,.9),cf*CFrame.new(0,8.7,5.5),trim,Enum.Material.Metal)
+ for _,x in ipairs({-11.4,11.4})do
+  solid(P(m,'ShowcaseColumn',Vector3.new(.95,11.2,.95),cf*CFrame.new(x,5.6,5.5),body,Enum.Material.Metal))
+  P(m,'ColumnCapital',Vector3.new(1.4,.45,1.4),cf*CFrame.new(x,11.3,5.5),trim,Enum.Material.Metal)
+  if level>=4 then lamp(m,cf*CFrame.new(x,.65,-5.2),d,.6,false)end
  end
- local slots=Instance.new('Folder');slots.Name='Slots';slots.Parent=m
  local letters=glow:Lerp(Color3.new(1,1,1),.52)
- for i,key in ipairs({'Find','Dog','Relic'})do local x=(2-i)*7.1;local height=key=='Dog'and 3 or 2.35
-  P(m,'PedestalFoot',Vector3.new(6.2,.4,6.2),cf*CFrame.new(x,.9,0),trim,Enum.Material.Metal)
-  P(m,'Pedestal',Vector3.new(5.6,height,5.6),cf*CFrame.new(x,1+height/2,0),body,premium and Enum.Material.Marble or Enum.Material.WoodPlanks)
-  local accent=d.Motif=='Paw'and({Color3.fromRGB(255,224,80),Color3.fromRGB(238,149,222),Color3.fromRGB(255,208,101)})[i]or glow
-  local platform=P(slots,key,Vector3.new(5.9,.22,5.9),cf*CFrame.new(x,1+height,0),accent:Lerp(body,level>=4 and .62 or .12),Enum.Material.SmoothPlastic)
-  if level>=4 then
-   for _,side in ipairs({-1,1})do
-    P(m,'DisplayLight',Vector3.new(.10,.12,5.9),platform.CFrame*CFrame.new(side*2.91,.13,0),accent,Enum.Material.Neon)
-    P(m,'DisplayLight',Vector3.new(5.9,.12,.10),platform.CFrame*CFrame.new(0,.13,side*2.91),accent,Enum.Material.Neon)
-   end
-  end
-  G.Sign(m,cf*CFrame.new(x,2.15,-2.88),Vector3.new(5.1,1.25,.16),key:upper(),letters,'Category'..key)
-  local caption=G.Sign(m,cf*CFrame.new(x,1.1,-3.05),Vector3.new(6.2,.55,.12),'MAKE YOUR FIRST DISCOVERY',letters,'Name'..key)
-  platform:SetAttribute('CaptionName',caption.Name)
-  if level>=7 then for _,side in ipairs({-1,1})do P(m,'DisplayTrim',Vector3.new(.14,height-.3,.12),cf*CFrame.new(x+side*2.6,1+height/2,-2.86),trim,Enum.Material.Metal)end end
- end
- local title=G.Sign(m,cf*CFrame.new(0,10.6,3.55),Vector3.new(23,2.6,.6),'MY BEST FINDS',letters,'ShowcaseTitle')
+ local title=G.Sign(m,cf*CFrame.new(0,10.25,5.5),Vector3.new(21.8,2.4,.5),'MY BEST FINDS',letters,'ShowcaseTitle')
  local reverse=title.Lettering:Clone();reverse.Name='ReverseLettering';reverse.Face=Enum.NormalId.Back;reverse.Parent=title
- P(m,'TitleTopTrim',Vector3.new(23.5,.3,.9),cf*CFrame.new(0,12.05,3.55),glow,level>=6 and Enum.Material.Neon or Enum.Material.Metal)
- if level>=5 then roof(m,cf*CFrame.new(0,12.45,1.1),24,7,d,level)end
- if level>=8 then G.Crest(m,cf*CFrame.new(0,15,1.2),.8,d)end
- if level>=9 then for _,x in ipairs({-10,10})do G.Crest(m,cf*CFrame.new(x,7,3),.5,d)end end
+ P(m,'TitleTopTrim',Vector3.new(22.4,.3,.8),cf*CFrame.new(0,11.6,5.5),glow,level>=6 and Enum.Material.Neon or Enum.Material.Metal)
+ -- The best dog: a round plinth in front of the crown case.
+ local slots=Instance.new('Folder');slots.Name='Slots';slots.Parent=m
+ local dogCF=cf*CFrame.new(0,.65,-3.3)
+ solid(P(m,'DogPlinth',Vector3.new(.6,4.4,4.4),dogCF*CFrame.new(0,.3,0)*CFrame.Angles(0,0,math.pi/2),body,stone,Enum.PartType.Cylinder))
+ P(m,'DogPlinthRim',Vector3.new(.18,4.7,4.7),dogCF*CFrame.new(0,.62,0)*CFrame.Angles(0,0,math.pi/2),trim,Enum.Material.Metal,Enum.PartType.Cylinder)
+ local dogSpot=P(slots,'Dog',Vector3.new(4,.1,4),dogCF*CFrame.new(0,.68,0),trim,Enum.Material.SmoothPlastic);dogSpot.Transparency=1
+ -- Display cases.
+ local cases=Instance.new('Folder');cases.Name='Cases';cases.Parent=m
+ local focus=cf:PointToWorldSpace(Vector3.new(0,0,-18))
+ for i,spec in ipairs(A.ShowcaseCases)do
+  if not spec.Crown or level>=A.ShowcaseBonusStage then
+   local base=cf:PointToWorldSpace(Vector3.new(spec.X,.65,spec.Z))
+   local at=CFrame.lookAt(base,Vector3.new(focus.X,base.Y,focus.Z))
+   local case=Instance.new('Model');case.Name='Case'..i;case:SetAttribute('Slot',i);case:SetAttribute('Crown',spec.Crown==true);case.Parent=cases
+   local h=spec.Column
+   P(case,'CaseFoot',Vector3.new(3.2,.3,3.2),at*CFrame.new(0,.15,0),trim,Enum.Material.Metal)
+   solid(P(case,'CaseColumn',Vector3.new(2.6,h,2.6),at*CFrame.new(0,.3+h/2,0),body,stone))
+   local top=.3+h
+   local platform=P(case,'Platform',Vector3.new(3,.25,3),at*CFrame.new(0,top+.125,0),trim,Enum.Material.Metal)
+   platform:SetAttribute('ExhibitSize',Vector3.new(2.2,2.3,2.2))
+   local glassH=2.9
+   local glass=P(case,'CaseGlass',Vector3.new(2.7,glassH,2.7),at*CFrame.new(0,top+.25+glassH/2,0),Color3.fromRGB(200,230,255),Enum.Material.Glass)
+   glass.Transparency=.72;glass.Reflectance=.08;glass.CastShadow=false
+   for _,x in ipairs({-1.32,1.32})do for _,z in ipairs({-1.32,1.32})do
+    P(case,'CaseFrame',Vector3.new(.14,glassH,.14),at*CFrame.new(x,top+.25+glassH/2,z),trim,Enum.Material.Metal)
+   end end
+   P(case,'CaseCap',Vector3.new(3,.28,3),at*CFrame.new(0,top+.25+glassH+.14,0),trim,Enum.Material.Metal)
+   if spec.Crown then G.Crest(case,at*CFrame.new(0,top+.25+glassH+1.3,0)*CFrame.Angles(0,math.pi,0),.32,d)end
+   -- Nameplate: item name, rarity and weight (written by Economy.BestFinds).
+   local plateY=.3+math.min(h,1.5)*.55
+   local plate=P(case,'Nameplate',Vector3.new(2.45,.95,.1),at*CFrame.new(0,plateY,-1.36)*CFrame.Angles(math.rad(-12),0,0),Color3.fromRGB(16,22,28),Enum.Material.Metal)
+   local gui=Instance.new('SurfaceGui');gui.Name='Plate';gui.Face=Enum.NormalId.Front;gui.CanvasSize=Vector2.new(400,155);gui.LightInfluence=0;gui.MaxDistance=60;gui.Parent=plate
+   local function line(name,y,h2,color,text)
+    local t=Instance.new('TextLabel');t.Name=name;t.BackgroundTransparency=1;t.Position=UDim2.fromScale(.04,y);t.Size=UDim2.fromScale(.92,h2)
+    t.Font=Enum.Font.GothamBold;t.TextScaled=true;t.TextColor3=color;t.Text=text;t.Parent=gui;return t
+   end
+   line('ItemName',.06,.5,Color3.fromRGB(245,245,250),'YOUR NEXT RECORD AWAITS')
+   local r=line('Rarity',.6,.32,letters,'');r.Size=UDim2.fromScale(.56,.32);r.TextXAlignment=Enum.TextXAlignment.Left
+   local w=line('Weight',.6,.32,Color3.fromRGB(200,210,225),'');w.Position=UDim2.fromScale(.6,.6);w.Size=UDim2.fromScale(.36,.32);w.TextXAlignment=Enum.TextXAlignment.Right
+   case.PrimaryPart=platform
+  end
+ end
+ if level<A.ShowcaseBonusStage then G.Crest(m,cf*CFrame.new(0,5.6,5.1)*CFrame.Angles(0,math.pi,0),.55,d)end
+ if level>=5 then roof(m,cf*CFrame.new(0,12.1,2.6),24,7.5,d,level)end
+ if level>=8 then G.Crest(m,cf*CFrame.new(0,14.8,2.7),.8,d)end
+ if level>=9 then for _,x in ipairs({-10,10})do G.Crest(m,cf*CFrame.new(x,7.2,4.9),.5,d)end end
+ m:SetAttribute('Capacity',level>=A.ShowcaseBonusStage and #A.ShowcaseCases or #A.ShowcaseCases-1)
+ local ok,CollectionService=pcall(game.GetService,game,'CollectionService')
+ if ok and CollectionService then pcall(CollectionService.AddTag,CollectionService,m,'DogrotsShowcase')end
  return m
 end
+A.Showcase=showcase
 -- The kennel end of the CosmeticGarden hosts the Mining Corner (ServerScriptService.MiningWorld),
 -- so the garden centrepieces stand this many studs deeper in the garden (towards storage).
 local MINING_CLEARANCE=9
@@ -310,7 +361,11 @@ function A.Apply(yard,level,id)
    end
   end
  end
- if level>=2 or themed then fence(deco,f,d,level)end
+ -- Yards on the east side are mirrored: their kennels and lucky pads sit on the other
+ -- side of the frame, so the showcase, its gallery sill and the skin garden mirror with them.
+ local sx=1;local first=yard:FindFirstChild('DigSlot_1');local firstPit=first and first:FindFirstChild('DarkExcavation')
+ if firstPit and f:PointToObjectSpace(firstPit.Position).X>0 then sx=-1 end
+ if level>=2 or themed then fence(deco,f,d,level,sx)end
  if level>=4 or themed then gate(deco,f,d,level)end
  if themed then for _,n in ipairs({'DogStorage','Vendor','Workshop'})do local building=yard:FindFirstChild(n);local highest
   if building then for _,p in ipairs(building:GetDescendants())do if p:IsA('BasePart')and(p.Name=='Roof'or p.Name=='Canopy')and(not highest or p.Position.Y>highest.Position.Y)then highest=p end end end
@@ -321,10 +376,6 @@ function A.Apply(yard,level,id)
   for i=1,16 do P(deco,'WalkTileJoint',Vector3.new(8.3,.06,.09),f*CFrame.new(0,.15,61-i*7),trim,Enum.Material.Metal)end
   for _,x in ipairs({-4.35,4.35})do P(deco,'WalkBorder',Vector3.new(.18,.1,116),f*CFrame.new(x,.17,3),dark and glow or trim,dark and Enum.Material.Neon or Enum.Material.Metal)end
  end
- -- Yards on the east side are mirrored: their kennels and lucky pads sit on the other
- -- side of the frame, so the showcase and skin garden must mirror with them.
- local sx=1;local first=yard:FindFirstChild('DigSlot_1');local firstPit=first and first:FindFirstChild('DarkExcavation')
- if firstPit and f:PointToObjectSpace(firstPit.Position).X>0 then sx=-1 end
  garden(deco,f,d,level,sx);showcase(deco,f,d,level,sx)
  G.Sign(deco,f*CFrame.new(-13,2.5,65)*CFrame.Angles(0,math.pi,0),Vector3.new(7,1.5,.3),'LV '..level..' / '..C.Stages[level].Name,trim,'EstateLevel')
  yard:SetAttribute('PlotStage',level);yard:SetAttribute('PlotSkin',id);yard:SetAttribute('UnlockedKennels',C.Stages[level].Slots);yard:SetAttribute('AppearanceRevision',(yard:GetAttribute('AppearanceRevision')or 0)+1)
