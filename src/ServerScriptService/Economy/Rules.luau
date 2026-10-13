@@ -16,6 +16,7 @@ local Onboarding=require(script.Parent.OnboardingRules)
 local MiningRules=require(game:GetService('ReplicatedStorage'):WaitForChild('Mining'):WaitForChild('MiningRules'))
 local Features=require(script.Parent.FeatureRegistry)
 local Bonuses=require(game:GetService('ReplicatedStorage').DogEconomy.Bonuses)
+local Resources=require(game:GetService('ReplicatedStorage').DogEconomy.Resources)
 local IncomeModel=require(script.Parent.IncomeModel)
 local R={Items=I,Features=Features,Bonuses=Bonuses}
 function R.Copy(v) if type(v)~="table" then return v end local r={};for k,x in pairs(v) do r[k]=R.Copy(x) end;return r end
@@ -118,10 +119,12 @@ function R.AddXP(p,amount)
  amount=math.max(0,math.floor(tonumber(amount)or 0));p.XP+=amount;R.UpdateLevel(p);return amount
 end
 -- Active Mining (ReplicatedStorage.Mining.MiningRules). session = RAM timing targets, ping in seconds.
+-- Broken ores also store Stone (p.Resources.Stone, DogEconomy.Resources) in the same transaction.
 function R.MiningAction(p,action,a,now,random,session,ping)
  p.Mining=MiningRules.Normalize(p.Mining,C.Mining)
  local ctx={Now=now,Clock=workspace:GetServerTimeNow(),Random=random,Cash=p.Cash,Layer=R.MaxUnlockedLayer(p),Session=session,Ping=ping,
-  Pay=function(n)R.Pay(p,n)end,Credit=function(n)R.Credit(p,n)end,AddXP=function(n)R.AddXP(p,n)end}
+  Pay=function(n)R.Pay(p,n)end,Credit=function(n)R.Credit(p,n)end,AddXP=function(n)R.AddXP(p,n)end,
+  AddStone=function(n)return Resources.Add(p,'Stone',n)end}
  return MiningRules.Action(p.Mining,C.Mining,action,a,ctx)
 end
 function R.MaxUnlockedLayer(p)

@@ -51,7 +51,35 @@ function Mine.new(ctx)
  do local c=Instance.new('UICorner');c.CornerRadius=UDim.new(1,0);c.Parent=hpFill end
  local hpText=text(hpBack,'HPText',0,0,0,0,13,Color3.new(1,1,1),Enum.TextXAlignment.Center);hpText.Size=UDim2.fromScale(1,1);hpText.ZIndex=33
  local infoLeft=text(panel,'Info',16,60,260,26,15,U.Colors.muted)
+ -- Pickaxe · worth · stone of this ore: long RU names shrink instead of being cut.
+ infoLeft.TextScaled=true;infoLeft.TextTruncate=Enum.TextTruncate.None
+ do local limit=Instance.new('UITextSizeConstraint');limit.MaxTextSize=15;limit.MinTextSize=10;limit.Parent=infoLeft end
  local comboLabel=text(panel,'Combo',270,60,154,26,18,U.Colors.gold,Enum.TextXAlignment.Right)
+ -- Stored Stone (player attribute "Stone", projected by Economy.Runtime) under the panel's right edge.
+ local STONE_COLOR=Color3.fromRGB(176,170,160)
+ local stonePill=Instance.new('TextLabel');stonePill.Name='Stone';stonePill.AnchorPoint=Vector2.new(1,0)
+ stonePill.Position=UDim2.new(1,-12,1,4);stonePill.Size=UDim2.fromOffset(112,26);stonePill.BackgroundColor3=Color3.fromRGB(255,251,242)
+ stonePill.BorderSizePixel=0;stonePill.FontFace=font;stonePill.TextScaled=true;stonePill.TextColor3=U.Colors.text;stonePill.Text=''
+ stonePill.ZIndex=31;stonePill.Parent=panel
+ do local c=Instance.new('UICorner');c.CornerRadius=UDim.new(1,0);c.Parent=stonePill
+  local s=Instance.new('UIStroke');s.Color=STONE_COLOR:Lerp(U.Colors.edge,.5);s.Thickness=2;s.ApplyStrokeMode=Enum.ApplyStrokeMode.Border;s.Parent=stonePill
+  local p=Instance.new('UIPadding');p.PaddingLeft=UDim.new(0,8);p.PaddingRight=UDim.new(0,8);p.PaddingTop=UDim.new(0,3);p.PaddingBottom=UDim.new(0,3);p.Parent=stonePill
+  local limit=Instance.new('UITextSizeConstraint');limit.MaxTextSize=17;limit.Parent=stonePill end
+ local function reducedMotion()
+  if FX.ReducedMotion and FX.ReducedMotion()then return true end
+  local ok,v=pcall(function()return(game:GetService('GuiService')::any).ReducedMotionEnabled end)
+  return ok and v==true
+ end
+ local stoneShown=nil
+ local function showStone(total)
+  total=math.max(0,math.floor(tonumber(total)or tonumber(Net.Attr('Stone',0))or 0))
+  stonePill.Text='🪨 '..Text.Short(total)
+  if stoneShown and total>stoneShown and self.Active and not reducedMotion()then
+   stonePill.Size=UDim2.fromOffset(124,30)
+   TweenService:Create(stonePill,TweenInfo.new(.25,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Size=UDim2.fromOffset(112,26)}):Play()
+  end
+  stoneShown=total
+ end
 
  local hint=text(overlay,'Hint',0,0,0,0,20,Color3.new(1,1,1),Enum.TextXAlignment.Center)
  hint.AnchorPoint=Vector2.new(.5,1);hint.Position=UDim2.new(.5,0,1,-86);hint.Size=UDim2.fromOffset(620,30);hint.TextStrokeTransparency=0
@@ -111,6 +139,9 @@ function Mine.new(ctx)
   local p=pick()
   local worth=math.floor((s.OreValue or 0)*(1+(p.CoinBonus or 0))+.5) -- what the server pays (MiningRules.Hit)
   infoLeft.Text=(p.Icon or'⛏')..' '..Text.Name(p)..'  ·  '..Text.Get('ORE_VALUE',Text.Short(worth))
+  -- Stone this ore stores when broken (MiningRules.StoneForBreak, deepest unlocked layer).
+  local stone=ctx.Rules.StoneForBreak(M,def,Net.Attr('MiningLayer',1))
+  if stone>0 then infoLeft.Text..='  ·  '..Text.Get('ORE_STONE',stone)end
   local combo=(os.clock()-lastPaidHit<M.ComboTimeout)and(s.Combo or 0)or 0
   comboLabel.Text=combo>=2 and Text.Get('COMBO',combo)or''
  end
@@ -346,6 +377,17 @@ function Mine.new(ctx)
    local root=player.Character and player.Character:FindFirstChild('HumanoidRootPart')
    if root then FX.Coins(center,18,root)end
    FX.Popup(center,'+'..Text.Short(s.LastBrokenValue or payout),U.Colors.gold,true)
+   local stone=math.max(0,math.floor(tonumber(s.LastStone)or 0))
+   if stone>0 then
+    -- A second, smaller popup under the coins so both stay readable.
+    task.delay(.18,function()if self.Active then FX.Popup(center-Vector3.new(0,1.6,0),Text.Get('STONE_GAIN',stone),STONE_COLOR)end end)
+    local stored=type(result)=='table'and type(result.Resources)=='table'and tonumber(result.Resources.Stone)
+    showStone(stored or(stoneShown or 0)+stone)
+    -- First Stone ever: say once what it is for.
+    if not self.StoneHintShown and(tonumber(s.StoneMined)or 0)<=stone then
+     self.StoneHintShown=true;Hud.Toast(Text.Get('STONE_HINT'),STONE_COLOR:Lerp(U.Colors.text,.5),4.5)
+    end
+   end
    banner(message,World.OreColor(brokenDef):Lerp(U.Colors.text,.25),M.Client.BreakPause*.6)
    task.delay(M.Client.BreakPause*.6,function()
     if not self.Active then return end
@@ -495,6 +537,8 @@ function Mine.new(ctx)
    return Enum.ContextActionResult.Sink
   end,false,3000,Enum.KeyCode.Space,Enum.KeyCode.ButtonA,Enum.KeyCode.ButtonR2,Enum.KeyCode.F)
   overlay.Visible=true;refreshPanel();layout()
+  stoneShown=nil;showStone()
+  table.insert(connections,player:GetAttributeChangedSignal('Stone'):Connect(function()showStone()end))
   local last=UIS:GetLastInputType()
   local pad=UIS.GamepadEnabled and(last==Enum.UserInputType.Gamepad1 or not UIS.KeyboardEnabled and not UIS.TouchEnabled)
   local touch=UIS.TouchEnabled and(last==Enum.UserInputType.Touch or not UIS.KeyboardEnabled)

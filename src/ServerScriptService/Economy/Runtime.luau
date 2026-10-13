@@ -100,6 +100,9 @@ local function projectMining(player,p)
   miningSignatures[player]=signature
   player:SetAttribute('MiningRevision',(player:GetAttribute('MiningRevision')or 0)+1)
  end
+ -- Stored Stone (p.Resources.Stone) for the mining HUD, the pickaxe market and plot decor.
+ local stone=type(p.Resources)=='table'and tonumber(p.Resources.Stone)or 0
+ player:SetAttribute('Stone',stone==stone and math.max(0,math.floor(stone))or 0)
 end
 
 function Runtime.Project(player,p)
@@ -219,6 +222,7 @@ function Runtime.RefreshMining(player,fast)
   if type(fast.XP)=='number'then p.XP=fast.XP end
   if type(fast.Level)=='number'then p.Level=fast.Level end
   if type(fast.MiningState)=='table'then p.Mining=Rules.Copy(fast.MiningState)end
+  if type(fast.Resources)=='table'then p.Resources=Rules.Copy(fast.Resources)end
   if type(fast.Onboarding)=='table'then p.Onboarding=Rules.Copy(fast.Onboarding)end
  end
  Rules.UpdateLevel(p)
