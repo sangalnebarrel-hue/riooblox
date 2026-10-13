@@ -4,6 +4,7 @@ local C=require(script.Parent.Config)
 local D=require(script.Parent.DogDefinitions)
 local I=require(script.Parent.ItemRules)
 local Stats=require(script.Parent.RecordStats)
+local ShowcaseRules=require(game:GetService('ReplicatedStorage').DogEconomy.ShowcaseRules)
 local function itemKey(k)return type(k)=='string' and k:sub(1,5)=='item:'end
 local function definition(k)return itemKey(k) and I.Definitions[k:sub(6)] or D[k]end
 local function assetKey(x)return x.ItemId and 'item:'..x.ItemId or x.DogId end
@@ -63,6 +64,7 @@ function M:Create(user,a,request)
  local listingId=self.Guid()
  return self.Tx:Run({pk(user),bk(key),QUEUE},function(v)
   p=v[pk(user)];I.Normalize(p);self.Authorize(p,user);d=isItem and I.Get(p,a.Uid,true) or R.Dog(p,a.Uid,true)
+  R.Check(not isItem or not ShowcaseRules.IsPinned(p,a.Uid),"This find is in your showcase. Take it out of MY BEST FINDS first")
   R.Check(not d.PaidRandom or paidAllowed,'Paid-item trading is unavailable for this account')
   R.Check(R.Count(p.Listings)<10,"Maximum 10 open listings")
   local book=v[bk(key)] or {Items={}};v[bk(key)]=book

@@ -442,7 +442,10 @@ RouteGraph.Targets = {
 	MiningCorner = { Yard = true, Via = { { 0, -6.5 } }, Goal = { -8, -6.5 }, Pointer = { -18, -6.5, 1.6 } },
 	MineElevator = { Yard = true, Via = { { 0, -36 } }, Goal = { 7, -36 }, Pointer = { 20, -36, 1.2 } },
 	BestFinds = { Yard = true, Goal = { 18, 61 }, Pointer = { 20, 55, 5 } },
-	Collector = { Yard = true, Via = { { 0, -28 }, { -20, -40 } }, Goal = { -24, -44.5 }, Pointer = { -24, -48.9, 4.7 } },
+	-- The service row is NOT mirrored like the rest of the yard: the collector (SellAnchor) is at
+	-- x' -24 on the west yards 1-4 and at x' +24 on the east yards 5-8 (ServiceRow flips x' there).
+	-- The approach runs along z -44, south of the mine headframe (z -42..-30) on the east yards.
+	Collector = { Yard = true, ServiceRow = true, Via = { { 0, -44 } }, Goal = { -24, -45 }, Pointer = { -24, -48.9, 4.7 } },
 
 	DogLine = {
 		Docks = { { Node = "DogE", Goal = v(12.6, 0.6, -140) }, { Node = "DogW", Goal = v(-12.6, 0.6, -140) } },
@@ -497,15 +500,23 @@ function RouteGraph.Target(key: string, ctx: any?): any
 		if not RouteGraph.Yard(id) then
 			return nil
 		end
+		-- ServiceRow targets sit on the other side of the yard frame on the east yards.
+		local flip = spec.ServiceRow == true and RouteGraph.Yard(id).Side == 1
+		local function at(pair: { number }, y: number?): Vector3
+			if flip then
+				return yardVec(id, { -pair[1], pair[2], pair[3] }, y)
+			end
+			return yardVec(id, pair, y)
+		end
 		local via = overrides.Via
 		if not via then
 			via = {}
 			for _, pair in ipairs(spec.Via or {}) do
-				table.insert(via, yardVec(id, pair))
+				table.insert(via, at(pair))
 			end
 		end
-		local goal = overrides.Goal or yardVec(id, spec.Goal)
-		local pointer = overrides.Pointer or yardVec(id, spec.Pointer, spec.Pointer[3])
+		local goal = overrides.Goal or at(spec.Goal)
+		local pointer = overrides.Pointer or at(spec.Pointer, spec.Pointer[3])
 		return { Key = key, Yard = id, Docks = { { Node = "YG" .. RouteGraph.Yard(id).Id, Via = via, Goal = goal } }, Pointer = pointer }
 	end
 	local docks = {}

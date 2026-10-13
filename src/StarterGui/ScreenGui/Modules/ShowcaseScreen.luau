@@ -23,7 +23,7 @@ local S = {}
 -- Text
 ------------------------------------------------------------------------------------------------
 local function T(en: string, ru: string?): string
-	return Kit.T(en, ru or Dict.Exact[en] or en)
+	return Kit.T(en, ru or Dict.UI[en] or Dict.Exact[en] or en)
 end
 -- A server reply in the player's language (Localization.Plot exact entries and patterns).
 local function said(text: any): string

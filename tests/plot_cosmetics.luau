@@ -641,8 +641,14 @@ test("every decoration, category and showcase word has Russian", function()
 	for _, c in ipairs(Catalog.Categories) do
 		eq(Locale.Exact[c.Name], c.RU, c.Id)
 	end
-	for _, word in ipairs({ "EDIT SHOWCASE", "DECORATE", "MY BEST FINDS", "AUTO", "REMOVE", "BUY & PLACE", "PLACE" }) do
+	for _, word in ipairs({ "EDIT SHOWCASE", "DECORATE", "MY BEST FINDS", "AUTO", "REMOVE", "BUY & PLACE" }) do
 		truthy(Locale.Exact[word], word)
+	end
+	-- Short generic words keep their plot meaning only inside the two windows: the global
+	-- dictionary (FREE = "БЕСПЛАТНО", OWNED = "КУПЛЕНО"...) must not be overridden.
+	for _, word in ipairs({ "PLACE", "OWNED", "BIG", "SMALL", "FREE" }) do
+		truthy(Locale.UI[word], "UI " .. word)
+		eq(Locale.Exact[word], nil, "global " .. word)
 	end
 	local text = "12.5 kg"
 	local hit = false

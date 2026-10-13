@@ -130,7 +130,7 @@ local function sample()
 	profile.Items.b = item("b", common, { FoundAt = 30, WeightKg = 9, Mutation = "GOLDEN", Favorite = true })
 	profile.Items.c = item("c", rare, { FoundAt = 20, WeightKg = 3, Mutation = "RAINBOW" })
 	profile.Items.d = item("d", top, { FoundAt = 5, WeightKg = 0.5, Mutation = "NORMAL" })
-	return profile, Logic.Rows(profile, ctx({ Showcase = { d = true } }))
+	return profile, Logic.Rows(profile, ctx({ Showcase = { d = true } })) -- ctx.Showcase: the pinned set
 end
 
 test("filters: search, rarity chips, depth, mutation, favourites", function()
@@ -201,15 +201,21 @@ test("sorts: rarest, newest, value, heaviest, name (and flipped)", function()
 	eq(#Logic.Sorts, 5)
 end)
 
-test("showcase marks: optional feature, any shape, unknown uids ignored", function()
+test("showcase marks: only finds pinned to MY BEST FINDS, unknown uids ignored", function()
 	local profile = sample()
 	eq(next(Logic.ShowcaseSet({}, profile.Items)), nil)
-	local set = Logic.ShowcaseSet({ Features = { Showcase = { Slots = { "a", "nope", "c" } } } }, profile.Items)
-	truthy(set.a and set.c and not set.nope, "slot list")
-	set = Logic.ShowcaseSet({ Showcase = { Pinned = { b = true } } }, profile.Items)
-	truthy(set.b, "map form")
-	set = Logic.ShowcaseSet({ Features = { Showcase = { Slots = { { Uid = "d" } } } } }, profile.Items)
-	truthy(set.d, "nested slot records")
+	-- The real snapshot (Features.Showcase): Slots {["n"] = uid}, Auto picks, Pinned {[uid] = slot}.
+	local real = { Features = { Showcase = {
+		Slots = { ["1"] = "a", ["3"] = "c" }, Auto = { "b", "d" }, Pinned = { a = 1, c = 3, nope = 2 },
+		Exhibits = { { Uid = "a" }, { Uid = "b" } }, Capacity = 4,
+	} } }
+	local set = Logic.ShowcaseSet(real, profile.Items)
+	truthy(set.a and set.c, "pinned finds marked")
+	truthy(not set.b and not set.d, "automatic picks are not protected, so not marked")
+	truthy(not set.nope, "unknown uid ignored")
+	-- Without Pinned (older snapshot), the slot uids count.
+	set = Logic.ShowcaseSet({ Showcase = { Slots = { ["2"] = "b" } } }, profile.Items)
+	truthy(set.b and not set.a, "slot map form")
 	local _, rows = sample()
 	for _, r in ipairs(rows) do
 		eq(r.Showcase, r.Key == "d", "row " .. r.Key)

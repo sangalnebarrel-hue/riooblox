@@ -7,6 +7,7 @@ local Market=require(script.Parent.Market)
 local I=require(script.Parent.ItemRules)
 local Offline=require(script.Parent.OfflineEarnings)
 local ServerLuck=require(script.Parent.ServerLuck)
+local ShowcaseRules=require(game:GetService('ReplicatedStorage').DogEconomy.ShowcaseRules)
 local E={};E.__index=E
 local function pk(id) return 'p:'..id end
 function E.new(tx,options)
@@ -308,6 +309,7 @@ end
 local function tradeItem(p,uid)
  local x=I.Get(p,uid,true)
  R.Check(not x.Favorite,"Remove this find from favourites first")
+ R.Check(not ShowcaseRules.IsPinned(p,uid),"This find is in your showcase. Take it out of MY BEST FINDS first")
  R.Check(not(p.ItemReservations and p.ItemReservations[uid]),"Find is reserved")
  return x
 end

@@ -493,6 +493,24 @@ local PLACE = "build/DOGROTS_MINING.rbxl"
 if fs.isFile(PLACE) then
 	local game = roblox.deserializePlace(fs.readFile(PLACE))
 	local district = game:GetService("Workspace"):FindFirstChild("DOGROTS_District")
+	-- The service row is not mirrored like the rest of the yard: the collector route must end at
+	-- each yard's real SellAnchor (west yards x' -24, east yards x' +24).
+	test("collector pointer sits on the real SellAnchor of all 8 yards", function()
+		local yards = district:FindFirstChild("04_PlayerYards")
+		for _, yard in ipairs(yards:GetChildren()) do
+			local id = tonumber(string.match(yard.Name, "^Yard_0(%d)"))
+			local anchor = id and yard:FindFirstChild("SellAnchor")
+			if anchor then
+				local target = G.Target("Collector", { YardId = id })
+				local a = anchor.CFrame.Position
+				local flat = math.sqrt((target.Pointer.X - a.X) ^ 2 + (target.Pointer.Z - a.Z) ^ 2)
+				truthy(flat < 1.5, "yard " .. id .. " collector pointer " .. tostring(target.Pointer) .. " vs SellAnchor " .. tostring(a))
+				local goal = target.Docks[1].Goal
+				local toGoal = math.sqrt((goal.X - a.X) ^ 2 + (goal.Z - a.Z) ^ 2)
+				truthy(toGoal < 9, "yard " .. id .. " collector goal within reach of the anchor (" .. toGoal .. ")")
+			end
+		end
+	end)
 	local boxes, grid, CELL = {}, {}, 16
 	for _, part in ipairs(district:GetDescendants()) do
 		if part:IsA("BasePart") and part.CanCollide then

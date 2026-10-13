@@ -326,14 +326,56 @@ local function resolveTarget(key: string): (any?, string?)
 			if xp and z then
 				local side = xp < 0 and -1 or 1
 				local stop = math.abs(xp) > 10 and (xp - side * 10) or 0
-				overrides = { Via = { RouteGraph.YardPoint(id, 0, z) }, Goal = RouteGraph.YardPoint(id, stop, z), Pointer = pointer }
+				-- Never walk into the service row (z -44..-66): stop in front of it.
+				local walkZ = math.max(z, -44)
+				overrides = { Via = { RouteGraph.YardPoint(id, 0, walkZ) }, Goal = RouteGraph.YardPoint(id, stop, walkZ), Pointer = pointer }
 			end
 		end
 	end
 	return RouteGraph.Target(key, { YardId = id, Overrides = overrides }), nil
 end
 
+-- Inside a yard mine (under the island) the streets are 60+ studs up through rock: lead to the
+-- elevator stop of that level first; once the ride is over the player is off this short route and
+-- the normal re-plan takes over from the surface.
+local MineLayout: any = nil
+local function mineEscape(from: Vector3): any?
+	if not MineLayout then
+		local ok, module = pcall(function()
+			return require(game:GetService("ReplicatedStorage"):WaitForChild("Mine", 2):WaitForChild("MineLayout", 2))
+		end)
+		if not ok or type(module) ~= "table" then
+			return nil
+		end
+		MineLayout = module
+	end
+	local district = workspace:FindFirstChild("DOGROTS_District")
+	local yards = district and district:FindFirstChild("04_PlayerYards")
+	if not yards then
+		return nil
+	end
+	local _, layout, _, layer = MineLayout.Find(yards, from)
+	if not layout or not layer or layer <= 1 then
+		return nil
+	end
+	local arrival = layout:Arrival(layer)
+	local stop = layout:StopCF(layer)
+	if not arrival or not stop then
+		return nil
+	end
+	local goal = arrival.Position
+	local points = { from, Vector3.new(goal.X, from.Y, goal.Z) }
+	if RouteGraph.Flat(from, goal) < 1 then
+		points[2] = goal + arrival.LookVector * 2
+	end
+	return { Points = points, Goal = points[2], Pointer = stop.Position + Vector3.new(0, 4, 0), InMine = true, Samples = RouteGraph.Build(points) }
+end
+
 local function plan(target: any, from: Vector3): any?
+	local escape = mineEscape(from)
+	if escape then
+		return escape
+	end
 	local route = RouteGraph.Plan(from, target, { Visible = lineClear })
 	if not route then
 		return nil
@@ -673,7 +715,7 @@ local function updateHud(a: any)
 	elseif here then
 		a.Remaining = RouteGraph.Flat(here, a.Pointer)
 	end
-	pool.Title.Text = Destinations.Text(a.Entry, "Name", lang())
+	pool.Title.Text = (a.Route and a.Route.InMine) and T("ELEVATOR UP FIRST", "СНАЧАЛА ЛИФТ НАВЕРХ") or Destinations.Text(a.Entry, "Name", lang())
 	pool.Distance.Text = a.Arrived and T("YOU ARE HERE!", "ТЫ НА МЕСТЕ!") or formatDistance(a.Remaining or 0)
 	PathGuide.Progress:Fire(publicState(a))
 end
@@ -685,6 +727,17 @@ local function check(a: any, now: number)
 		a.Flow.Static = a.Static
 	end
 	local here = a.Feet
+	if here and not a.Arrived and a.Route and a.Route.InMine and RouteGraph.Flat(here, a.Goal) <= PathGuide.ArriveDistance then
+		-- At the mine elevator: no "you are here" yet, keep checking until the ride is over.
+		if now >= (a.NextReplan or 0) then
+			replan(a, now)
+			if active ~= a then
+				return
+			end
+		end
+		updateHud(a)
+		return
+	end
 	if here and not a.Arrived and RouteGraph.Flat(here, a.Goal) <= PathGuide.ArriveDistance and math.abs(here.Y - a.Goal.Y) < 8 then
 		a.Arrived = now
 		hideAll()

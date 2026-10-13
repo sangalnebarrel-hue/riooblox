@@ -17,7 +17,6 @@ local Exact = {
 	["EMPTY"] = "ПУСТО",
 	["LOCKED"] = "ЗАКРЫТО",
 	["REMOVE"] = "УБРАТЬ",
-	["PLACE"] = "ПОСТАВИТЬ",
 	["CASE"] = "ВИТРИНА",
 	["CROWN CASE"] = "КОРОННАЯ ВИТРИНА",
 	["YOUR FINDS"] = "ТВОИ НАХОДКИ",
@@ -36,12 +35,8 @@ local Exact = {
 	["Make your yard one of a kind"] = "Сделай свой участок неповторимым",
 	["BUY & PLACE"] = "КУПИТЬ И ПОСТАВИТЬ",
 	["BUY"] = "КУПИТЬ",
-	["OWNED"] = "ЕСТЬ",
 	["SPOTS"] = "МЕСТА",
 	["ALL SPOTS"] = "ВСЕ МЕСТА",
-	["BIG"] = "БОЛЬШОЕ",
-	["SMALL"] = "МАЛОЕ",
-	["FREE"] = "СВОБОДНО",
 	["Walk into your yard to place decorations"] = "Зайди на свой участок, чтобы ставить украшения",
 	["This spot is already empty"] = "Это место уже пустое",
 	["This decoration needs a BIG spot"] = "Этому украшению нужно БОЛЬШОЕ место",
@@ -54,6 +49,15 @@ local Exact = {
 	["Choose a spot on the left, then a decoration."] = "Выбери место слева, затем украшение.",
 	["Walk up to a glowing ring in your yard and press DECORATE."] = "Подойди к светящемуся кругу на участке и нажми «УКРАСИТЬ».",
 }
+-- Short generic words with a plot-specific meaning: read only by DecorScreen / ShowcaseScreen
+-- (not merged into the global dictionary, where FREE means "БЕСПЛАТНО", OWNED "КУПЛЕНО"...).
+local UI = {
+	["PLACE"] = "ПОСТАВИТЬ",
+	["OWNED"] = "ЕСТЬ",
+	["BIG"] = "БОЛЬШОЕ",
+	["SMALL"] = "МАЛОЕ",
+	["FREE"] = "СВОБОДНО",
+}
 for _, c in ipairs(Catalog.Categories) do
 	Exact[c.Name] = c.RU
 end
@@ -63,6 +67,7 @@ end
 
 return {
 	Exact = Exact,
+	UI = UI,
 	Patterns = {
 		-- Nameplate weight line on the stand.
 		{ "^([%d%.,]+) kg$", "%1 кг" },
@@ -71,10 +76,11 @@ return {
 		{ "^Case (%d) shows your best find automatically$", "Витрина %1 сама показывает твою лучшую находку" },
 		{ "^The fifth case opens at yard stage (%d)$", "Пятая витрина открывается на стадии участка %1" },
 		{ "^(.+) is in your showcase%. Take it out of MY BEST FINDS before selling$", "%1 стоит на витрине. Убери её из «МОИХ ЛУЧШИХ НАХОДОК», чтобы продать" },
+		{ "^This find is in your showcase%. Take it out of MY BEST FINDS first$", "Эта находка стоит на витрине. Сначала убери её из «МОИХ ЛУЧШИХ НАХОДОК»" },
 		{ "^(%d+) finds are in your showcase%. Take them out of MY BEST FINDS before selling$", "На витрине %1 находок. Убери их из «МОИХ ЛУЧШИХ НАХОДОК», чтобы продать" },
 		{ "^(.-) · (%d+) kept in your showcase$", "%1 · %2 оставлено на витрине" },
 		{ "^Unlocks at yard stage (%d)$", "Откроется на стадии участка %1" },
-		{ "^Not enough Stone: (%d+) needed %(mine Limestone at your Mining Corner%)$", "Не хватает камня: нужно %1 (добывай известняк в своей шахте)" },
+		{ "^Not enough Stone: (%d+) needed %(mine Limestone at your Mining Corner%)$", "Не хватает камня: нужно %1 (добывай известняк в мини-шахте на участке)" },
 		{ "^Not enough Bones: (%d+) needed$", "Не хватает костей: нужно %1" },
 		{ "^Buy another (.+) first$", "Сначала купи ещё: %1" },
 		{ "^You already own one for every big spot$", "У тебя уже есть по одному на каждое большое место" },

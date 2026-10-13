@@ -23,6 +23,7 @@ local Economy = RS:WaitForChild("DogEconomy")
 local Config = require(Economy:WaitForChild("Config"))
 local Defs = require(Economy:WaitForChild("DogDefinitions"))
 local Rules = require(Economy:WaitForChild("TradeRules"))
+local ShowcaseRules = require(Economy:WaitForChild("ShowcaseRules"))
 local Theme, Format = Kit.Theme, Kit.Format
 local P = Theme.Colors
 local ACCENT = Color3.fromRGB(41, 204, 168) -- UITheme.WindowSpecs.Trade
@@ -187,6 +188,8 @@ local function itemReason(p: any, x: any): string?
 		return T("This find cannot be traded")
 	elseif x.Favorite then
 		return T("Favourite: remove the star first")
+	elseif ShowcaseRules.IsPinned(p, x.ItemUid) then
+		return T("In your showcase: take it out first")
 	elseif p.ItemReservations and p.ItemReservations[x.ItemUid] then
 		return T("Reserved")
 	end

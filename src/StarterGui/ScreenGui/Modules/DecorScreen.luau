@@ -30,7 +30,7 @@ local function ru(): boolean
 	return Kit.Lang() == "ru"
 end
 local function T(en: string, ruText: string?): string
-	return Kit.T(en, ruText or Dict.Exact[en] or en)
+	return Kit.T(en, ruText or Dict.UI[en] or Dict.Exact[en] or en)
 end
 local function said(text: any): string
 	text = tostring(text or "")

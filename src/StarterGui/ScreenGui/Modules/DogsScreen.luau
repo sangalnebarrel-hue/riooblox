@@ -113,6 +113,13 @@ local function ascensionTip(): string
 	for i = 2, #Config.Ascension do
 		table.insert(parts, pct(Config.Ascension[i]))
 	end
+	-- The lab's merge procedure is retired (LabConfig.SimpleMode): ascension stays an earned bonus.
+	local ok, LabConfig = pcall(function()
+		return require(game:GetService("ReplicatedStorage"):WaitForChild("LabConfig", 2))
+	end)
+	if ok and type(LabConfig) == "table" and LabConfig.SimpleMode then
+		return F("Ascension from earlier lab work: %s income.", table.concat(parts, " / "))
+	end
 	return F("Raised in the Genetics Lab by merging copies: %s income.", table.concat(parts, " / "))
 end
 -- {Id, Label, Value(entry) -> text, Tip}

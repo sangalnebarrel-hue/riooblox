@@ -714,7 +714,7 @@ local function goSell()
 	local N = nav()
 	Kit.Toast(T("Walk to the collector in your yard to sell."), { Kind = "info", NoTranslate = true })
 	if N then
-		N.Navigate("Your yard")
+		N.Navigate("Collector")
 	end
 end
 
@@ -825,6 +825,11 @@ function actions.Sell(row: any, d: any)
 	if st.Busy or not row then
 		return
 	end
+	if row.Showcase then
+		-- Pinned to MY BEST FINDS: the collector refuses it (YardCommerce), say so before the hold.
+		Kit.Toast(T("This find is in your showcase. Take it out of MY BEST FINDS first."), { Kind = "warn", NoTranslate = true })
+		return
+	end
 	st.Near = nearCollector()
 	if not st.Near then
 		goSell()
@@ -848,6 +853,10 @@ end
 function actions.List(row: any)
 	if not row.Tradeable then
 		Kit.Toast(T("This find cannot be traded."), { Kind = "warn", NoTranslate = true })
+		return
+	end
+	if row.Showcase then
+		Kit.Toast(T("This find is in your showcase. Take it out of MY BEST FINDS first."), { Kind = "warn", NoTranslate = true })
 		return
 	end
 	local hints = Logic.PriceHints(row.Value)

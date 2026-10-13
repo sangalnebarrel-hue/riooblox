@@ -120,6 +120,7 @@ local UI = {
 	["Reserved"] = "Зарезервировано",
 	["This find cannot be traded"] = "Эту находку нельзя обменять",
 	["Favourite: remove the star first"] = "В избранном: сначала сними звёздочку",
+	["In your showcase: take it out first"] = "В «Моих лучших находках»: сначала убери её оттуда",
 	["Every copy is already in the trade"] = "Все копии уже в обмене",
 	["Type a number, e.g. 2500 or 1.5k"] = "Введи число, например 2500 или 1.5k",
 	["You do not have that many coins"] = "У тебя нет столько монет",

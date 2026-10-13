@@ -30,33 +30,32 @@ function L.Rarity(def: any, valueConfig: any): string
 	return "Common"
 end
 
--- Uids pinned to the showcase. The showcase feature is optional: any table under
--- snapshot.Features.Showcase / snapshot.Showcase whose string values are item uids counts.
+-- Uids the player PINNED to the showcase (protected from selling, trading and listing):
+-- snapshot.Features.Showcase.Pinned = {[uid] = slot} (Features.Showcase), or its Slots
+-- {["1"] = uid}. Finds the stand shows only as automatic picks (Auto / Exhibits) stay free.
 function L.ShowcaseSet(snapshot: any, items: any): { [string]: boolean }
 	local set = {}
 	if type(snapshot) ~= "table" or type(items) ~= "table" then
 		return set
 	end
 	local features = type(snapshot.Features) == "table" and snapshot.Features or {}
-	local function scan(value: any, depth: number)
-		if depth > 5 then
-			return
-		end
-		if type(value) == "string" then
-			if items[value] ~= nil then
-				set[value] = true
+	local data = type(features.Showcase) == "table" and features.Showcase or (type(snapshot.Showcase) == "table" and snapshot.Showcase or nil)
+	if not data then
+		return set
+	end
+	if type(data.Pinned) == "table" then
+		for uid in pairs(data.Pinned) do
+			if type(uid) == "string" and items[uid] ~= nil then
+				set[uid] = true
 			end
-		elseif type(value) == "table" then
-			for key, inner in pairs(value) do
-				if type(key) == "string" and items[key] ~= nil and (inner == true or type(inner) == "table") then
-					set[key] = true
-				end
-				scan(inner, depth + 1)
+		end
+	elseif type(data.Slots) == "table" then
+		for _, uid in pairs(data.Slots) do
+			if type(uid) == "string" and items[uid] ~= nil then
+				set[uid] = true
 			end
 		end
 	end
-	scan(features.Showcase, 1)
-	scan(snapshot.Showcase, 1)
 	return set
 end
 

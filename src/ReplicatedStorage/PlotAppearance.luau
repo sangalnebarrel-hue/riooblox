@@ -265,7 +265,7 @@ local function garden(parent,f,d,level,sx)
  elseif m=='Rock'then
   for i=1,9 do local a=f:PointToWorldSpace(Vector3.new((-23+(i%2)*3)*sx,.17,-4-i*4));local b=f:PointToWorldSpace(Vector3.new((-23+((i+1)%2)*3)*sx,.17,-8-i*4));B(parent,'EarthFault',a,b,1,Color3.fromRGB(28,20,18))end
  end
- for i=1,6 do local x=i%2==0 and -31 or 31;local z=52-math.floor(i/2)*29;local cf=f*CFrame.new(x,1,z)
+ for i=1,6 do local x=(i%2==0 and -31 or 31)*sx;local z=52-math.floor(i/2)*29;local cf=f*CFrame.new(x,1,z) -- mirrored like the rest of the yard (keeps the mine zone free on yards 5-8)
   if m=='Crystal'then G.Cluster(parent,cf,level>=7 and 1 or .65,glow,trim)
   elseif m=='Rock'then G.Rock(parent,cf,1,body)
   elseif m=='Curse'then tree(parent,cf,d,.85)
