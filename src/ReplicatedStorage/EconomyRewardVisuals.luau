@@ -1,7 +1,8 @@
 -- Physical representatives of the same configured reward types shown by the server.
 local V={};local RS=game:GetService('ReplicatedStorage')
 function V.Build(row)
- if row.Kind=='Item'then local source=RS.DiscoveryModels:FindFirstChild(row.Id);return source and source:Clone()end
+ -- Finds use the same model as everywhere else (DiscoveryVisuals: recipe model or the old one).
+ if row.Kind=='Item'then return require(RS.DogEconomy.DiscoveryVisuals).Clone({ItemId=row.Id,Mutation=row.Mutation or'NORMAL'})end
  local model=Instance.new('Model');model.Name=row.Name or row.Kind or 'Reward'
  local function part(name,size,pos,color,shape)
   local p=Instance.new('Part');p.Name=name;p.Size=size;p.Position=pos;p.Color=color;p.Material=Enum.Material.SmoothPlastic;p.Anchored=true;p.CanCollide=false;p.CanTouch=false;p.CanQuery=false;p.Parent=model

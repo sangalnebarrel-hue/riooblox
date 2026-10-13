@@ -19,6 +19,7 @@ local function shown() return alive and main.Visible and page.Visible end
 -- Income per minute from the server's income model (player attribute IncomePerMinute, kept
 -- current by Runtime.Project); the label is translated by Localization.Income.
 local IncomeText = require(Replicated:WaitForChild("DogEconomy"):WaitForChild("IncomeText"))
+local DiscoveryVisuals = require(Replicated:WaitForChild("DogEconomy"):WaitForChild("DiscoveryVisuals"))
 grid.IncomeCard.Label.Text = "Income / min"
 local function updateIncome(perMinute)
  perMinute = tonumber(perMinute) or player:GetAttribute("IncomePerMinute")
@@ -90,11 +91,12 @@ local function fit(viewport)
  local model = viewModels[viewport]
  local camera = viewport.CurrentCamera
  if not model or not camera or viewport.AbsoluteSize.Y < 1 then return end
- local box, size = model:GetBoundingBox()
  local aspect = math.max(.2, viewport.AbsoluteSize.X / viewport.AbsoluteSize.Y)
+ if viewport ~= yardViewport then DiscoveryVisuals.FrameCamera(camera, model, aspect); return end
+ local box, size = model:GetBoundingBox()
  local vertical = math.rad(camera.FieldOfView / 2)
  local angle = math.min(vertical, math.atan(math.tan(vertical) * aspect))
- local direction = viewport == yardViewport and Vector3.new(1, 1.05, 1.2).Unit or Vector3.new(1, .65, -1.4).Unit
+ local direction = Vector3.new(1, 1.05, 1.2).Unit
  local distance = size.Magnitude * .5 / math.sin(angle) * 1.06
  camera.CFrame = CFrame.lookAt(box.Position + direction * distance, box.Position)
  camera.Focus = box
@@ -147,9 +149,9 @@ local function renderDiscovery(found)
  latest.ClassLabel.Text = string.upper(found.Class or "DISCOVERY")
  if latestUid == found.ItemUid and viewModels[itemViewport] then return end
  latestUid = found.ItemUid
- local models = Replicated:FindFirstChild("DiscoveryModels")
- local source = models and type(found.ItemId) == "string" and models:FindFirstChild(found.ItemId)
- local model = geometry(source)
+ -- The find's own model (recipe or old voxel model, mutation styled); the camera frames it.
+ local ok, model = pcall(DiscoveryVisuals.Clone, found, { NoScale = true })
+ if not ok then model = nil end
  replacePreview(itemViewport, model)
  latest.PreviewArea.EmptyMark.Visible = model == nil
  latest.PreviewArea.EmptyMark.Text = "?"
