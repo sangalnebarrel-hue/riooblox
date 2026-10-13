@@ -3,6 +3,9 @@ local Tween=game:GetService('TweenService')
 local GuiService=game:GetService('GuiService')
 local UserInput=game:GetService('UserInputService')
 local GameIcons=require(game:GetService('ReplicatedStorage'):WaitForChild('GameIcons'))
+-- Kit motion (one reduced-motion switch) and UI sounds for the legacy buttons and the HUD.
+local Motion=require(script.Parent:WaitForChild('Kit'):WaitForChild('Motion'))
+local Sound=require(script.Parent.Kit:WaitForChild('Sound'))
 local gui=script.Parent.Parent;local main=gui:WaitForChild('MainWindow')
 local yard=main.Content.PageContainer.YardPage
 local cardTemplate=yard.LatestFoundCard.Main
@@ -52,99 +55,6 @@ function U.TouchReserve(screen,left,top,width,height)
  end
  return jx,jy,small and 100 or 170
 end
--- One HUD layout for every device. A single factor from the smaller side of the Core UI safe area
--- (top bar, notch and home bar excluded) sizes everything; the menu tiles form two vertically
--- centred columns pinned to the left and right safe edges (first half left, second half right).
--- Counters, SETTINGS, notices and boosts share the free zone between the columns.
-function U.LayoutHUD(screen)
- local hud=screen:FindFirstChild('HUD');if not hud then return end
- local left,top,width,height=U.SafeArea(screen);local touch=UserInput.TouchEnabled
- local settings=hud:FindFirstChild('SimpleSettings');local notice=hud:FindFirstChild('OfflineEarningsNotice')
- local money,xp,dig=hud:FindFirstChild('MoneyWidget'),hud:FindFirstChild('XPWidget'),hud:FindFirstChild('GlobalDigWidget')
- local s=math.clamp(math.min(width/1100,height/560),.45,1)
- local jx,jy,thumb=U.TouchReserve(screen,left,top,width,height)
- -- Columns end above the thumbstick and jump button (touch) or the counters and SETTINGS (desktop).
- local bandTop=top+(touch and 8 or 12)
- local bandBottom=touch and math.min(top+height-thumb,jy-8)or math.min(top+height-28-82*s,top+height-69)
- local tiles=U.QuickTiles or{};local rows=math.max(1,math.ceil(#tiles/2))
- s=math.max(.45,math.min(s,(bandBottom-bandTop)/(rows*92+(rows-1)*12)))
- local tileW,tileH=math.max(58,math.floor(88*s)),math.max(46,math.floor(92*s))
- local gap=math.max(4,math.min(math.floor(12*s),math.floor((bandBottom-bandTop-rows*tileH)/math.max(1,rows-1))))
- local totalH=rows*tileH+(rows-1)*gap
- local y0=math.floor(math.clamp(top+(height-totalH)/2,bandTop,math.max(bandTop,bandBottom-totalH)))
- local xL,xR=left+12,left+width-12-tileW
- -- Lay out tile text in native pixels. A parent UIScale combined with a
- -- minimum text constraint made captions overflow their half-size buttons.
- local k=tileH/92;local small=k<.75
- for i,t in ipairs(tiles)do
-  local right=i>rows;local row=right and i-rows-1 or i-1
-  t.scale.Scale=1;t.root.AnchorPoint=Vector2.zero;t.root.Size=UDim2.fromOffset(tileW,tileH)
-  t.root.Position=UDim2.fromOffset(right and xR or xL,y0+row*(tileH+gap))
-  local caption=t.button:FindFirstChild('CandyCaption')
-  if caption then
-   local captionH=small and 17 or 25
-   caption.Position=UDim2.fromOffset(2,tileH-captionH);caption.Size=UDim2.fromOffset(tileW-4,captionH)
-   caption.TextWrapped=false;caption.TextScaled=true
-   local limit=caption:FindFirstChildWhichIsA('UITextSizeConstraint')or U.New('UITextSizeConstraint',{},caption)
-   limit.MinTextSize=1;limit.MaxTextSize=small and 12 or 17;limit.MinTextSize=small and 9 or 11
-  end
-  local icon=t.button:FindFirstChild('CandyIcon');if icon then local size=(small and 66 or 82)*k;icon.Position=UDim2.fromOffset((tileW-size)/2,-2);icon.Size=UDim2.fromOffset(size,size)end
-  local capacity=t.button:FindFirstChild('Capacity')
-  if capacity and capacity:IsA('TextLabel')then
-   capacity.Position=UDim2.fromOffset(0,-7);capacity.Size=UDim2.fromOffset(tileW,16)
-   capacity.TextWrapped=false;capacity.TextScaled=true
-   local limit=capacity:FindFirstChildWhichIsA('UITextSizeConstraint')or U.New('UITextSizeConstraint',{},capacity)
-   limit.MinTextSize=1;limit.MaxTextSize=small and 11 or 12;limit.MinTextSize=10
-  end
- end
- local innerL,innerR=xL+tileW+12,xR-12
- -- Counters: top of the free zone on touch (the thumbstick owns the bottom-left), bottom-left on desktop.
- local f=touch and math.clamp(s,.5,.64)or s
- for _,root in ipairs({money,xp,dig})do local sc=root and root:FindFirstChildWhichIsA('UIScale');if sc then sc.Scale=f end end
- local statX=touch and innerL or left+18;local base=touch and top+8+46*f or top+height-16
- local statsBottom=touch and top+12+78*f or top+12
- if money then money.Position=UDim2.fromOffset(statX,base)end
- if xp then xp.Position=UDim2.fromOffset(statX,touch and base+4+32*f or base-50*f)end
- if dig then dig.Position=UDim2.fromOffset(statX,touch and base+8+64*f or base-86*f)end
- if touch and xp then
-  local value=xp.Main:FindFirstChild('XPText')
-  if value then
-   value.TextWrapped=false;value.TextScaled=true
-   local limit=value:FindFirstChildWhichIsA('UITextSizeConstraint')or U.New('UITextSizeConstraint',{},value)
-   limit.MinTextSize=1;limit.MaxTextSize=13;limit.MinTextSize=11
-  end
- end
- local settingsW,settingsH=118,39
- if touch then local m=math.clamp(s,.75,1);settingsW,settingsH=math.floor(118*m),math.floor(39*m)end
- local settingsBottom=top+8
- if settings then
-  settings.Size=UDim2.fromOffset(settingsW,settingsH)
-  local open=settings:FindFirstChild('Open');if open then open.Position=UDim2.new();open.Size=UDim2.fromScale(1,1)end
-  if touch then settings.AnchorPoint=Vector2.new(1,0);settings.Position=UDim2.fromOffset(innerR,top+8);settingsBottom=top+8+settingsH
-  else settings.AnchorPoint=Vector2.new(1,1);settings.Position=UDim2.fromOffset(left+width-18,top+height-18)end
- end
- -- The wallet grows right from its left edge, never into SETTINGS (touch) or the right column.
- if money then money:SetAttribute('HUDGrowLeft',false);money:SetAttribute('HUDMaxRight',touch and settings and innerR-settingsW-8 or innerR)end
- if notice then
-  local caption=notice:FindFirstChild('Caption')
-  if touch then
-   notice.AnchorPoint=Vector2.new(1,0);notice.Position=UDim2.fromOffset(innerR,settingsBottom+6);notice.Size=UDim2.fromOffset(math.max(160,math.min(264,math.floor((innerR-innerL)*.55))),50)
-   if caption then caption.TextSize=15;caption.Size=UDim2.new(1,-12,1,-4)end
-  else
-   notice.AnchorPoint=Vector2.new(.5,0);notice.Position=UDim2.fromOffset((innerL+innerR)/2,top+10);notice.Size=UDim2.fromOffset(math.min(320,innerR-innerL),57)
-   if caption then caption.TextSize=19;caption.Size=UDim2.new(1,-12,1,-4)end
-  end
- end
- -- Map marker button and the bag toast also stay inside the free zone, below the top bar.
- local guide=screen:FindFirstChild('DistrictGuide');local clear=guide and guide:FindFirstChild('ClearMarker')
- if clear then clear.AnchorPoint=Vector2.zero;clear.Position=UDim2.fromOffset(innerL,touch and statsBottom+8 or top+12)end
- local toast=screen:FindFirstChild('InventoryToast')
- if toast then toast.AnchorPoint=Vector2.new(.5,0);toast.Position=UDim2.fromOffset((innerL+innerR)/2,top+math.floor(height*.14));toast.Size=UDim2.fromOffset(math.min(math.floor(width*.42),innerR-innerL-16),math.max(34,math.floor(height*.07)))end
- U.HUD={Touch=touch,Scale=s,Left=left,Top=top,Width=width,Height=height,InnerLeft=innerL,InnerRight=innerR,JumpX=jx,JumpY=jy,StatsBottom=statsBottom,
-  BuffRight=touch and innerR or math.min(innerR,left+width-18-settingsW-10),BuffTop=settingsBottom+8,BuffBottom=touch and(jx<innerR and jy-8 or top+height-8)or top+height-18}
- screen:SetAttribute('HUDInnerLeft',innerL);screen:SetAttribute('HUDInnerRight',innerR)
-end
-U.LayoutTouchHUD=U.LayoutHUD
 -- Re-run a layout (coalesced) whenever the usable screen can change: window or camera viewport
 -- size, top bar inset, touch mode, or Roblox's touch controls appearing / moving.
 function U.WatchHUD(screen,layout)
@@ -232,6 +142,7 @@ function U.EnhanceButton(button,color)
   face=surface
  end
  enhanced[button]=true;button.AutoButtonColor=false;button:SetAttribute('PawpadAnimated',true)
+ Sound.Attach(button) -- hover + click sounds (every legacy menu button sounds like the kit)
  local base=saturated(color or button:GetAttribute('ButtonBaseColor')or face.BackgroundColor3)
  button:SetAttribute('ButtonBaseColor',base)
  U.Round(face,10)
@@ -248,8 +159,10 @@ function U.EnhanceButton(button,color)
   local tone=not enabled and current:Lerp(Color3.fromRGB(117,133,158),.7)or pressed and current:Lerp(U.Colors.edge,.24)or hover and current:Lerp(Color3.new(1,1,1),.12)or current
   face.BackgroundColor3=Color3.new(1,1,1);gradient.Color=ColorSequence.new(tone:Lerp(Color3.new(1,1,1),.1),tone);gradient.Rotation=90
   local stroke=face:FindFirstChildWhichIsA('UIStroke');if stroke then stroke.Color=enabled and U.Colors.edge or Color3.fromRGB(99,116,144)end
-  if tween then tween:Cancel()end
-  tween=Tween:Create(scale,TweenInfo.new(.09),{Scale=not enabled and 1 or pressed and .96 or hover and 1.025 or 1});tween:Play()
+  if tween then tween:Cancel();tween=nil end
+  local goal=not enabled and 1 or pressed and .95 or hover and 1.03 or 1
+  if Motion.Reduced()then(scale::any).Scale=goal
+  else tween=Tween:Create(scale,TweenInfo.new(pressed and .07 or .15,pressed and Enum.EasingStyle.Quad or Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Scale=goal});tween:Play()end
  end
  button.MouseEnter:Connect(function()hover=true;draw()end);button.MouseLeave:Connect(function()hover=false;pressed=false;draw()end)
  button.MouseButton1Down:Connect(function()pressed=true;draw()end);button.MouseButton1Up:Connect(function()pressed=false;draw()end)
@@ -424,6 +337,467 @@ function U.LayoutYard(y)
   if not holder.Main:FindFirstChildWhichIsA('UIGradient')then U.New('UIGradient',{Color=ColorSequence.new(WHITE,WHITE)},holder.Main)end
  end
 end
+------------------------------------------------------------------------------------------------
+-- HUD (docs/UI.md). Icon-first: a rail of round-square menu buttons with a tiny label under the
+-- icon (left), the currency pills (top centre), small round buttons NAVIGATE / TITLES / HIDE UI /
+-- SETTINGS (top-right). The maths live in Modules.HUDLayout; U.LayoutHUD applies them whenever
+-- the screen, the top bar inset, touch mode or the touch controls change. The tiles reuse the
+-- instances other scripts bind to (HUD.PawpadWidget.PawpadButton, HUD.InventoryWidget.
+-- InventoryButton(.Capacity), HUD.Quick<Key>.Open, HUD.MoneyWidget, HUD.XPWidget,
+-- HUD.SimpleSettings.Open); each managed root carries HUDEdge (the edge Hide UI slides it to).
+------------------------------------------------------------------------------------------------
+local StarterGui=game:GetService('StarterGui')
+local Players=game:GetService('Players')
+local HUDLayout=require(script.Parent.HUDLayout)
+local UIText=require(game:GetService('ReplicatedStorage'):WaitForChild('Localization'):WaitForChild('UI'))
+-- Typed as any: the HUD touches many GuiObject properties of found / created instances.
+local function make(class:string,props:any,parent:any):any return U.New(class,props,parent)end
+local function find(o:any,name:string):any return o:FindFirstChild(name)end
+local function findClass(o:any,class:string):any return o:FindFirstChildWhichIsA(class)end
+U.QuickTiles={}::any -- the rail tiles (BuildHUD)
+U.HUD=false::any -- the last layout (LayoutHUD): free zone, boosts, touch reserve
+local KitModule=nil
+local function kit()
+ if KitModule==nil then local ok,value=pcall(require,script.Parent.Kit);KitModule=ok and value or false end
+ return KitModule or nil
+end
+-- Self-localized HUD text (labels carry NoTranslate): Localization.UI has the Russian.
+function U.L(en)
+ local k=kit()
+ if k and k.Lang()=='ru'then return UIText.Words[en]or UIText.Exact[en]or en end
+ return en
+end
+U.RailSpecs={
+ {key='Dogs',label='DOGS',color=C(255,169,38),tip='Your pack: give every dog a job'},
+ {key='Inventory',label='BAG',color=C(26,192,239),tip='Your finds and Lucky Blocks',hotkey='B'},
+ {key='Yard',label='YARD',color=C(123,219,51),tip='Your yard, upgrades and income',hotkey='P'},
+ {key='Shop',label='SHOP',color=C(248,79,170),tip='Boosts, spins and offers'},
+ {key='DogDex',label='DEX',color=C(92,142,250),tip='Every dog you have discovered'},
+ {key='Lab',label='LAB',color=C(162,105,246),tip='Mutate and improve your dogs'},
+ {key='Trade',label='TRADE',color=C(41,204,168),tip='Swap dogs and finds with players'},
+ {key='Events',label='EVENTS',color=C(255,192,32),tip='World events and daily rewards'},
+}
+U.ClusterSpecs={
+ {key='Navigate',name='QuickNavigate',title='NAVIGATE',glyph='🧭',tip='Where to go? Show me the way'},
+ {key='Titles',name='QuickTitles',title='TITLES',glyph='👑',tip='Pick the title shown over your head',module='TitlesScreen'},
+ {key='HideUI',name='QuickHideUI',title='HIDE UI',eye=true,tip='Hide the interface for screenshots and videos',hotkey='H'},
+ {key='Settings',name='SimpleSettings',title='SETTINGS',icon='Settings',glyph='⚙',tip='Sounds, motion and more'},
+}
+-- Currency pills, widths in bar heights. Always: coins and level; bones / stone once you have some.
+U.PillSpecs={
+ {key='Coins',name='MoneyWidget',units=4.6,always=true,title='COINS',tip='Earned by your dogs. Spend them on dogs, upgrades and boosts.'},
+ {key='Bones',name='QuickBones',units=3,title='BONES',tip='A rare currency for special offers.'},
+ {key='Stone',name='QuickStone',units=3,title='STONE',tip='Mined at your Mining Corner. Builds yard decor.'},
+ {key='Level',name='XPWidget',units=3.6,always=true,title='LEVEL',tip=nil},
+}
+local queuedLayout=setmetatable({},{__mode='k'})
+-- Coalesced U.LayoutHUD (several changes in one frame lay out once).
+function U.RequestHUDLayout(screen:any)
+ if queuedLayout[screen]then return end
+ queuedLayout[screen]=true
+ task.defer(function()queuedLayout[screen]=nil;if screen.Parent then U.LayoutHUD(screen)end end)
+end
+-- A small "pop" (badges, counters): grows in with an overshoot. Instant with reduced motion.
+function U.Pop(o:any)
+ local pop=find(o,'Pop')
+ if not(pop and pop:IsA('UIScale'))then pop=make('UIScale',{Name='Pop'},o)end
+ if Motion.Reduced()then pop.Scale=1;return end
+ pop.Scale=.45;Motion.Tween(pop,.34,{Scale=1},Enum.EasingStyle.Back)
+end
+local function stroked(label:any,thickness:number?):any
+ label.TextStrokeTransparency=1
+ local s=find(label,'CandyTextStroke')or make('UIStroke',{Name='CandyTextStroke'},label)
+ s.Color=NAVY;s.Thickness=thickness or 2;s.Transparency=0;s.Enabled=true
+ s.ApplyStrokeMode=Enum.ApplyStrokeMode.Contextual;s.LineJoinMode=Enum.LineJoinMode.Round
+ return s
+end
+local function textLimit(label:any,maxSize:number,minSize:number?):any
+ local limit=findClass(label,'UITextSizeConstraint')or make('UITextSizeConstraint',{},label)
+ limit.MinTextSize=1;limit.MaxTextSize=math.max(1,math.floor(maxSize));limit.MinTextSize=math.min(limit.MaxTextSize,minSize or 8)
+ return limit
+end
+local function label(parent:any,name:string,text:string,z:number,props:any?):any
+ local t=make('TextLabel',{Name=name,Text=text,BackgroundTransparency=1,FontFace=U.FontFace,TextColor3=WHITE,TextScaled=true,TextWrapped=false,
+  TextXAlignment=Enum.TextXAlignment.Center,ZIndex=z},parent)
+ for k,v in pairs(props or{})do(t::any)[k]=v end
+ return t
+end
+-- The eye of HIDE UI (slashed) and of the show-UI button (open), drawn with frames.
+function U.EyeGlyph(parent:any,z:number,slashed:boolean?,color:Color3?):any
+ local ink=color or NAVY
+ local old=find(parent,'EyeGlyph');if old then old:Destroy()end
+ local holder=make('Frame',{Name='EyeGlyph',BackgroundTransparency=1,AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),Size=UDim2.fromScale(.66,.66),ZIndex=z},parent)
+ local white=make('Frame',{Name='White',BackgroundColor3=WHITE,BorderSizePixel=0,AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),Size=UDim2.fromScale(1,.6),ZIndex=z},holder)
+ make('UICorner',{CornerRadius=UDim.new(.5,0)},white);U.Stroke(white,ink,2.5)
+ local pupil=make('Frame',{Name='Pupil',BackgroundColor3=ink,BorderSizePixel=0,AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),Size=UDim2.fromScale(.36,.36),ZIndex=z+1},holder)
+ make('UICorner',{CornerRadius=UDim.new(.5,0)},pupil)
+ if slashed then
+  local slash=make('Frame',{Name='Slash',BackgroundColor3=ink,BorderSizePixel=0,AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),Size=UDim2.new(1.1,0,0,4),Rotation=-38,ZIndex=z+2},holder)
+  make('UICorner',{CornerRadius=UDim.new(.5,0)},slash);U.Stroke(slash,WHITE,1.5)
+ end
+ return holder
+end
+-- Hover lift (scale up, icon rises, soft glow), press squash and the release spring of a HUD
+-- button, plus its hover / click sounds. `glow` is a UIStroke shown on hover (mouse / gamepad).
+local function hudMotion(b:any,icon:any,glow:any,hoverScale:number?)
+ local scale=find(b,'TileMotion')
+ if not(scale and scale:IsA('UIScale'))then scale=make('UIScale',{Name='TileMotion'},b)end
+ local hover,pressed=false,false
+ local home=icon and icon.Position
+ local function draw()
+  local goal=pressed and .92 or hover and(hoverScale or 1.07)or 1
+  if pressed then Motion.Tween(scale,.07,{Scale=goal})else Motion.Tween(scale,.18,{Scale=goal},Enum.EasingStyle.Back)end
+  if icon and home then Motion.Tween(icon,.18,{Position=home+UDim2.fromOffset(0,(hover and not pressed)and -3 or 0)},Enum.EasingStyle.Back)end
+  if glow then Motion.Tween(glow,.12,{Transparency=hover and .2 or 1})end
+ end
+ b.MouseEnter:Connect(function()if Sound.MouseInput()then hover=true;draw()end end)
+ b.MouseLeave:Connect(function()hover,pressed=false,false;draw()end)
+ b.MouseButton1Down:Connect(function()pressed=true;draw()end)
+ b.MouseButton1Up:Connect(function()pressed=false;draw()end)
+ b.SelectionGained:Connect(function()hover=true;draw()end)
+ b.SelectionLost:Connect(function()hover,pressed=false,false;draw()end)
+ Sound.Attach(b)
+end
+local function tooltip(target:any,spec:any)
+ local k=kit();if not k then return end
+ pcall(function()
+  k.Tooltip(target,function()
+   local title=U.L(spec.title or spec.label or'')
+   if spec.hotkey and not UserInput.TouchEnabled then title=title..'  ['..spec.hotkey..']'end
+   return spec.tip and U.L(spec.tip)or'',title
+  end)
+ end)
+end
+-- A rail tile on an existing root / button (or new HUD.Quick<Key>.Open).
+local function buildTile(hud:any,spec:any,root:any,b:any):any
+ root=root or make('Frame',{Name='Quick'..spec.key},hud)
+ b=b or make('TextButton',{Name='Open',Text='',AutoButtonColor=false},root)
+ root.BackgroundTransparency=1;root.AnchorPoint=Vector2.zero;root.Size=UDim2.fromOffset(68,68);root.ZIndex=10;root.ClipsDescendants=false
+ for _,o in ipairs(root:GetChildren())do if o:IsA('UIAspectRatioConstraint')or o:IsA('UISizeConstraint')then o:Destroy()end end
+ for _,o in ipairs(b:GetChildren())do
+  if o:IsA('GuiObject')then o.Visible=false
+  elseif o:IsA('UIPadding')then o:Destroy()
+  elseif o:IsA('UIStroke')or o:IsA('UIGradient')then o.Enabled=false end
+ end
+ -- A transparent hit target with its own face: UITheme.EnhanceButton leaves it alone.
+ b.Text='';b.AutoButtonColor=false;b.BackgroundTransparency=1;b.BorderSizePixel=0;b.Position=UDim2.new();b.Size=UDim2.fromScale(1,1);b.ZIndex=11;b.ClipsDescendants=false
+ b:SetAttribute('CandyPage',spec.key)
+ local z=12
+ local face=make('Frame',{Name='CandyFace',BackgroundColor3=WHITE,BorderSizePixel=0,Size=UDim2.fromScale(1,1),ZIndex=z},b)
+ make('UICorner',{CornerRadius=UDim.new(.3,0)},face);U.Stroke(face,NAVY,2.5)
+ make('UIGradient',{Color=ColorSequence.new(spec.color:Lerp(WHITE,.28),spec.color:Lerp(NAVY,.12)),Rotation=90},face)
+ local shine=make('Frame',{Name='CandyShine',BackgroundColor3=WHITE,BackgroundTransparency=.72,BorderSizePixel=0,AnchorPoint=Vector2.new(.5,0),Position=UDim2.fromScale(.5,.07),Size=UDim2.fromScale(.78,.34),ZIndex=z+1},face)
+ make('UICorner',{CornerRadius=UDim.new(.5,0)},shine)
+ local glowFrame=make('Frame',{Name='CandyGlow',BackgroundTransparency=1,Position=UDim2.fromOffset(-3,-3),Size=UDim2.new(1,6,1,6),ZIndex=z},b)
+ make('UICorner',{CornerRadius=UDim.new(.32,0)},glowFrame)
+ local glow=make('UIStroke',{Name='Glow',Color=WHITE,Thickness=3,Transparency=1,ApplyStrokeMode=Enum.ApplyStrokeMode.Border},glowFrame)
+ local icon=make('ImageLabel',{Name='CandyIcon',BackgroundTransparency=1,ScaleType=Enum.ScaleType.Fit,Image=U.Assets[spec.key]or GameIcons.Resolve(spec.key)or'',
+  AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.42),Size=UDim2.fromScale(.8,.8),ZIndex=z+3},b)
+ local caption=label(b,'CandyCaption',U.L(spec.label),z+5,{AnchorPoint=Vector2.new(.5,.5),Position=UDim2.new(.5,0,1,-3),Size=UDim2.new(1,12,0,16)})
+ caption:SetAttribute('NoTranslate',true);stroked(caption,2);textLimit(caption,16,8)
+ local badge=label(b,'CandyBadge','',z+7,{AutomaticSize=Enum.AutomaticSize.X,AnchorPoint=Vector2.new(1,0),Position=UDim2.new(1,6,0,-6),Size=UDim2.fromOffset(20,20),
+  BackgroundTransparency=0,BackgroundColor3=U.Colors.red,BorderSizePixel=0,Visible=false,TextScaled=false,TextSize=13})
+ badge:SetAttribute('NoTranslate',true);make('UICorner',{CornerRadius=UDim.new(.5,0)},badge);U.Stroke(badge,WHITE,2)
+ make('UIPadding',{PaddingLeft=UDim.new(0,5),PaddingRight=UDim.new(0,5)},badge)
+ hudMotion(b,icon,glow)
+ tooltip(b,spec)
+ local sc=findClass(root,'UIScale')or make('UIScale',{Name='CandyHUDScale'},root)
+ return {root=root,button=b,scale=sc,key=spec.key,face=face,icon=icon,caption=caption,badge=badge,spec=spec}
+end
+-- Text / colour of a rail tile's corner badge ("" hides it). Pops when the text changes.
+function U.SetTileBadge(key:string,text:any,color:Color3?)
+ for _,t in ipairs(U.QuickTiles or{})do
+  if t.key==key and t.badge then
+   local value=text~=nil and tostring(text)or''
+   local changed=t.badge.Text~=value
+   t.badge.Text=value;t.badge.Visible=value~=''
+   if color then t.badge.BackgroundColor3=color end
+   if changed and value~=''then U.Pop(t.badge)end
+  end
+ end
+end
+-- A currency pill frame (navy glass, white rim); MoneyWidget and XPWidget get one too.
+local function pillFace(root:any,z:number):any
+ local old=find(root,'CandyPill');if old then old:Destroy()end
+ local face=make('Frame',{Name='CandyPill',BackgroundColor3=NAVY,BackgroundTransparency=.25,BorderSizePixel=0,Size=UDim2.fromScale(1,1),ZIndex=z},root)
+ make('UICorner',{CornerRadius=UDim.new(.5,0)},face);U.Stroke(face,WHITE,2,.7)
+ make('UIGradient',{Color=ColorSequence.new(C(255,255,255),C(165,175,195)),Rotation=90},face)
+ return face
+end
+local function pillIcon(root:any,key:string,glyph:string?,z:number):any
+ local old=find(root,'CandyPillIcon');if old then old:Destroy()end
+ local image=U.Assets[key]or GameIcons.Resolve(key)
+ local icon
+ if image then icon=make('ImageLabel',{Name='CandyPillIcon',BackgroundTransparency=1,Image=image,ScaleType=Enum.ScaleType.Fit,ZIndex=z},root)
+ else icon=label(root,'CandyPillIcon',glyph or'●',z,{TextScaled=true});icon:SetAttribute('NoTranslate',true)end
+ icon.Position=UDim2.fromOffset(3,3);icon.Size=UDim2.fromOffset(40,40)
+ return icon
+end
+-- Animated number on a label: counts up (Quad out, 0.5 s), snaps down; instant with reduced motion.
+local function counter(holder:any,valueLabel:any,format:(number)->string)
+ local value=find(holder,'CandyCount')
+ if not(value and value:IsA('NumberValue'))then value=make('NumberValue',{Name='CandyCount'},holder)end
+ local tween=nil
+ value.Changed:Connect(function(v)valueLabel.Text=format(v)end)
+ return function(target)
+  target=tonumber(target)or 0
+  if tween then tween:Cancel();tween=nil end
+  if target<=value.Value or Motion.Reduced()then value.Value=target;valueLabel.Text=format(target);return end
+  tween=Tween:Create(value,TweenInfo.new(.5,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{Value=target});tween:Play()
+ end
+end
+local short=nil
+local function shortNumber(n)
+ if not short then local ok,f=pcall(require,script.Parent.Kit.Format);short=ok and f or false end
+ if short then return short.Short(math.floor(n+.5))end
+ return tostring(math.floor(n+.5))
+end
+local function buildPills(screen:any,hud:any)
+ local player=Players.LocalPlayer
+ -- Coins: MoneyWidget (MoneyController animates and fits the amount).
+ local money=hud.MoneyWidget
+ money.AnchorPoint=Vector2.zero;money.BackgroundTransparency=1;money.ZIndex=10
+ for _,o in ipairs(money:GetDescendants())do if o:IsA('UIStroke')and o.Name~='CandyTextStroke'then o.Enabled=false end;if o:IsA('UIPadding')then o:Destroy()end end
+ for _,o in ipairs(money:GetChildren())do if o.Name=='Shadow'then o.Visible=false end end
+ pillFace(money,10);pillIcon(money,'Coins','$',13)
+ local mm=money.Main;mm.BackgroundTransparency=1;mm.ZIndex=11;mm.Position=UDim2.fromOffset(46,0);mm.Size=UDim2.new(1,-52,1,0)
+ mm.CurrencyBox.Visible=false;mm.Label.Visible=false
+ local amount=mm.Amount;typeface(amount,30,true);amount.TextColor3=C(150,255,90);stroked(amount,2);amount.TextXAlignment=Enum.TextXAlignment.Left;amount.TextWrapped=false
+ if amount.Text:sub(1,1)~='$'then amount.Text='$'..amount.Text end
+ money:SetAttribute('HUDGrowLeft',false)
+ -- Level: LV + a slim progress bar (the exact XP shows in the tooltip).
+ local xp=hud.XPWidget
+ xp.AnchorPoint=Vector2.zero;xp.BackgroundTransparency=1;xp.ZIndex=10
+ for _,o in ipairs(xp:GetChildren())do if o.Name=='Shadow'then o.Visible=false end end
+ local xm=xp.Main;xm.BackgroundTransparency=1;xm.Position=UDim2.new();xm.Size=UDim2.fromScale(1,1);xm.ZIndex=11
+ for _,o in ipairs(xm:GetChildren())do if o:IsA('UIStroke')then o.Enabled=false end end
+ pillFace(xp,10)
+ local level=xm.LevelLabel;typeface(level,24,true);level.TextColor3=C(110,226,255);stroked(level,2);level.TextScaled=true;textLimit(level,26,10)
+ level.TextXAlignment=Enum.TextXAlignment.Center;level.AnchorPoint=Vector2.zero;level.Position=UDim2.fromOffset(8,0);level.Size=UDim2.fromOffset(76,46)
+ xm.XPText.Visible=false
+ local barBg=xm.XPBarBackground;barBg.Visible=true;barBg.ZIndex=12;barBg.AnchorPoint=Vector2.new(0,.5);barBg.BackgroundColor3=C(12,26,50);barBg.BackgroundTransparency=.15
+ local g=findClass(barBg,'UIGradient');if g then g.Enabled=false end
+ local bs=findClass(barBg,'UIStroke');if bs then bs.Enabled=true;bs.Color=WHITE;bs.Transparency=.6;bs.Thickness=1.5 end
+ U.Round(barBg,6)
+ local fill=barBg.Fill;fill.BackgroundColor3=C(78,220,255);fill.ZIndex=13;U.Round(fill,6)
+ for _,o in ipairs(fill:GetChildren())do if o:IsA('UIStroke')then o.Enabled=false end end
+ -- Bones and stone: shown once you own some.
+ local function simplePill(name,key,glyph,color)
+  local old=find(hud,name);if old then old:Destroy()end
+  local root=make('Frame',{Name=name,BackgroundTransparency=1,Size=UDim2.fromOffset(138,46),Visible=false,ZIndex=10},hud)
+  make('UIScale',{Name='CandyHUDScale'},root)
+  pillFace(root,10);pillIcon(root,key,glyph,13)
+  local value=label(root,'Value','0',13,{TextXAlignment=Enum.TextXAlignment.Left,Position=UDim2.fromOffset(48,0),Size=UDim2.new(1,-58,1,0),TextColor3=color})
+  value:SetAttribute('NoTranslate',true);stroked(value,2);textLimit(value,28,10)
+  return root,value
+ end
+ local bonesRoot,bonesValue=simplePill('QuickBones','Bones','🦴',C(255,244,214))
+ local stoneRoot,stoneValue=simplePill('QuickStone','Stone','🪨',C(226,222,214))
+ local setBones=counter(bonesRoot,bonesValue,shortNumber)
+ local setStone=counter(stoneRoot,stoneValue,shortNumber)
+ local function showPill(root,amount)
+  local had=(root:GetAttribute('HUDValue')or 0)>0
+  root:SetAttribute('HUDValue',amount)
+  if had~=(amount>0)then U.RequestHUDLayout(screen)end
+ end
+ local function bones()local n=math.max(0,tonumber(player:GetAttribute('Bones'))or 0);setBones(n);showPill(bonesRoot,n)end
+ player:GetAttributeChangedSignal('Bones'):Connect(bones);bones()
+ -- Stone: p.Resources.Stone from a player attribute when the server publishes one, otherwise
+ -- from any economy snapshot (Modules.Net), refreshed after ores break at the Mining Corner.
+ local lastStone=nil
+ local function stone(n)
+  n=math.max(0,math.floor(tonumber(n)or 0));if n==lastStone then return end
+  lastStone=n;setStone(n);showPill(stoneRoot,n)
+ end
+ if type(player:GetAttribute('Stone'))=='number'then stone(player:GetAttribute('Stone'))end
+ player:GetAttributeChangedSignal('Stone'):Connect(function()stone(player:GetAttribute('Stone'))end)
+ task.spawn(function()
+  local ok,Net=pcall(require,script.Parent.Net);if not ok or type(Net)~='table'then return end
+  local function fromSnapshot(snapshot)
+   if type(player:GetAttribute('Stone'))=='number'then return end
+   local p=type(snapshot)=='table'and snapshot.Profile;local r=type(p)=='table'and p.Resources
+   if type(r)=='table'then stone(r.Stone)elseif type(p)=='table'then stone(0)end
+  end
+  Net.Changed:Connect(fromSnapshot)
+  local pending=false
+  player:GetAttributeChangedSignal('MiningOresBroken'):Connect(function()
+   if pending or type(player:GetAttribute('Stone'))=='number'then return end
+   pending=true
+   task.delay(8,function()pending=false;Net.Snapshot(6)end)
+  end)
+  if Net.Cached()then fromSnapshot(Net.Cached())end
+ end)
+ -- Tooltips explain each pill (hover / long press).
+ local k=kit()
+ if k then
+  pcall(function()
+   k.Tooltip(money,function()return U.L(U.PillSpecs[1].tip),U.L('COINS')end)
+   k.Tooltip(bonesRoot,function()return U.L(U.PillSpecs[2].tip),U.L('BONES')end)
+   k.Tooltip(stoneRoot,function()return U.L(U.PillSpecs[3].tip),U.L('STONE')end)
+   k.Tooltip(xp,function()return xm.XPText.Text,U.L('LEVEL')..' '..tostring(player:GetAttribute('Level')or 1)end)
+  end)
+ end
+end
+-- BAG: "23/50" (orange from 80 %, red and pulsing when full; pops on every new find). The old
+-- Capacity label stays hidden (InventoryController still writes it). EVENTS: "!" while a world
+-- event runs (orange during its warning).
+local function bindBadges(hud:any)
+ local player=Players.LocalPlayer
+ local bag;for _,t in ipairs(U.QuickTiles or{})do if t.key=='Inventory'then bag=t end end
+ if bag then
+  local cap=find(bag.button,'Capacity');if cap and cap:IsA('GuiObject')then cap.Visible=false end
+  local pulse=nil
+  local function refresh()
+   local count,capacity=player:GetAttribute('ItemCount'),player:GetAttribute('ItemCapacity')
+   if type(count)~='number'or type(capacity)~='number'then return end
+   local full=capacity>0 and count>=capacity
+   U.SetTileBadge('Inventory',string.format('%d/%d',count,capacity),full and U.Colors.red or(capacity>0 and count>=capacity*.8)and C(214,128,18)or NAVY)
+   if full and not pulse then pulse=Motion.Loop(bag.badge,.6,{BackgroundTransparency=.35})
+   elseif not full and pulse then pulse:Cancel();pulse=nil;bag.badge.BackgroundTransparency=0 end
+  end
+  for _,n in ipairs({'ItemCount','ItemCapacity'})do player:GetAttributeChangedSignal(n):Connect(refresh)end
+  refresh()
+ end
+ task.spawn(function()
+  local events=game:GetService('ReplicatedStorage'):WaitForChild('WorldEvents',30)
+  local state=events and events:WaitForChild('State',30)
+  if not state then return end
+  local function eventBadge()
+   local phase=state:GetAttribute('State')
+   if phase=='ACTIVE'then U.SetTileBadge('Events','!',U.Colors.red)
+   elseif phase=='WARNING'then U.SetTileBadge('Events','!',C(214,128,18))
+   else U.SetTileBadge('Events','')end
+  end
+  state:GetAttributeChangedSignal('State'):Connect(eventBadge);eventBadge()
+ end)
+end
+-- The rail (left), currency pills (top) and badges. The cluster is built by U.BuildCluster.
+function U.BuildHUD(screen:any)
+ local hud=screen.HUD
+ local tiles={}
+ for _,spec in ipairs(U.RailSpecs)do
+  local root,b
+  if spec.key=='Yard'then root=hud.PawpadWidget;b=root.PawpadButton
+  elseif spec.key=='Inventory'then root=hud.InventoryWidget;b=root.InventoryButton end
+  for _,o in ipairs(root and root:GetChildren()or{})do if o.Name=='Shadow'then o.Visible=false end end
+  table.insert(tiles,buildTile(hud,spec,root,b))
+ end
+ U.QuickTiles=tiles
+ local dig=find(hud,'GlobalDigWidget');if dig then dig.Visible=false end
+ -- A tooltip shown over a tile must not stay on screen once a menu (or Hide UI) hides the HUD.
+ hud:GetPropertyChangedSignal('Visible'):Connect(function()
+  if not hud.Visible then pcall(function()require(script.Parent.Kit.Feedback).HideTooltip()end)end
+ end)
+ buildPills(screen,hud)
+ bindBadges(hud)
+ -- The captions localize themselves: follow a language change.
+ local player=Players.LocalPlayer
+ player:GetPropertyChangedSignal('LocaleId'):Connect(function()
+  task.defer(function()for _,t in ipairs(U.QuickTiles or{})do t.caption.Text=U.L(t.spec.label)end end)
+ end)
+end
+-- NAVIGATE, TITLES, HIDE UI and SETTINGS: round buttons at the top-right (HUD.<name>.Open).
+function U.BuildCluster(screen:any)
+ local hud=screen.HUD
+ for _,spec in ipairs(U.ClusterSpecs)do
+  local old=find(hud,spec.name);if old then old:Destroy()end
+  local root=make('Frame',{Name=spec.name,BackgroundTransparency=1,AnchorPoint=Vector2.zero,Size=UDim2.fromOffset(44,44),ZIndex=12},hud)
+  local b=make('TextButton',{Name='Open',Text='',AutoButtonColor=false,BackgroundTransparency=1,BorderSizePixel=0,Size=UDim2.fromScale(1,1),ZIndex=12},root)
+  local face=make('Frame',{Name='CandyFace',BackgroundColor3=WHITE,BorderSizePixel=0,Size=UDim2.fromScale(1,1),ZIndex=12},b)
+  make('UICorner',{CornerRadius=UDim.new(.5,0)},face);U.Stroke(face,NAVY,2.5)
+  make('UIGradient',{Color=ColorSequence.new(WHITE,C(206,228,250)),Rotation=90},face)
+  local glowFrame=make('Frame',{Name='CandyGlow',BackgroundTransparency=1,Position=UDim2.fromOffset(-3,-3),Size=UDim2.new(1,6,1,6),ZIndex=12},b)
+  make('UICorner',{CornerRadius=UDim.new(.5,0)},glowFrame)
+  local glow=make('UIStroke',{Name='Glow',Color=WHITE,Thickness=3,Transparency=1,ApplyStrokeMode=Enum.ApplyStrokeMode.Border},glowFrame)
+  local icon
+  if spec.eye then icon=U.EyeGlyph(b,14,true)
+  else
+   local image=spec.icon and(U.Assets[spec.icon]or GameIcons.Resolve(spec.icon))
+   if image then icon=make('ImageLabel',{Name='CandyIcon',BackgroundTransparency=1,Image=image,ScaleType=Enum.ScaleType.Fit,AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),Size=UDim2.fromScale(.7,.7),ZIndex=14},b)
+   else icon=label(b,'CandyGlyph',spec.glyph or'★',14,{AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),Size=UDim2.fromScale(.66,.66),TextColor3=NAVY});icon:SetAttribute('NoTranslate',true)end
+  end
+  hudMotion(b,icon,glow,1.1)
+  tooltip(b,spec)
+  if spec.module then
+   local modules=script.Parent
+   local function wanted()root:SetAttribute('HUDWanted',find(modules,spec.module)~=nil);U.RequestHUDLayout(screen)end
+   modules.ChildAdded:Connect(wanted);wanted()
+  end
+ end
+end
+function U.LayoutHUD(screen:any)
+ local hud=find(screen,'HUD');if not hud then return end
+ local left,top,width,height=U.SafeArea(screen);local touch=UserInput.TouchEnabled
+ local jx,jy,thumb=U.TouchReserve(screen,left,top,width,height)
+ local tiles=U.QuickTiles or{}
+ local cluster={}
+ for _,spec in ipairs(U.ClusterSpecs)do
+  local root=find(hud,spec.name)
+  if root and root:IsA('GuiObject')then
+   local on=root:GetAttribute('HUDWanted')~=false;root.Visible=on
+   if on then table.insert(cluster,root)end
+  end
+ end
+ local pillUnits,pillRoots={},{}
+ for _,spec in ipairs(U.PillSpecs)do
+  local root=find(hud,spec.name)
+  if root and root:IsA('GuiObject')then
+   local on=spec.always or(root:GetAttribute('HUDValue')or 0)>0;root.Visible=on
+   if on then table.insert(pillUnits,spec.units);table.insert(pillRoots,root)end
+  end
+ end
+ -- The Roblox leaderboard covers the top-right (it is hidden while Hide UI is on: keep the last answer).
+ local playerList=U.HUD and U.HUD.PlayerList or false
+ if not screen:GetAttribute('UIHidden')then pcall(function()playerList=StarterGui:GetCoreGuiEnabled(Enum.CoreGuiType.PlayerList)end)end
+ local o=HUDLayout.Compute({Left=left,Top=top,Width=width,Height=height,Touch=touch,JumpX=jx,JumpY=jy,Thumb=thumb,
+  Tiles=#tiles,Cluster=#cluster,PlayerList=playerList,Pills=pillUnits})
+ -- Rail.
+ local B=o.Rail.Size;local labelH=o.Rail.LabelH
+ for i,t in ipairs(tiles)do
+  local cell=o.Rail.Cells[i]
+  t.scale.Scale=1;t.root.AnchorPoint=Vector2.zero;t.root.Size=UDim2.fromOffset(B,B);t.root.Position=UDim2.fromOffset(cell.X,cell.Y)
+  t.root:SetAttribute('HUDEdge','Left')
+  t.caption.Size=UDim2.new(1,math.floor(B*.2),0,labelH);t.caption.Position=UDim2.new(.5,0,1,-math.floor(labelH*.15))
+  textLimit(t.caption,labelH,7)
+  local badgeH=math.clamp(math.floor(B*.3),16,22)
+  t.badge.Size=UDim2.fromOffset(badgeH,badgeH);t.badge.TextSize=math.max(11,badgeH-7)
+ end
+ -- Cluster.
+ for i,root in ipairs(cluster)do
+  local cell=o.Cluster.Cells[i]
+  root.AnchorPoint=Vector2.zero;root.Size=UDim2.fromOffset(o.Cluster.Size,o.Cluster.Size);root.Position=UDim2.fromOffset(cell.X,cell.Y)
+  root:SetAttribute('HUDEdge',o.Cluster.Vertical and'Right'or'Top')
+ end
+ -- Currency pills: 46 px-tall widgets scaled to the bar height.
+ local unit=o.Bar.Unit
+ for i,root in ipairs(pillRoots)do
+  local cell=o.Bar.Cells[i];local w46=math.max(60,cell.W/unit)
+  local sc=findClass(root,'UIScale')or make('UIScale',{Name='CandyHUDScale'},root)
+  sc.Scale=unit;root.AnchorPoint=Vector2.zero;root.Size=UDim2.fromOffset(w46,46);root.Position=UDim2.fromOffset(cell.X,cell.Y)
+  root:SetAttribute('HUDEdge','Top')
+  if root.Name=='MoneyWidget'then root:SetAttribute('HUDMaxRight',cell.X+cell.W-math.floor(6*unit))
+  elseif root.Name=='XPWidget'then
+   local barBg=find(root.Main,'XPBarBackground')
+   if barBg then barBg.Position=UDim2.new(0,88,.5,0);barBg.Size=UDim2.fromOffset(math.max(20,w46-102),12)end
+  end
+ end
+ -- Free zone: offline notice, income chip (HUDStatsController), map marker button, bag toast.
+ local notice=find(hud,'OfflineEarningsNotice')
+ if notice then
+  notice.AnchorPoint=Vector2.new(.5,0);notice.Position=UDim2.fromOffset(o.Notice.X,o.Notice.Y);notice.Size=UDim2.fromOffset(o.Notice.W,o.Notice.H)
+  notice:SetAttribute('HUDEdge','Top')
+  local caption=find(notice,'Caption');if caption then caption.TextSize=touch and 15 or 17;caption.Size=UDim2.new(1,-12,1,-4)end
+ end
+ screen:SetAttribute('HUDIncomeSlot',Vector2.new(o.Chip.X,o.Chip.Y))
+ local guide=find(screen,'DistrictGuide');local clear=guide and find(guide,'ClearMarker')
+ if clear and clear:IsA('GuiObject')then clear.AnchorPoint=Vector2.zero;clear.Position=UDim2.fromOffset(o.Clear.X,o.Clear.Y)end
+ local toast=find(screen,'InventoryToast')
+ if toast then toast.AnchorPoint=Vector2.new(.5,0);toast.Position=UDim2.fromOffset(o.Toast.X,o.Toast.Y);toast.Size=UDim2.fromOffset(o.Toast.W,o.Toast.H)end
+ U.HUD={Touch=touch,Scale=o.Scale,Left=left,Top=top,Width=width,Height=height,InnerLeft=o.Free.Left,InnerRight=o.Free.Right,JumpX=jx,JumpY=jy,
+  StatsBottom=o.Bar.Bottom,BuffRight=o.Buff.Right,BuffTop=o.Buff.Top,BuffBottom=o.Buff.Bottom,PlayerList=playerList,Layout=o}
+ screen:SetAttribute('HUDInnerLeft',o.Free.Left);screen:SetAttribute('HUDInnerRight',o.Free.Right);screen:SetAttribute('HUDFreeTop',o.Free.Top)
+end
+U.LayoutTouchHUD=U.LayoutHUD
 function U.ApplyShell(screen)
  -- Rebuild generated decoration when loading a place saved with an editor preview.
  for _,o in ipairs(screen:GetDescendants())do
@@ -491,58 +865,9 @@ function U.ApplyShell(screen)
   end
  end
  U.LayoutYard(pages.YardPage)
- -- Floating lower-left counters, with outline-only contrast over the world.
- local function floating(root,w,h)
-  root.AnchorPoint=Vector2.new(0,1);root.Size=UDim2.fromOffset(w,h);root.BackgroundTransparency=1
-  root.Main.Position=UDim2.new();root.Main.Size=UDim2.fromScale(1,1);root.Main.BackgroundTransparency=1
-  for _,o in ipairs(root:GetDescendants())do
-   if o:IsA('UIStroke')then o.Enabled=false end
-   if o:IsA('UIPadding')then o:Destroy()end
-  end
- end
- local function counter(label,size,color)
-  typeface(label,size,true);label.TextColor3=color;label.TextStrokeTransparency=0
-  label.TextXAlignment=Enum.TextXAlignment.Left;label.TextWrapped=false
-  local stroke=label:FindFirstChildWhichIsA('UIStroke')or U.New('UIStroke',{},label)
-  stroke.Name='CandyTextStroke'
-  for _,child in ipairs(label:GetChildren())do if child:IsA('UIStroke')and child~=stroke then child:Destroy()end end
-  stroke.Enabled=true;stroke.Color=NAVY;stroke.Thickness=2;stroke.Transparency=0
-  stroke.ApplyStrokeMode=Enum.ApplyStrokeMode.Contextual;stroke.LineJoinMode=Enum.LineJoinMode.Round
- end
- local money=hud.MoneyWidget;floating(money,320,46)
- money.Main.CurrencyBox.Visible=false;money.Main.Label.Visible=false
- rect(money.Main.Amount,0,0,320,46);counter(money.Main.Amount,40,C(132,255,57))
- if money.Main.Amount.Text:sub(1,1)~='$'then money.Main.Amount.Text='$'..money.Main.Amount.Text end
- local xp=hud.XPWidget;floating(xp,320,32)
- rect(xp.Main.LevelLabel,0,0,100,32);counter(xp.Main.LevelLabel,27,C(78,220,255))
- rect(xp.Main.XPText,108,0,212,32);counter(xp.Main.XPText,18,WHITE);xp.Main.XPText.TextScaled=true
- xp.Main.XPBarBackground.Visible=false
- local dig=hud.GlobalDigWidget;floating(dig,320,32)
- rect(dig.Main.Title,0,0,143,32);counter(dig.Main.Title,21,C(255,209,54))
- rect(dig.Main.ProgressText,148,0,172,32);counter(dig.Main.ProgressText,21,C(255,233,144));dig.Main.ProgressText.TextScaled=true
- dig.Main.ProgressBarBackground.Visible=false
- for _,root in ipairs({money,xp,dig,hud.PawpadWidget,hud.InventoryWidget})do for _,o in ipairs(root:GetChildren())do if o.Name=='Shadow'then o.Visible=false end end end
- -- Reuse the two existing buttons so their gameplay bindings remain intact.
- local tiles={}
- for i,spec in ipairs(specs)do
-  local root,b
-  if spec.key=='Yard'then root=hud.PawpadWidget;b=root.PawpadButton
-  elseif spec.key=='Inventory'then root=hud.InventoryWidget;b=root.InventoryButton
-  else root=U.Frame(hud,'Quick'..spec.key,0,0,88,92);root.BackgroundTransparency=1;b=U.New('TextButton',{Name='Open',Text='',AutoButtonColor=false},root)end
-  root.AnchorPoint=Vector2.zero;root.Size=UDim2.fromOffset(88,92);root.BackgroundTransparency=1
-  for _,o in ipairs(root:GetChildren())do if o:IsA('UIAspectRatioConstraint')or o:IsA('UISizeConstraint')then o:Destroy()end end
-  for _,o in ipairs(b:GetChildren())do if o:IsA('GuiObject')then o.Visible=false elseif o:IsA('UIPadding')then o:Destroy()end end
-  b.Position=UDim2.new();b.Size=UDim2.fromScale(1,1);b.Text='';b.BackgroundTransparency=0
-  surface(b,spec.color,16,3);b:SetAttribute('CandyPage',spec.key)
-  U.AssetIcon(b,spec.key,3,-8,82)
-  local label=U.New('TextLabel',{Name='CandyCaption',Text=spec.label,BackgroundTransparency=1,Position=UDim2.fromOffset(0,65),Size=UDim2.fromOffset(88,25),ZIndex=b.ZIndex+4},b);typeface(label,17,true)
-  if spec.key=='Inventory'then local cap=b.Capacity;cap.Visible=true;rect(cap,44,-6,44,18);typeface(cap,10,true);cap.ZIndex=label.ZIndex+1;cap.BackgroundTransparency=0;surface(cap,NAVY,6,1)end
-  local sc=root:FindFirstChildWhichIsA('UIScale')or U.New('UIScale',{Name='CandyHUDScale'},root)
-  table.insert(tiles,{root=root,button=b,scale=sc,key=spec.key})
- end
- for _,root in ipairs({money,xp,dig})do if not root:FindFirstChildWhichIsA('UIScale')then U.New('UIScale',{Name='CandyHUDScale'},root)end end
+ -- HUD: menu rail, currency pills and badges (the cluster follows in ApplyStandalone).
+ U.BuildHUD(screen)
  screen.Backdrop.BackgroundColor3=C(14,29,58);screen.Backdrop.BackgroundTransparency=.25
- U.QuickTiles=tiles
  local function resize()
   local v=screen.AbsoluteSize
   if not screen:GetAttribute('StandaloneWindows')then scale.Scale=math.max(.25,math.min(1.05,(v.X-30)/1160,(v.Y-94)/740))end
@@ -581,6 +906,18 @@ function U.AttachNavigation(screen,N)
  for _,t in ipairs(U.QuickTiles or{})do
   if t.key~='Yard'and t.key~='Inventory'then t.button.Activated:Connect(function()N.OpenPage(t.key)end)end
  end
+ -- Cluster: NAVIGATE (the route finder, or the district map until Modules.NavigatorScreen
+ -- exists), TITLES, HIDE UI (Modules handles UIHidden: StarterPlayerScripts.HideUI).
+ local function on(name,fn)
+  local root=screen.HUD:FindFirstChild(name);local b=root and root:FindFirstChild('Open')
+  if b and b:IsA('GuiButton')then b.Activated:Connect(fn)end
+ end
+ on('QuickNavigate',function()
+  if script.Parent:FindFirstChild('NavigatorScreen')then N.OpenPage('Navigate');return end
+  N.Close();local toggle=screen:FindFirstChild('ToggleDistrictMap');if toggle and toggle:IsA('BindableEvent')then toggle:Fire()end
+ end)
+ on('QuickTitles',function()N.OpenPage('Titles')end)
+ on('QuickHideUI',function()if N.Owner=='HUD'then screen:SetAttribute('UIHidden',true)end end)
  local pages=screen.MainWindow.Content.PageContainer
  screen.MainWindow.Sidebar.InventoryButton.Activated:Connect(function()N.OpenPage('Inventory')end)
  pages.DogsPage.CandyEmpty.Go.Activated:Connect(function()N.Navigate('Factory')end)
@@ -663,9 +1000,8 @@ function U.ApplyStandalone(screen)
  end
  screen.Backdrop.BackgroundTransparency=.5
  local dig=screen.HUD:FindFirstChild('GlobalDigWidget');if dig then dig.Visible=false end
- local row=screen.HUD:FindFirstChild('SimpleSettings');if row then row:Destroy()end
- row=U.Frame(screen.HUD,'SimpleSettings',0,0,118,39);row.BackgroundTransparency=1;row.AnchorPoint=Vector2.new(1,1);row.Position=UDim2.new(1,-18,1,-18)
- U.Button(row,'Open','SETTINGS',0,0,118,39,nil,U.Colors.blue).Active=true
+ -- NAVIGATE, TITLES, HIDE UI and SETTINGS (HUD.SimpleSettings.Open keeps its name).
+ U.BuildCluster(screen)
  U.LayoutHUD(screen)
  local function font(o)
   if o:IsA('TextLabel')or o:IsA('TextButton')or o:IsA('TextBox')then o.FontFace=U.FontFace end

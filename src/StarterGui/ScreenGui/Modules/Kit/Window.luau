@@ -19,6 +19,7 @@ local Overlay = require(script.Parent.Overlay)
 local Nav = require(script.Parent.Nav)
 local Button = require(script.Parent.Button)
 local Controls = require(script.Parent.Controls)
+local Sound = require(script.Parent.Sound)
 
 local Window = {}
 Window.__index = Window
@@ -156,6 +157,7 @@ function Window.new(props: Props): any
 			self:Close("button")
 		end,
 	})
+	self.CloseButton.Instance:SetAttribute("KitSound", "") -- closing plays the Close cue itself
 	self.Maid:Give(self.CloseButton)
 
 	if p.Tabs then
@@ -388,18 +390,20 @@ function Window.Open(self: any)
 		self:Relayout()
 	end))
 	self:Relayout()
+	Sound.Play("Open", self.Props.Stack and { Pitch = 1.15 } or nil)
 	local t = Theme.Motion.Open
 	if Motion.Reduced() then
 		self.Backdrop.BackgroundTransparency = Theme.BackdropTransparency
 		self.Scale.Scale = 1
 		self.Cover.Visible = false
 	else
+		-- Blur-free backdrop fade, and the card springs up (Back easing overshoots slightly).
 		self.Backdrop.BackgroundTransparency = 1
-		self.Scale.Scale = 0.94
+		self.Scale.Scale = 0.9
 		self.Cover.Visible = true
 		self.Cover.BackgroundTransparency = 0
 		Motion.Tween(self.Backdrop, t, { BackgroundTransparency = Theme.BackdropTransparency })
-		Motion.Tween(self.Scale, t, { Scale = 1 }, Enum.EasingStyle.Back)
+		Motion.Tween(self.Scale, t + 0.06, { Scale = 1 }, Enum.EasingStyle.Back)
 		local fade = Motion.Tween(self.Cover, t, { BackgroundTransparency = 1 })
 		local token = self.Token
 		if fade then
@@ -443,6 +447,9 @@ function Window._close(self: any, reason: string, silent: boolean)
 	self.NavKey = nil
 	if navKey and not silent and reason ~= "navigation" then
 		Nav.Release(navKey)
+	end
+	if not silent and reason ~= "navigation" and reason ~= "replaced" and reason ~= "destroy" then
+		Sound.Play("Close")
 	end
 	if silent or Motion.Reduced() then
 		self.Root.Visible = false

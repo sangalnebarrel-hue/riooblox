@@ -104,9 +104,9 @@ win:SetTab("history"); win:SetBadge("history", 3); win:GetLayout()
 Fields and signals: `win.Body`, `win.IsOpen`, `win.Tab`, `win.Maid` (cleaned on Destroy),
 `win.Opened`, `win.Closed(reason)`, `win.Resized(layout)`, `win.TabChanged(id)`.
 Module: `Kit.Window.Top()`, `Kit.Window.Count()`, `Kit.Window.CloseAll(reason)`.
-The window animates in about 0.18 s: the backdrop fades, the card scales up from 0.94 and fades
-in. It closes in 0.14 s. With Roblox Reduced Motion (or `Kit.Motion.Override = true`) both
-are instant.
+The window animates in about 0.2 s: the backdrop fades, the card springs up from 0.9 and fades
+in (with the `Open` sound). It closes in 0.14 s (`Close` sound; not when another window replaces
+it). With reduced motion (see Motion below) both are instant.
 
 ## Controls
 
@@ -254,6 +254,44 @@ end, function(spec) return spec.DecorId end)
 `Kit.Preview.Slot(holderFrame)` gives the same caching to any frame (`:Show(spec)`, `:Clear()`).
 `Kit.Preview.Purge()` drops the shelf (call it when a big screen closes and memory matters).
 
+## Sound
+
+Every kit control already sounds: buttons, cards, tabs, chips, the sort dropdown, windows (open
+and close), modals (open, confirm, cancel) and toasts (by kind). The HUD tiles and the legacy menu
+buttons (`UITheme.EnhanceButton`) use the same cues, so the whole game clicks the same way.
+
+```lua
+Kit.Sound.Play("Coin")                        -- Hover | Click | Toggle | Tab | Open | Close |
+                                              -- Success | Error | Coin | Notify
+Kit.Sound.Play("Click", { Pitch = 1.2, Volume = 0.8 })   -- multipliers for one play
+Kit.Sound.Attach(myButton)                    -- hover + click sounds on any GuiButton (once)
+myButton:SetAttribute("KitSound", "Toggle")   -- the cue its click plays; "" = silent
+Kit.Toast("Sold!", { Kind = "success", Sound = "Coin" })  -- Sound = false: silent toast
+Kit.Sound.Enabled(); Kit.Sound.SetEnabled(false)          -- the Settings "UI SOUNDS" switch
+```
+
+* Cue data lives in `Kit/SoundConfig.luau`: `Id` (an uploaded asset id; `0` plays `Fallback`, a
+  sound bundled with every Roblox client), `Volume`, `Pitch` / `PitchId`, `Jitter`, `Gap` (the
+  minimum seconds between two plays; hover is limited to one per 60 ms) and `Voices`. At most
+  `MaxPerSecond` (14) sounds start per second.
+* Voices are created on first use in `SoundService.KitUISounds` and play through the SoundGroup
+  `SoundService.DOGROTS_AUDIO.UI` (created on the client when the place has none).
+* The player setting is the attribute `UISounds` (false = muted). `Kit.Sound.Muted = true`
+  silences everything for the session (tests, cinematics).
+* Your own buttons built from `Kit.Button` / `Base.Press` need nothing. A plain `TextButton` gets
+  sounds with `Kit.Sound.Attach(button)` (its hover cue respects `KitDisabled` / `Active`).
+
+## Motion
+
+* Hover: the target grows (`hoverScale`, 1.03) with a soft white outline (made on the first mouse
+  hover only); press: a squash to 0.94; release: a short spring back. `Base.Press(button, target,
+  maid, hoverScale, opts)` — `opts.NoGlow`, `opts.NoSound`.
+* Windows spring up from 0.9 with a backdrop fade (no blur); the selected tab's underline slides;
+  toasts slide in from above; repeated toasts pop.
+* `Kit.Motion.Reduced()` is one switch for the whole game: `Kit.Motion.Override`, else the player
+  attribute `ReducedMotion` (the Settings "MOTION" toggle, seeded from Roblox's Reduced Motion),
+  else `GuiService.ReducedMotionEnabled`.
+
 ## Tokens and helpers
 
 * `Kit.Theme`: `Font` (FredokaOne), `FontNumeric` (BuilderSans Bold), `Colors` (same keys as
@@ -299,8 +337,9 @@ runs, and show the server reply with `Kit.Toast(message, {Kind = ok and "success
 ## Testing
 
 * `tests/uikit.luau` (run by `tools/check.sh`) covers formatting, the grid and window maths,
-  theme sync with UITheme / LabConfig / Config.Variants / ItemValueConfig, and localization
-  coverage of kit words.
+  theme sync with UITheme / LabConfig / Config.Variants / ItemValueConfig, localization
+  coverage of kit words, the sound cues (every cue the kit, the HUD and the screens play is
+  configured and bounded) and the Russian of the HUD / MY BAG / Settings (Localization.UI).
 * The runtime emulation scenarios (real place, real GUIIntegration, kit and KitDemo at
   1920x1080, 812x375 and 390x844) live outside the repo in
   `scratchpad/work/big/scratch/uikit/harness/`. `run_uikit.luau` checks bounded cell and

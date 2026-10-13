@@ -6,6 +6,7 @@ local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Theme = require(script.Parent.Theme)
 local Motion = require(script.Parent.Motion)
+local Sound = require(script.Parent.Sound)
 
 local Base = {}
 
@@ -305,24 +306,81 @@ function Base.SafeArea(gui: any): (number, number, number, number)
 	return 0, top, size.X, math.max(1, size.Y - top)
 end
 
--- Hover / press / gamepad-selection scale animation on a button. `target` gets a UIScale
--- (KitPress). The button is skipped while its KitDisabled attribute is true.
-function Base.Press(button: GuiButton, target: GuiObject?, maid: any?, hoverScale: number?): UIScale
+-- The soft outline a hovered button gets: a transparent frame over the face with a light
+-- UIStroke, made on the first mouse hover only (touch screens never create it).
+local function hoverGlow(holder: any, button: any): any
+	local glow = holder:FindFirstChild("KitHoverGlow")
+	if glow then
+		return glow
+	end
+	local face = holder:FindFirstChild("Face") or button:FindFirstChild("Face")
+	local host: any = face or holder
+	local corner = host:FindFirstChildWhichIsA("UICorner")
+	-- 2 px outside the face, so the halo sits around its navy border instead of covering it.
+	glow = Base.New("Frame", {
+		Name = "KitHoverGlow",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(-2, -2),
+		Size = UDim2.new(1, 4, 1, 4),
+		ZIndex = host.ZIndex,
+		Active = false,
+	})
+	if corner then
+		local radius = corner.CornerRadius
+		Base.New("UICorner", { CornerRadius = UDim.new(radius.Scale, radius.Offset > 0 and radius.Offset + 2 or 0) }, glow)
+	end
+	local stroke = Base.New("UIStroke", {
+		Name = "Glow",
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Color = Theme.White,
+		Thickness = 3,
+		Transparency = 1,
+		LineJoinMode = Enum.LineJoinMode.Round,
+	}, glow)
+	stroke:SetAttribute("KitGlow", true)
+	glow.Parent = host
+	return glow
+end
+
+-- Hover / press / gamepad-selection animation and sounds on a button. `target` gets a UIScale
+-- (KitPress): hover lifts it (scale up, soft white outline), a press squashes it and the release
+-- springs back. Hover and click sounds come from Kit.Sound (the click cue is the button's KitSound
+-- attribute: "Click" by default, "Tab", "Toggle", "" for silent). The button is skipped while its
+-- KitDisabled attribute is true. opts: NoGlow, NoSound.
+function Base.Press(button: GuiButton, target: GuiObject?, maid: any?, hoverScale: number?, opts: any?): UIScale
+	local o: any = opts or {}
 	local holder: any = target or button
 	local scale: any = holder:FindFirstChild("KitPress")
 	if not (scale and scale:IsA("UIScale")) then
 		scale = Base.New("UIScale", { Name = "KitPress" }, holder)
 	end
 	local hover, pressed = false, false
+	local glowStroke: any = nil
 	local function draw()
 		local enabled = button:GetAttribute("KitDisabled") ~= true
-		local goal = (not enabled and 1) or (pressed and 0.96) or (hover and (hoverScale or 1.03)) or 1
-		Motion.Tween(scale, Theme.Motion.Press, { Scale = goal })
+		local goal = (not enabled and 1) or (pressed and 0.94) or (hover and (hoverScale or 1.03)) or 1
+		if pressed and enabled then
+			Motion.Tween(scale, Theme.Motion.Press * 0.8, { Scale = goal })
+		else
+			-- Release / hover: a short spring back.
+			Motion.Tween(scale, Theme.Motion.Press * 1.6, { Scale = goal }, Enum.EasingStyle.Back)
+		end
+		if glowStroke then
+			Motion.Tween(glowStroke, Theme.Motion.Fast, { Transparency = (hover and enabled) and 0.35 or 1 })
+		end
+	end
+	local function hovered(mouse: boolean)
+		hover = true
+		if mouse and o.NoGlow ~= true and not glowStroke and button:GetAttribute("KitDisabled") ~= true then
+			local ok, glow = pcall(hoverGlow, holder, button)
+			glowStroke = ok and glow and glow:FindFirstChild("Glow") or nil
+		end
+		draw()
 	end
 	local connections = {
 		button.MouseEnter:Connect(function()
-			hover = true
-			draw()
+			hovered(Sound.MouseInput())
 		end),
 		button.MouseLeave:Connect(function()
 			hover, pressed = false, false
@@ -337,14 +395,18 @@ function Base.Press(button: GuiButton, target: GuiObject?, maid: any?, hoverScal
 			draw()
 		end),
 		button.SelectionGained:Connect(function()
-			hover = true
-			draw()
+			hovered(false)
 		end),
 		button.SelectionLost:Connect(function()
 			hover, pressed = false, false
 			draw()
 		end),
 	}
+	if o.NoSound ~= true then
+		for _, connection in ipairs(Sound.Attach(button) or {}) do
+			table.insert(connections, connection)
+		end
+	end
 	if maid then
 		for _, connection in ipairs(connections) do
 			maid:Give(connection)

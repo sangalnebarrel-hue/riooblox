@@ -7,6 +7,7 @@ local Prompts=game:GetService('ProximityPromptService')
 local player=Players.LocalPlayer
 local gui=script.Parent.Parent
 local Theme=require(script.Parent.UITheme);Theme.ApplyShell(gui);Theme.ApplyStandalone(gui)
+local Sound=require(script.Parent.Kit.Sound)
 local N={Owner='HUD',ModalOwnerCount=0,WorldRewardHandlers={},Pending={},RewardEpoch=0,SeenRewards={}}
 local screens,switchPage,serviceOpen,inventoryReward,pageDialog
 local main=gui:WaitForChild('MainWindow');local pages=main.Content.PageContainer
@@ -45,6 +46,7 @@ task.spawn(function()
  if ok and controls then playerControls=controls;menuControls(N.ModalOwnerCount>0)end
 end)
 function N.Acquire(owner,page)
+ local previousOwner=N.Owner
 	N.Owner=owner
  -- Navigation owns one window family; nested dialogs borrow that owner.
  N.ModalOwnerCount=owner=='HUD'and 0 or 1
@@ -75,7 +77,11 @@ function N.Acquire(owner,page)
 		reward:Destroy()
 	end
  local map=mapOverlay();if map and owner~='Map'then map.Visible=false end
- main.Visible=false;gui.ServiceMenus.Visible=false;gui.Backdrop.Visible=owner~='HUD';gui.HUD.Visible=owner=='HUD'
+ -- Hide UI (StarterPlayerScripts.HideUI): any menu brings the interface back.
+ if owner~='HUD'and gui:GetAttribute('UIHidden')then gui:SetAttribute('UIHidden',nil)end
+ -- One open / close sound for every menu family (kit windows play the same cue; Kit.Sound drops the repeat).
+ if previousOwner=='HUD'and owner~='HUD'then Sound.Play('Open')elseif previousOwner~='HUD'and owner=='HUD'then Sound.Play('Close')end
+ main.Visible=false;gui.ServiceMenus.Visible=false;gui.Backdrop.Visible=owner~='HUD';gui.HUD.Visible=owner=='HUD'and not gui:GetAttribute('UIHidden')
  gui.InventoryToast.Visible=false
  for _,p in ipairs(pages:GetChildren())do if p:IsA('GuiObject')then p.Visible=false end end
  local keyboard=pages:FindFirstChild('SearchKeyboard');if keyboard then keyboard.Visible=false end
@@ -255,7 +261,7 @@ local function kitScreen(page,arg)
  local module=script.Parent:FindFirstChild(name);if not module then return false end
  local ok,screen=pcall(require,module)
  if not ok or type(screen)~='table'or type(screen.Open)~='function'then warn('DOGROTS '..name..': '..tostring(screen));return false end
- local opened,err=pcall(screen.Open,arg);if not opened then warn('DOGROTS '..name..' open: '..tostring(err))end
+ local opened,err=pcall(screen.Open,arg,page);if not opened then warn('DOGROTS '..name..' open: '..tostring(err))end
  return true
 end
 do

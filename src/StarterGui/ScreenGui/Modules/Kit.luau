@@ -15,6 +15,7 @@ local Lang = require(script.Lang)
 local Signal = require(script.Signal)
 local Maid = require(script.Maid)
 local Motion = require(script.Motion)
+local Sound = require(script.Sound)
 local Base = require(script.Base)
 local Overlay = require(script.Overlay)
 local Nav = require(script.Nav)
@@ -31,7 +32,7 @@ local Window = require(script.Window)
 Overlay.TopWindow = Window.Top
 
 local Kit = {}
-Kit.Version = 1
+Kit.Version = 2 -- 2: Kit.Sound, hover glow, tab underline (same API as 1)
 
 -- Tokens and pure helpers.
 Kit.Theme = Theme
@@ -40,6 +41,7 @@ Kit.Layout = Layout
 Kit.Signal = Signal
 Kit.Maid = Maid
 Kit.Motion = Motion
+Kit.Sound = Sound -- UI sound cues: Kit.Sound.Play("Click"), Attach(button), SetEnabled(on)
 Kit.Words = Lang.Words
 
 -- Language: "ru" | "en", a self-localized pick, and kit-internal words (AutoTranslate).
@@ -112,6 +114,7 @@ function Kit.Stats(): any
 		ToastQueue = queued,
 		Countdowns = Display.ActiveCountdowns(),
 		Preview = Preview.Stats(),
+		Sound = Sound.Stats(),
 	}
 end
 

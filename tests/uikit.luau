@@ -395,6 +395,174 @@ test("Lang.T / Override", function()
 	eq(Lang.Upper("Brainrot God"), "BRAINROT GOD")
 end)
 
+-- SOUNDS ------------------------------------------------------------------------------------------
+local SoundConfig = require(KIT .. "SoundConfig")
+
+test("every sound cue is configured and bounded", function()
+	local names = {}
+	for _, name in SoundConfig.Order do
+		names[name] = true
+		local cue = SoundConfig.Cues[name]
+		truthy(cue, "cue " .. name)
+		truthy(type(cue.Id) == "number" and cue.Id >= 0 and cue.Id == math.floor(cue.Id), name .. ".Id is a whole number (0 = fallback)")
+		truthy(type(cue.Fallback) == "string" and string.find(cue.Fallback, "^rbxasset://sounds/") ~= nil, name .. ".Fallback ships with the client")
+		truthy(cue.Volume > 0 and cue.Volume <= 0.6, name .. " volume stays quiet")
+		truthy(cue.Gap >= 0.02 and cue.Gap <= 0.5, name .. " gap")
+		truthy(cue.Voices >= 1 and cue.Voices <= 3, name .. " voices")
+		local low, high = SoundConfig.Speed(cue, 0), SoundConfig.Speed(cue, 1)
+		truthy(low > 0.25 and high < 3 and low <= high, name .. " playback speed range")
+	end
+	for name in SoundConfig.Cues do
+		truthy(names[name], "Order lists " .. name)
+	end
+	eq(#SoundConfig.Order, 10, "ten cues")
+	truthy(SoundConfig.Cues.Hover.Gap >= 0.06, "hover at most once per 60 ms")
+	eq(SoundConfig.Url({ Id = 0, Fallback = "rbxasset://sounds/x.ogg" }), "rbxasset://sounds/x.ogg")
+	eq(SoundConfig.Url({ Id = 1234567, Fallback = "rbxasset://sounds/x.ogg" }), "rbxassetid://1234567")
+	eq(SoundConfig.Url({ Id = 12.5, Fallback = "rbxasset://sounds/x.ogg" }), "rbxasset://sounds/x.ogg", "a broken id falls back")
+	eq(SoundConfig.Speed({ Id = 99, Pitch = 2, PitchId = 1, Jitter = 0 }, 0.5), 1, "uploaded ids play at PitchId")
+	eq(SoundConfig.Speed({ Id = 0, Pitch = 2, Jitter = 0 }, 0.5, 0.5), 1, "pitch multiplier")
+	eq(SoundConfig.Attribute, "UISounds")
+end)
+
+test("every cue the kit, the HUD and the screens play exists", function()
+	local files = {
+		"src/StarterGui/ScreenGui/Modules/Kit/Base.luau",
+		"src/StarterGui/ScreenGui/Modules/Kit/Controls.luau",
+		"src/StarterGui/ScreenGui/Modules/Kit/Window.luau",
+		"src/StarterGui/ScreenGui/Modules/Kit/Modal.luau",
+		"src/StarterGui/ScreenGui/Modules/Kit/Feedback.luau",
+		"src/StarterGui/ScreenGui/Modules/UITheme.luau",
+		"src/StarterGui/ScreenGui/Modules/GUIIntegration.luau",
+		"src/StarterGui/ScreenGui/Modules/InventoryScreen.luau",
+		"src/StarterPlayer/StarterPlayerScripts/HideUI.client.luau",
+	}
+	local seen = 0
+	for _, file in files do
+		local source = read(file)
+		for cue in string.gmatch(source, "Sound%.Play%(%s*[\"']([%w]+)[\"']") do
+			truthy(SoundConfig.Cues[cue], file .. " plays unknown cue " .. cue)
+			seen += 1
+		end
+		for cue in string.gmatch(source, "SetAttribute%(%s*[\"']KitSound[\"']%s*,%s*[\"']([%w]*)[\"']") do
+			truthy(cue == "" or SoundConfig.Cues[cue], file .. " sets unknown KitSound " .. cue)
+		end
+		for cue in string.gmatch(source, "Cue%s*=%s*[\"']([%w]+)[\"']") do
+			truthy(SoundConfig.Cues[cue], file .. " attaches unknown cue " .. cue)
+		end
+		for cue in string.gmatch(source, "Sound%s*=%s*[\"']([%w]+)[\"']") do
+			truthy(SoundConfig.Cues[cue], file .. " toasts with unknown cue " .. cue)
+		end
+	end
+	truthy(seen >= 8, "found the Sound.Play calls (" .. seen .. ")")
+end)
+
+-- UI BLOCK LOCALIZATION (Localization/UI.luau) ----------------------------------------------------
+test("the HUD, MY BAG and Settings have Russian", function()
+	local base = {}
+	local auto = read("src/StarterPlayer/StarterPlayerScripts/DOGROTS_AutoTranslateUI.client.luau")
+	for en, ru in string.gmatch(auto, '%["([^"]+)"%]%s*=%s*"([^"]*)"') do
+		base[en] = ru
+	end
+	local UI = require("../src/ReplicatedStorage/Localization/UI")
+	truthy(type(UI.Exact) == "table" and type(UI.Words) == "table" and type(UI.Templates) == "table", "dictionary shape")
+	truthy(type(UI.Patterns) == "table" and type(UI.Phrases) == "table", "AutoTranslate shape")
+	-- Exact entries are loaded by AutoTranslate: they must not override another dictionary.
+	-- (Read as text: some dictionaries need the engine to load.)
+	local others = {}
+	for _, name in { "Animations", "Core", "Dogs", "Equipment", "Income", "Kit", "Lab", "Machine", "Payments", "UpgradeTree" } do
+		local ok, text = pcall(read, "src/ReplicatedStorage/Localization/" .. name .. ".luau")
+		local exact = ok and string.match(text, "Exact%s*=%s*(%b{})")
+		for en in string.gmatch(exact or "", '%["([^"]+)"%]%s*=') do
+			others[en] = name
+		end
+	end
+	local function russian(text, what)
+		truthy(type(text) == "string" and string.find(text, "[\208\209]") ~= nil, "Russian text for " .. what)
+		truthy(string.find(text, "%a%a") == nil or not string.find(text, "[A-Za-z][A-Za-z]"), "no English words left in " .. what)
+	end
+	for en, ru in UI.Exact do
+		truthy(base[en] == nil, "Localization.UI repeats a base entry: " .. en)
+		truthy(others[en] == nil, "Localization.UI repeats Localization." .. tostring(others[en]) .. ": " .. en)
+		russian(ru, en)
+	end
+	for en, ru in UI.Words do
+		russian(ru, en)
+	end
+	for en, ru in UI.Templates do
+		russian(ru, en)
+		local function holes(s)
+			local list = {}
+			for hole in string.gmatch(s, "%%[%d%.]*[sdfg%%]") do
+				table.insert(list, hole)
+			end
+			return table.concat(list, ",")
+		end
+		eq(holes(ru), holes(en), "placeholders of " .. en)
+	end
+	local function covered(en, where)
+		truthy(UI.Exact[en] or UI.Words[en], where .. " has no Russian: " .. en)
+	end
+	-- MY BAG: every T("...") and F("...") string.
+	local screen = read("src/StarterGui/ScreenGui/Modules/InventoryScreen.luau")
+	local n = 0
+	for en in string.gmatch(screen, 'T%("([^"]+)"%)') do
+		covered(en, "InventoryScreen")
+		n += 1
+	end
+	for en in string.gmatch(screen, 'F%("([^"]+)"') do
+		truthy(UI.Templates[en], "InventoryScreen template has no Russian: " .. en)
+		n += 1
+	end
+	truthy(n >= 40, "found the MY BAG strings (" .. n .. ")")
+	-- Words built at runtime: depth, weight tier, class and lucky block names, MORE labels.
+	local depths = read("src/ReplicatedStorage/DogEconomy/DepthDefinitions.luau")
+	for name in string.gmatch(depths, '%["Name"%]="([^"]+)"') do
+		covered(name, "depth")
+	end
+	local weights = read("src/ReplicatedStorage/DogEconomy/WeightProfiles.luau")
+	for name in string.gmatch(weights, '%["Name"%]="([^"]+)"') do
+		covered(name, "weight tier")
+	end
+	local items = read("src/ReplicatedStorage/DogEconomy/ItemDefinitions.luau")
+	for class in string.gmatch(items, '%["Class"%]="([^"]+)"') do
+		covered(string.upper(class), "item class")
+	end
+	local blocks = read("src/ReplicatedStorage/LuckyBlockConfig.luau")
+	for tier in string.gmatch(string.match(blocks, "C%.Rarities=(%b{})"), "'(%w+)'") do
+		covered(string.upper(tier) .. " LUCKY BLOCK", "lucky block")
+	end
+	for _, label in { "Value", "Weight", "Chance", "Class", "Found", "Origin" } do
+		covered(label, "MORE")
+	end
+	-- HUD: captions, tooltips and titles of the rail, the cluster and the pills.
+	local theme = read("src/StarterGui/ScreenGui/Modules/UITheme.luau")
+	local specs = 0
+	for _, block in { "U%.RailSpecs=(%b{})", "U%.ClusterSpecs=(%b{})", "U%.PillSpecs=(%b{})" } do
+		local body = string.match(theme, block)
+		truthy(body, "UITheme defines " .. block)
+		for field, en in string.gmatch(body, "(%a+)='([^']+)'") do
+			if field == "label" or field == "tip" or field == "title" then
+				covered(en, "HUD " .. field)
+				specs += 1
+			end
+		end
+	end
+	truthy(specs >= 30, "found the HUD strings (" .. specs .. ")")
+	for en in string.gmatch(theme, "U%.L%('([^']+)'%)") do
+		covered(en, "UITheme")
+	end
+	-- Settings toggles (EconomyScreens builds "MOTION: ON" ...).
+	for _, key in { "MOTION", "UI SOUNDS", "LEADERBOARD" } do
+		covered(key .. ": ON", "Settings")
+		covered(key .. ": OFF", "Settings")
+	end
+	for _, level in { "HIGH", "MEDIUM", "LOW" } do
+		covered("WORLD EVENT FX: " .. level, "Settings")
+	end
+	covered("HIDE UI: press H or the eye button at the top-right for clean screenshots.", "Settings")
+end)
+
 print(string.format("uikit: %d passed, %d failed", passed, failed))
 if failed > 0 then
 	error("uikit tests failed")
