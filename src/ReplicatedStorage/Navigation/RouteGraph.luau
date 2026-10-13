@@ -460,9 +460,11 @@ RouteGraph.Targets = {
 	Cosmetics = { Docks = { { Node = "Market335", Goal = v(139.5, 0.4, 335) } }, Pointer = v(142.8, 4.3, 335) },
 	Supplies = { Docks = { { Node = "Market395", Goal = v(139.5, 0.4, 395) } }, Pointer = v(142.8, 4.3, 395) },
 	MutationLab = {
-		-- Entry steps (X 75..84 up to Y 2), the automatic glass door at X 84, the console.
-		Docks = { { Node = "LabDock", Via = { v(76, 0.5, 477), v(86, 2.2, 477), v(98, 2.2, 477) }, Goal = v(110, 2.2, 477) } },
-		Pointer = v(114, 3, 477),
+		-- Entry steps (X 75..84 up to Y 2), the automatic glass door at X 84, the operator spot in
+		-- front of the mutation machine's console (desk front X 106, ACTIVATE button anchor
+		-- MutationMachineLayout.Anchor = world (107.7, 7.9, 477)).
+		Docks = { { Node = "LabDock", Via = { v(76, 0.5, 477), v(86, 2.2, 477), v(98, 2.2, 477) }, Goal = v(103.5, 2.2, 477) } },
+		Pointer = v(107.7, 7.9, 477),
 	},
 	DogDex = {
 		-- Grand stairs (X -63..-73 up to Y 4), the open door, the DOGDEX reception desk.

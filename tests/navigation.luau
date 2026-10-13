@@ -330,8 +330,12 @@ test("lab and museum routes walk through the door to the console / desk", functi
 		end
 	end
 	truthy(throughDoor, "lab route crosses X 84 at the glass door")
-	near(lab.Goal.X, 110, 0.01, "lab goal before the console")
-	near(lab.Pointer.X, 114, 0.01, "pointer at the console")
+	-- The mutation machine's console desk starts at X 106 (MutationMachineLayout.Console.DeskFront):
+	-- the route stops at the operator spot in front of it, the pointer marks the ACTIVATE button.
+	local Machine = L.Require("ReplicatedStorage.MutationMachineLayout")
+	local deskFront = Machine.Origin.X + Machine.Console.DeskFront
+	truthy(lab.Goal.X < deskFront - 1 and lab.Goal.X > 84, "lab goal on the operator side of the console")
+	near(lab.Pointer.X, Machine.Origin.X + Machine.Anchor.X, 0.01, "pointer at the ACTIVATE button")
 	local museum = plan(SPAWN, "DogDex", 1)
 	truthy(museum.Goal.X < -85 and museum.Goal.Y > 3.5, "museum route goes up the stairs to the reception")
 end)
