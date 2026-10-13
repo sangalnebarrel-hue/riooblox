@@ -1,7 +1,7 @@
 local rows={
  {Id='BONE_RAIN',DisplayName='Bone Rain',Rarity='Common',Weight=15,Subtitle='THE SKY HAS A BONE TO PICK.',ColorTheme=Color3.fromRGB(225,215,180),GameplayModifiers={BoneBonus=.20,Luck=.05},Clock=15,Brightness=1.8,Tint=Color3.fromRGB(205,211,206),FogEnd=1500,ParticleProfile='Bones',WorldProps='GiantBone',SpecialObjects='BonePile',SignatureSeconds=65,SignatureDuration=22,Depth=1,DepthLuck=.07},
  {Id='GOLDEN_HOUR',DisplayName='Golden Hour',Rarity='Common',Weight=15,Subtitle='EVERY GOOD BOY HAS A GOLDEN MOMENT.',ColorTheme=Color3.fromRGB(255,188,78),GameplayModifiers={SellValue=.15,GoldLoot=.05},Clock=17.8,Brightness=2.5,Tint=Color3.fromRGB(255,216,168),FogEnd=2100,ParticleProfile='Gold',WorldProps='GoldenBeam',SpecialObjects=nil,SignatureSeconds=80,SignatureDuration=25,Mutations={Golden=1.2,GOLDEN=1.2}},
- {Id='DOG_RUSH',DisplayName='Dog Rush',Rarity='Common',Weight=14,Subtitle='GOOD BOYS. GREAT HURRY.',ColorTheme=Color3.fromRGB(238,166,108),GameplayModifiers={DigSpeed=.15,Recovery=.05},Clock=13.5,Brightness=2.5,Tint=Color3.fromRGB(255,241,220),FogEnd=2200,ParticleProfile='Paws',WorldProps='DogCrowd',SignatureSeconds=60,SignatureDuration=18},
+ {Id='DOG_RUSH',DisplayName='Dog Rush',Rarity='Common',Weight=14,Subtitle='GOOD BOYS. GREAT HURRY.',ColorTheme=Color3.fromRGB(238,166,108),GameplayModifiers={DigSpeed=.15,Recovery=.05},Clock=13.5,Brightness=2.5,Tint=Color3.fromRGB(255,241,220),FogEnd=2200,ParticleProfile='Paws',WorldProps='Stampede',SignatureSeconds=60,SignatureDuration=18},
  {Id='TREASURE_FEVER',DisplayName='Treasure Fever',Rarity='Common',Weight=14,Subtitle='SOMETHING GOOD IS JUST UNDER YOUR PAWS.',ColorTheme=Color3.fromRGB(250,209,96),GameplayModifiers={TreasureMap=.08,Artifact=.05},Clock=16,Brightness=2.1,Tint=Color3.fromRGB(255,237,192),FogEnd=1800,ParticleProfile='Treasure',WorldProps='TreasureBeams',SpecialObjects='TreasureSpot',SignatureSeconds=70,SignatureDuration=20},
  {Id='CRYSTAL_STORM',DisplayName='Crystal Storm',Rarity='Uncommon',Weight=9,Subtitle='THE CAVERNS ANSWER THE SKY.',ColorTheme=Color3.fromRGB(132,190,255),GameplayModifiers={Luck=.08,DigitalLuck=.05},Clock=20,Brightness=1.4,Tint=Color3.fromRGB(157,175,255),FogEnd=1250,ParticleProfile='Crystals',WorldProps='CrystalStrike',SpecialObjects='ChargedCrystal',SignatureSeconds=55,SignatureDuration=22,Depth=2,DepthLuck=.12},
  {Id='EARTHQUAKE',DisplayName='Earthquake',Rarity='Uncommon',Weight=8,Subtitle='THE WORLD IS DIGGING BACK.',ColorTheme=Color3.fromRGB(243,160,101),GameplayModifiers={EventWeightLuck=.12},Clock=15,Brightness=1.7,Tint=Color3.fromRGB(224,202,174),FogEnd=1400,ParticleProfile='Debris',WorldProps='Fissures',SignatureSeconds=68,SignatureDuration=16},
@@ -27,7 +27,9 @@ local perks={
   Reward={MinCash=600,IncomeMinutes=1,Bones=2}},
  GOLDEN_HOUR={Walk=1.1,LineLuck=1.3,Effects={Trail=true},
   Reward={MinCash=750,IncomeMinutes=1,Bones=2}},
- DOG_RUSH={Walk=1.35,LineSpeed=1.5,LineLuck=1.2,Effects={Zoomies=true,Trail=true},
+ -- DOG RUSH: the stampede runs along real streets (WorldEventStampede) and runaway golden pups wait
+ -- to be caught (WorldEventService + WorldEvents.DogRush: per-pup coins, chests at 3 / 6 / 10).
+ DOG_RUSH={Walk=1.35,LineSpeed=1.5,LineLuck=1.2,Pups=true,Effects={Zoomies=true,Trail=true,Pups=true},
   Reward={MinCash=600,IncomeMinutes=1,Bones=2}},
  TREASURE_FEVER={BlockChance=2,LineLuck=1.2,Effects={Trail=true},
   Reward={MinCash=750,IncomeMinutes=1,Bones=2}},
@@ -67,6 +69,7 @@ local modifierText={BoneBonus='bones from digging',Luck='rare finds',SellValue='
 function D.PerkLines(def)
  local lines={};local p=def.Perks or {}
  local function pct(x)return string.format('%+d%%',math.floor((x-1)*100+.5))end
+ if p.Pups then table.insert(lines,'CATCH RUNAWAY PUPS · CHESTS AT 3 / 6 / 10')end
  if p.MachineAurion then table.insert(lines,string.format('x%g AURION CHANCE ON DOG-O-MATIC',p.MachineAurion))end
  if p.Gravity then table.insert(lines,(p.Gravity<.5 and 'LOW GRAVITY'or 'LIGHTER GRAVITY')..(p.GravityFlicker and ' · IT GLITCHES'or ''))end
  if p.LineLuck then table.insert(lines,string.format('x%.3g RARE DOGS ON THE TONGUE',p.LineLuck))end

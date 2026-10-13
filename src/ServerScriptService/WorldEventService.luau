@@ -4,7 +4,10 @@ local Runtime=require(script.Parent.Economy.Runtime);local R=require(script.Pare
 local stateFolder=package:WaitForChild('State');local fx=workspace:WaitForChild('WorldEventFX');local map=workspace:WaitForChild('DOGROTS_District');local rng=Random.new()
 -- What the event does to the island (gravity, movement, the tongue, bones, the end reward).
 local Gameplay=require(script.Parent.WorldEventGameplay)
-local S={Current=nil,Objects={},DebugState=nil};local serial=0
+-- DOG RUSH runaway pups: spawn rules (DogRush) and the saved progress / rewards (Features.DogRush).
+local Rush=require(package:WaitForChild('DogRush'))
+local RushProgress=require(script.Parent.Economy.Features.DogRush)
+local S={Current=nil,Objects={},DebugState=nil,PupCooldown={},PupTouch={},PupCapped={},NextPup=0};local serial=0
 local DigConfig=require(RS:WaitForChild('GlobalDigConfig'))
 -- The Global Dig quarry sits behind the closed COMING SOON cover while GlobalDigConfig is
 -- disabled; pickups placed there could never be reached. Site-only rewards then use the
@@ -23,13 +26,69 @@ local function points(siteOnly)
  else collect(map)end
  return result
 end
-function S.Interact(player,model)
+-- Checks shared by every pickup (prompt or touch): the event is live, the object is still there and
+-- unclaimed, the profile is ready, the request budget allows it and the character is alive and close.
+local function precheck(player,model,distance)
  local current=S.Current;local info=S.Objects[model]
- if not info or not current or current.State~='ACTIVE'or os.time()>=current.ActiveEndTimestamp or not model.Parent or os.time()>=info.Expires then return false,'This event opportunity has ended'end
- if info.Claimed or info.Claiming then return false,'This object has already been collected'end
- if not Runtime.Ready(player)or not Runtime.Allow(player,2)then return false,'Please wait'end
+ if not info or not current or current.State~='ACTIVE'or os.time()>=current.ActiveEndTimestamp or not model.Parent or os.time()>=info.Expires then return nil,'This event opportunity has ended'end
+ if info.Claimed or info.Claiming then return nil,'This object has already been collected'end
+ if not Runtime.Ready(player)or not Runtime.Allow(player,2)then return nil,'Please wait'end
  local root=player.Character and player.Character:FindFirstChild('HumanoidRootPart');local hum=player.Character and player.Character:FindFirstChildOfClass('Humanoid')
- if not root or not hum or hum.Health<=0 or (root.Position-model:GetPivot().Position).Magnitude>C.Interactions.Distance then return false,'Move closer'end
+ if not root or not hum or hum.Health<=0 or (root.Position-model:GetPivot().Position).Magnitude>distance then return nil,'Move closer'end
+ return info,current,root
+end
+-- A free Lucky Block for the DOG RUSH golden chest, only when the block storage has room
+-- (LuckyLifecycle.AddStored: a stored, non-paid block). Otherwise the chest pays extra bones.
+local function addRushBlock(p,tier,count)
+ local cap=require(RS:WaitForChild('LuckyLifecycleConfig')).InventoryCapacity or 0
+ if R.Count(type(p.OwnedBlocks)=='table'and p.OwnedBlocks or {})+count>cap then return false end
+ local ids=require(script.Parent.Economy.LuckyLifecycle).AddStored(p,tier,count,'DogRush',false)
+ return type(ids)=='table'and #ids==count
+end
+-- DOG RUSH: catching a runaway pup (prompt or touch). Same validation and RAM claim as every pickup;
+-- the reward, the per-event cap and the chests are Features.DogRush.Catch in the profile transaction.
+function S.CatchPup(player,model)
+ if os.clock()<(S.PupCooldown[player]or 0)then return false,'Please wait'end
+ local info,current,root=precheck(player,model,Rush.Pups.Distance)
+ if not info then return false,current end
+ info.Claiming=true
+ local generation=current.Generation;local now=os.time()
+ local ok,result=Runtime.Tx:Run({'p:'..player.UserId},function(v)
+  local p=v['p:'..player.UserId];Runtime.Engine:Authorize(p,player.UserId)
+  R.Check(S.Current and S.Current.State=='ACTIVE'and S.Current.Generation==generation and os.time()<info.Expires and model.Parent and S.Objects[model]==info and not info.Claimed,'This event opportunity has ended')
+  R.Check((root.Position-model:GetPivot().Position).Magnitude<=Rush.Pups.Distance,'Move closer')
+  local claims=p.WorldEventClaims
+  if not claims or claims.Generation~=generation then claims={Generation=generation,Count=0,Objects={}};p.WorldEventClaims=claims end
+  R.Check(not claims.Objects[info.Id],'You already collected this reward')
+  claims.Objects[info.Id]=true
+  local reward=RushProgress.Catch(R,p,generation,now,addRushBlock)
+  R.Validate(p);return reward
+ end,'eventcollect:'..player.UserId..':'..info.Id)
+ if ok then
+  info.Claimed=true;info.Claiming=false;S.PupCooldown[player]=os.clock()+Rush.Pups.Cooldown
+  if result.Caught>=Rush.Pups.PerEvent then S.PupCapped[player]=generation end
+  local objectId=info.Id;local position=model:GetPivot().Position
+  if model.Parent then model:Destroy()end;S.Objects[model]=nil
+  player:SetAttribute('DogRushGeneration',generation);player:SetAttribute('DogRushPups',result.Caught)
+  package.Signal:FireClient(player,{Kind='PupCaught',EventId=current.EventId,Reward=result,Position=position,ObjectId=objectId})
+  -- Everyone nearby sees the happy burst (no reward details).
+  for _,other in ipairs(Players:GetPlayers())do
+   local otherRoot=other~=player and other.Character and other.Character:FindFirstChild('HumanoidRootPart')
+   if otherRoot and (otherRoot.Position-position).Magnitude<120 then package.Signal:FireClient(other,{Kind='PupCaughtNearby',Position=position})end
+  end
+  if #result.Chests>0 then RS.RewardPresentation:FireClient(player,{Cue='Reward'})end
+  task.defer(function()if player.Parent and Runtime.Ready(player)then Runtime.Refresh(player)end end)
+ else
+  info.Claiming=false
+  if result=='You caught every pup you can this rush!'then S.PupCapped[player]=generation end
+ end
+ return ok,result
+end
+function S.Interact(player,model)
+ local kind=S.Objects[model]and S.Objects[model].Kind
+ if kind=='RunawayPup'then return S.CatchPup(player,model)end
+ local info,current,root=precheck(player,model,C.Interactions.Distance)
+ if not info then return false,current end
  -- The physical event object only exists on this server. Claim it in server RAM
  -- before the profile transaction so two players can never collect it twice,
  -- without paying for a global DataStore eventobject:<id> lock.
@@ -96,6 +155,68 @@ function S.SpawnObject(kind,special)
  model.Destroying:Connect(function()S.Objects[model]=nil end)
  return model
 end
+-- DOG RUSH: one runaway pup at a street point (WorldEvents.DogRush.PickSpawn). The floor under the
+-- point is checked first (a street at street height, never a roof). Atomic streaming: a pup arrives
+-- on a client whole. Caught with the prompt or by running into its CatchZone.
+function S.SpawnPup(at)
+ local current=S.Current;if not current or current.State~='ACTIVE'then return end
+ local count=0;for model in pairs(S.Objects)do if model.Parent then count+=1 end end
+ if count>=C.Interactions.MaxActive then return end
+ local cast=RaycastParams.new();cast.FilterType=Enum.RaycastFilterType.Include;cast.FilterDescendantsInstances={map};cast.RespectCanCollide=true
+ local hit=workspace:Raycast(at+Vector3.new(0,6,0),Vector3.new(0,-14,0),cast)
+ if not hit or hit.Normal.Y<.65 or math.abs(hit.Position.Y-at.Y)>2.5 then return end
+ local model=Visuals.Build('RunawayPup',D.ById[current.EventId].ColorTheme)
+ model:PivotTo(CFrame.new(hit.Position+Vector3.new(0,1,0))*CFrame.Angles(0,rng:NextNumber(0,math.pi*2),0))
+ local box,size=model:GetBoundingBox();local bottom=box.Position.Y-size.Y/2
+ model:PivotTo(model:GetPivot()+Vector3.new(0,hit.Position.Y+.04-bottom,0))
+ model.ModelStreamingMode=Enum.ModelStreamingMode.Atomic
+ local id=Http:GenerateGUID(false):gsub('-','');local expires=math.min(current.ActiveEndTimestamp,os.time()+Rush.Pups.Lifetime)
+ S.Objects[model]={Id=id,Expires=expires,Kind='RunawayPup',Position=hit.Position}
+ model:SetAttribute('EventObjectId',id);model:SetAttribute('ExpiresAt',expires);model:SetAttribute('Grounded',true)
+ local prompt=Instance.new('ProximityPrompt');prompt.Name='WorldEventPickupPrompt';prompt.ActionText='CATCH';prompt.ObjectText='Runaway pup'
+ prompt.HoldDuration=0;prompt.RequiresLineOfSight=false;prompt.MaxActivationDistance=10;prompt.Parent=model.PrimaryPart
+ prompt.Triggered:Connect(function(player)
+  local ok,msg=S.Interact(player,model)
+  if not ok then package.Signal:FireClient(player,{Kind='Hint',Message=tostring(msg),ObjectId=id})end
+ end)
+ local zone=model:FindFirstChild('CatchZone')::BasePart?
+ if zone then zone.Touched:Connect(function(part)
+  local character=part.Parent;local player=character and Players:GetPlayerFromCharacter(character)
+  if not player and character and character.Parent then player=Players:GetPlayerFromCharacter(character.Parent)end
+  if not player then return end
+  -- Cheap filters before the request budget: one try per 0.75 s, not after the per-event cap.
+  local info=S.Objects[model];local live=S.Current
+  if not info or info.Claimed or info.Claiming or not live or S.PupCapped[player]==live.Generation then return end
+  if os.clock()<(S.PupTouch[player]or 0)or os.clock()<(S.PupCooldown[player]or 0)then return end
+  S.PupTouch[player]=os.clock()+.75
+  local ok,msg=S.CatchPup(player,model)
+  if not ok and msg=='You caught every pup you can this rush!'then package.Signal:FireClient(player,{Kind='Hint',Message=msg})end
+ end)end
+ model.Destroying:Connect(function()S.Objects[model]=nil end)
+ -- Parented last: the pup reaches clients complete (prompt included).
+ model.Parent=fx
+ return model
+end
+function S.PupTick(now)
+ local current=S.Current
+ if now<current.StartTimestamp+Rush.Pups.FirstAfter or now<(S.NextPup or 0)then return end
+ local live,occupied=0,{}
+ for model,info in pairs(S.Objects)do if model.Parent and info.Kind=='RunawayPup'then live+=1;table.insert(occupied,info.Position)end end
+ local players=Players:GetPlayers()
+ if live>=Rush.TargetPups(#players)then return end
+ S.NextPup=now+Rush.Pups.SpawnEvery
+ local near={}
+ for _,player in ipairs(players)do local root=player.Character and player.Character:FindFirstChild('HumanoidRootPart');if root then table.insert(near,root.Position)end end
+ local at=Rush.PickSpawn(function()return rng:NextNumber()end,near,occupied)
+ if at then S.SpawnPup(at)end
+end
+-- The DOG RUSH chip (WorldEventGameplayFX) reads these: pups caught in this event's generation.
+local function syncPups(player,current)
+ local p=Runtime.Views[player.UserId];local d=p and type(p.DogRush)=='table'and p.DogRush or nil
+ local caught=d and d.Generation==current.Generation and tonumber(d.Caught)or 0
+ player:SetAttribute('DogRushGeneration',current.Generation);player:SetAttribute('DogRushPups',caught)
+ if caught>=Rush.Pups.PerEvent then S.PupCapped[player]=current.Generation end
+end
 local function journal(player,current)
  if not Runtime.Ready(player)then return end
  local p=Runtime.Views[player.UserId];if p and p.WorldEventsSeen and p.WorldEventsSeen[current.EventId]then return end
@@ -118,7 +239,8 @@ function S.Apply(nextState)
  for k,v in pairs(nextState)do if type(v)=='string'or type(v)=='number'then stateFolder:SetAttribute(k,v)end end
  serial+=1;stateFolder:SetAttribute('Revision',serial)
  if nextState.State=='ACTIVE'then
-  local def=D.ById[nextState.EventId];S.NextSpawn=0;S.SignatureAt=nextState.StartTimestamp+def.SignatureSeconds;S.SignatureDone=false
+  local def=D.ById[nextState.EventId];S.NextSpawn=0;S.NextPup=0;S.SignatureAt=nextState.StartTimestamp+def.SignatureSeconds;S.SignatureDone=false
+  if def.Id==Rush.EventId then for _,p in ipairs(Players:GetPlayers())do syncPups(p,nextState)end end
   for _,p in ipairs(Players:GetPlayers())do task.spawn(journal,p,nextState)end
  end
  package:WaitForChild('Changed'):FireAllClients(nextState)
@@ -144,11 +266,12 @@ function S.Tick()
  S.Apply(state)
  for model,info in pairs(S.Objects)do
   if not model.Parent or now>=info.Expires then if model.Parent then model:Destroy()else S.Objects[model]=nil end
-  elseif info.Anchor.Parent then model:PivotTo(info.Anchor.CFrame*info.Local)end
+  elseif info.Anchor and info.Anchor.Parent then model:PivotTo(info.Anchor.CFrame*info.Local)end
  end
  if S.Current.State=='ACTIVE'then
   local def=D.ById[S.Current.EventId]
   if now>=(S.NextSpawn or 0)then S.NextSpawn=now+C.Interactions.SpawnSeconds;if def.SpecialObjects then S.SpawnObject(def.SpecialObjects)end end
+  if def.Id==Rush.EventId then S.PupTick(now)end
   if not S.SignatureDone and now>=(S.SignatureAt or math.huge)then
    S.SignatureDone=true;package.Signal:FireAllClients({Kind='Signature',EventId=def.Id,Duration=def.SignatureDuration})
    if def.Id=='BONE_RAIN'then S.SpawnObject('GiantBone',true)
@@ -161,7 +284,8 @@ end
 function S.Start()
  if S.Started then return end;S.Started=true
  package.GetState.OnServerInvoke=function(player)if Runtime.Allow(player,1)then return S.Current end end
- Players.PlayerAdded:Connect(function(p)task.spawn(function()for i=1,60 do if not p.Parent then return end;if Runtime.Ready(p)then if S.Current.State=='ACTIVE'then journal(p,S.Current)end;return end;task.wait(1)end end)end)
+ Players.PlayerAdded:Connect(function(p)task.spawn(function()for i=1,60 do if not p.Parent then return end;if Runtime.Ready(p)then if S.Current.State=='ACTIVE'then journal(p,S.Current);if S.Current.EventId==Rush.EventId then syncPups(p,S.Current)end end;return end;task.wait(1)end end)end)
+ Players.PlayerRemoving:Connect(function(p)S.PupCooldown[p]=nil;S.PupTouch[p]=nil;S.PupCapped[p]=nil end)
  if Run:IsStudio() then
   local control=Instance.new('BindableFunction');control.Name='WorldEventDebug';control.Parent=script;control.OnInvoke=S.Force
  end

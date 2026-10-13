@@ -5,8 +5,9 @@ local Debris=game:GetService('Debris')
 local RS=game:GetService('ReplicatedStorage')
 local V=require(script.Parent.WorldEventObjects)
 local Route=require(script.Parent.Parent.MapRouting)
+local Rush=require(script.Parent.DogRush)
 local E={}
-local root,hero,event,connection,near,startTime,ending,quality
+local root,hero,event,connection,near,startTime,ending,quality,fixed
 local heading=CFrame.identity
 -- Set pieces are authored around `center` and fitted into a window of sky in front of
 -- the player: about 480 studs away, centred ~16 degrees above the horizon, so the whole
@@ -349,7 +350,8 @@ end
 function E.Signature(duration)
  if not event then return end
  signatureUntil=os.clock()+math.min(duration or 8,20);shakeUntil=os.clock()+1.7
- wave(true)
+ -- A world-anchored stage (DOG RUSH) has no shockwave at the player's feet.
+ if not fixed then wave(true)end
  if event.Id=='CRYSTAL_STORM'or event.Id=='BLACKOUT'then lightning()end
  for _,row in ipairs(emitters)do row.Emitter:Emit(quality.Particles*2)end
 end
@@ -361,6 +363,10 @@ function E.Begin(def,state,budget)
  E.Stop();event=def;quality=budget;near=position();startTime=os.clock();ending=nil
  local cam=workspace.CurrentCamera;local look=cam and cam.CFrame.LookVector or Vector3.new(0,0,-1)
  look=Vector3.new(look.X,0,look.Z);if look.Magnitude<.1 then look=Vector3.new(0,0,-1)end
+ -- DOG RUSH: the sky portal stands at one place of the world for everyone (above the south loop,
+ -- where the stampede turns) instead of in front of each player's camera.
+ fixed=def.Id==Rush.EventId
+ if fixed then near=Rush.SkyStage.Near;look=Rush.SkyStage.Look end
  heading=CFrame.lookAt(Vector3.zero,look.Unit)
  local ext=extent[def.Id]or 90
  local d=distance[def.Id]or STAGE_DISTANCE
@@ -383,7 +389,7 @@ function E.Begin(def,state,budget)
   local fade=ending and math.clamp((now-ending)/5,0,1)or 0
   local alpha=arrival*(1-fade)
   local p=position()
-  if (p-near).Magnitude>300 then
+  if not fixed and (p-near).Magnitude>300 then
    local delta=p-near;near=p;hero:PivotTo(hero:GetPivot()+delta)
    for _,o in ipairs(root:GetChildren())do if o:IsA('BasePart')then o.Position+=delta end end
   end

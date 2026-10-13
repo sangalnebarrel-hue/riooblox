@@ -622,7 +622,8 @@ test("Dogdex titles are shown by name, never as the raw Dex<n> id", function()
 	truthy(titled >= 6, "titles found: " .. titled)
 	eq(Rewards.TitleName("Dex25"), nil, "an old-only title keeps its id")
 	eq(Rewards.TitleName(nil), nil)
-	for _, file in ipairs({ "src/StarterGui/ScreenGui/Modules/PlotShopScreen.luau", "src/StarterPlayer/StarterPlayerScripts/EconomyVisuals.client.luau" }) do
+	-- Titles over the kennel dogs (EconomyVisuals) moved above the player: TitleDefinitions names them now.
+	for _, file in ipairs({ "src/StarterGui/ScreenGui/Modules/PlotShopScreen.luau", "src/ReplicatedStorage/DogEconomy/TitleDefinitions.luau" }) do
 		truthy(string.find(fs.readFile(file), "TitleName(", 1, true), file .. " shows titles through DexRewards.TitleName")
 	end
 end)
