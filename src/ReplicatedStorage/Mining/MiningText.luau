@@ -14,6 +14,7 @@ local T={
  PERFECT={'Perfect! +%1','Идеально! +%1'},
  CRIT={'CRIT! +%1','КРИТ! +%1'},
  BROKE={'%1 broken! +%2','Разбито: %1! +%2'},
+ BROKE_STONE={'%1 broken! +%2 · +%3 🪨','Разбито: %1! +%2 · +%3 🪨'}, -- BROKE with a Stone grant (3rd arg)
  EQUIPPED={'Equipped: %1','В руках: %1'},
  BOUGHT={'Bought: %1','Куплено: %1'},
  WEIGHT_EQUIPPED={'Selected: %1','Выбрано: %1'},
@@ -73,6 +74,11 @@ local T={
  PREVIOUS_FIRST={'BUY PREVIOUS','СНАЧАЛА ПРЕДЫДУЩУЮ'},
  YOUR_STRENGTH={'Your Strength: %1','Твоя сила: %1'},
  YOUR_COINS={'Coins: %1','Монеты: %1'},
+ STONE={'Stone','Камень'},
+ YOUR_STONE={'🪨 Stone: %1','🪨 Камень: %1'},
+ STONE_GAIN={'+%1 🪨','+%1 🪨'},
+ ORE_STONE={'+%1 🪨','+%1 🪨'},
+ STONE_HINT={'🪨 Stone builds plot decor · deeper = more','🪨 Камень — для украшений участка · глубже = больше'},
  STRENGTH_BONUS={'Strength bonus +%1% damage','Бонус силы +%1% урона'},
  LIFT_HINT={'TAP / CLICK FAST TO PUSH THE WEIGHT UP','ЖМИ БЫСТРО, ЧТОБЫ ПОДНЯТЬ ГИРЮ ВВЕРХ'},
  LIFT_HINT_KEY={'or press SPACE','или жми ПРОБЕЛ'},
@@ -168,11 +174,13 @@ function Text.Message(message,lookup)
  end
  local parts=string.split(body,'|')
  local key=table.remove(parts,1)
+ -- "M:BROKE|ore|coins|stone": the stone line only when the break stored some.
+ local template=(key=='BROKE'and(tonumber(parts[3])or 0)>0)and'BROKE_STONE'or key
  for i,a in ipairs(parts)do
   local def=lookup and lookup(a,key)
   if def then parts[i]=Text.Name(def)elseif tonumber(a)then parts[i]=Text.Short(tonumber(a))end
  end
- return Text.Get(key,table.unpack(parts))
+ return Text.Get(template,table.unpack(parts))
 end
 function Text.Key(message)
  return type(message)=='string'and message:match('^M:([%w_]+)')or nil

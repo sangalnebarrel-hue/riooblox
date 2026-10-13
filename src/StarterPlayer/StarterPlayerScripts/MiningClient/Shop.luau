@@ -21,6 +21,9 @@ function Shop.new(ctx)
  local scale=Instance.new('UIScale');scale.Parent=root
  local title=U.Text(root,'',24,14,600,40,28,U.Colors.text,true)
  local subtitle=U.Text(root,'',24,56,700,26,17,U.Colors.muted)
+ -- Coins · Strength · Stone on one line: shrinks on narrow windows instead of wrapping.
+ subtitle.TextWrapped=false;subtitle.TextScaled=true
+ do local limit=Instance.new('UITextSizeConstraint');limit.MaxTextSize=17;limit.MinTextSize=10;limit.Parent=subtitle end
  local list=Instance.new('ScrollingFrame');list.Name='List';list.BackgroundTransparency=1;list.BorderSizePixel=0
  list.ScrollBarThickness=8;list.ScrollBarImageColor3=U.Colors.edge;list.CanvasSize=UDim2.new();list.Parent=root
  local footer=U.Text(root,'',24,0,700,24,15,U.Colors.muted)
@@ -61,6 +64,11 @@ function Shop.new(ctx)
  local function stateNow()
   local s=Net.State();s.Cash=Net.Cash();return s
  end
+ -- Coins · Strength · stored Stone (player attribute "Stone", see Economy.Runtime).
+ local function subtitleText(s)
+  return Text.Get('YOUR_COINS',Text.Short(s.Cash))..'   ·   '..Text.Get('YOUR_STRENGTH',s.Strength)
+   ..'   ·   '..Text.Get('YOUR_STONE',Text.Short(tonumber(Net.Attr('Stone',0))or 0))
+ end
  local function pct(x)return math.floor((x or 0)*100+.5)..'%'end
  local function statLines(def)
   local a=Text.Get('DAMAGE')..' '..def.Damage..'  ·  '..Text.Get('CIRCLES')..' '..def.Circles..'  ·  '..Text.Get('CRIT_CHANCE')..' '..pct(def.CritChance)
@@ -96,7 +104,7 @@ function Shop.new(ctx)
   table.clear(previews)
   local s=stateNow()
   title.Text='⛏ '..Text.Get('PICKAXE_SHOP')
-  subtitle.Text=Text.Get('YOUR_COINS',Text.Short(s.Cash))..'   ·   '..Text.Get('YOUR_STRENGTH',s.Strength)
+  subtitle.Text=subtitleText(s)
   footer.Text=Text.L('Train Strength at the weight rack · better pickaxes need Coins AND Strength',
    'Качай силу у стойки с гирями · для лучших кирок нужны монеты И сила')
   local gap=12
@@ -192,10 +200,11 @@ function Shop.new(ctx)
  for _,name in ipairs({'MiningStrength','MiningPickaxe','MiningPickaxeOwned'})do
   player:GetAttributeChangedSignal(name):Connect(function()if self.IsOpen and not busy then self.Render()end end)
  end
+ player:GetAttributeChangedSignal('Stone'):Connect(function()if self.IsOpen then subtitle.Text=subtitleText(stateNow())end end)
  task.spawn(function()
   local stats=player:WaitForChild('leaderstats',30);local coins=stats and stats:WaitForChild('Coins',30)
   if coins then coins.Changed:Connect(function()if self.IsOpen and not busy then
-   local s=stateNow();subtitle.Text=Text.Get('YOUR_COINS',Text.Short(s.Cash))..'   ·   '..Text.Get('YOUR_STRENGTH',s.Strength)
+   local s=stateNow();subtitle.Text=subtitleText(s)
    if affordKey()~=lastKey then self.Render()end
   end end)end
  end)

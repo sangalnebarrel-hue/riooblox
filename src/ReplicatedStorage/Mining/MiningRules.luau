@@ -8,6 +8,7 @@
 --   Pay(n)   charge cash (errors if short)     Credit(n) add earned cash
 --   AddXP(n) grant player XP                   Layer   deepest unlocked dig layer (1..5)
 --   Session  RAM table for timing targets      Ping    player's network round trip (seconds)
+--   AddStone(n) -> added   store Stone (Resources.Add(p,'Stone',n)); optional, no Stone without it
 -- Messages and errors are codes "M:KEY|arg|arg" localized by ReplicatedStorage.Mining.MiningText.
 local Rules={}
 
@@ -38,7 +39,7 @@ function Rules.New(M)
  return {Version=2,Strength=0,PickaxeOwned=0,PickaxeLevel=0,WeightOwned=0,WeightLevel=0,Hits=0,OresBroken=0,CoinsEarned=0,
   TrainingReps=0,OreIndex=1,OreId=ore.Id,OreMaxHP=ore.HP,OreHP=ore.HP,OreValue=oreMid(ore),OreEarned=0,OreSerial=1,
   Combo=0,BestOre=0,Collection={},LastHitAt=0,LastTrainAt=0,ActiveUntil=0,TrainingUntil=0,LastPayout=0,LastDamage=0,LastQuality=1,
-  LastBreak=false,LastCrit=false,LastBrokenId='',LastBrokenValue=0}
+  LastBreak=false,LastCrit=false,LastBrokenId='',LastBrokenValue=0,LastStone=0,StoneMined=0}
 end
 
 -- Repairs / migrates a saved state in place and returns it.
@@ -52,7 +53,8 @@ function Rules.Normalize(m,M)
  m.WeightOwned=math.clamp(int(m.WeightOwned,0),0,weightCount)
  m.WeightLevel=math.clamp(int(m.WeightLevel,0),0,m.WeightOwned)
  if m.WeightOwned>0 and m.WeightLevel==0 then m.WeightLevel=m.WeightOwned end
- for _,key in ipairs({'Hits','OresBroken','CoinsEarned','TrainingReps','Combo','BestOre','LastPayout','LastDamage','LastBrokenValue'})do
+ -- LastStone/StoneMined are new in the BALANCE update: older saves start at 0.
+ for _,key in ipairs({'Hits','OresBroken','CoinsEarned','TrainingReps','Combo','BestOre','LastPayout','LastDamage','LastBrokenValue','LastStone','StoneMined'})do
   m[key]=math.max(0,int(m[key],0))
  end
  m.Combo=math.min(m.Combo,M.ComboCap)
@@ -97,6 +99,15 @@ end
 
 function Rules.LayerMult(M,layer)
  return M.LayerValue[math.clamp(int(layer,1),1,#M.LayerValue)]
+end
+
+-- Stone a broken ore grants (stored in p.Resources.Stone, spent on plot decor): the ore's Stone
+-- yield, +StoneLayerBonus of it per dig layer beyond the first. Ores without Stone give none.
+function Rules.StoneForBreak(M,ore,layer)
+ local base=tonumber(ore and ore.Stone)or 0
+ if base~=base or base<=0 then return 0 end
+ local deep=math.clamp(int(layer,1),1,#M.LayerValue)-1
+ return math.max(0,math.floor(base*(1+(tonumber(M.StoneLayerBonus)or 0)*deep)+.5))
 end
 
 function Rules.RollOre(m,M,random,luck,layer)
@@ -223,17 +234,21 @@ function Rules.Hit(m,M,ctx,args)
  if broke then payout=remaining end
  payout=math.min(payout,math.max(0,(M.MaxCash or math.huge)-(ctx.Cash or 0)))
  if payout>0 then ctx.Credit(payout);m.OreEarned+=payout;m.CoinsEarned+=payout end
- m.LastPayout=payout;m.LastDamage=applied;m.LastQuality=quality;m.LastBreak=broke;m.LastCrit=crit
+ m.LastPayout=payout;m.LastDamage=applied;m.LastQuality=quality;m.LastBreak=broke;m.LastCrit=crit;m.LastStone=0
  if broke then
   m.OresBroken+=1;m.LastBrokenId=ore.Id;m.LastBrokenValue=m.OreEarned
   m.Collection[ore.Id]=(m.Collection[ore.Id]or 0)+1
   m.BestOre=math.max(m.BestOre,m.OreIndex)
   ctx.AddXP(M.BreakXP+M.BreakXPPerTier*(m.OreIndex-1))
+  -- Stone goes into the same transaction as the coins (Resources.Add clamps to its Max).
+  local stone=Rules.StoneForBreak(M,ore,ctx.Layer)
+  if stone>0 and ctx.AddStone then stone=math.max(0,int(ctx.AddStone(stone),stone))else stone=0 end
+  m.LastStone=stone;m.StoneMined=(m.StoneMined or 0)+stone
   Rules.RollOre(m,M,ctx.Random,pick.Luck,ctx.Layer)
   -- Every circle pauses while the old pile crumbles and the new one rises.
   s.PauseUntil=ctx.Clock+M.Client.BreakPause
   Rules.IssueTargets(s,M,pick,ctx.Clock,M.Client.BreakPause)
-  return code('BROKE',ore.Id,m.LastBrokenValue)
+  return code('BROKE',ore.Id,m.LastBrokenValue,stone)
  end
  newTarget(s,slot,ctx.Clock+M.Client.RespawnDelay,pick.Window)
  return code(crit and'CRIT'or quality==2 and'PERFECT'or'HIT',payout)

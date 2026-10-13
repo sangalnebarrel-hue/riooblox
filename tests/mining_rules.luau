@@ -69,6 +69,11 @@ local function newCtx(seed)
 	ctx.AddXP = function(n)
 		ctx.XP += n
 	end
+	ctx.Stone = 0
+	ctx.AddStone = function(n)
+		ctx.Stone += n
+		return n
+	end
 	return ctx
 end
 local function advance(ctx, dt)
@@ -281,6 +286,9 @@ test("breaking pays exactly the ore total, rolls a new ore and pauses the circle
 	eq(m.OresBroken, 1)
 	eq(m.OreSerial, serial + 1)
 	eq(m.Collection.Limestone, 1)
+	eq(ctx.Stone, M.Ores[1].Stone, "limestone stores its Stone on layer 1")
+	eq(m.LastStone, M.Ores[1].Stone)
+	eq(m.StoneMined, M.Ores[1].Stone)
 	truthy(hits >= 10, "wooden needs many hits on limestone (" .. hits .. ")")
 	truthy(ctx.XP > 0, "breaking grants XP")
 	truthy(firstTarget(ctx).SpawnAt >= ctx.Clock + M.Client.BreakPause - 1e-6, "circles wait for the new pile")
@@ -420,6 +428,139 @@ test("a lift ends mining and needs rest plus a minimum lift time", function()
 	end, "REST")
 	advance(ctx, M.MinLiftTime + 0.01)
 	eq(Text.Key(Rules.Action(m, M, "MiningTrain", {}, ctx)), "TRAINED")
+end)
+
+-- BALANCE update (docs/BALANCE.md): stone is worth mining, Stone is stored, advanced pickaxes cost more.
+local OLD_PRICES = { 600, 7500, 45000, 260000, 1600000, 12000000, 85000000 }
+-- Target multipliers over the old prices (owner: "several times higher" for the advanced ones).
+local PRICE_X = { { 1, 1 }, { 1, 1 }, { 2.9, 3.4 }, { 4, 5 }, { 4.8, 5.2 }, { 5.8, 6.3 }, { 6.8, 7.3 } }
+
+test("ore table: values strictly ordered without overlap, limestone x3 and the fastest to break", function()
+	for i = 2, #M.Ores do
+		local a, b = M.Ores[i - 1], M.Ores[i]
+		truthy(a.ValueMax < b.ValueMin, a.Id .. " value range below " .. b.Id)
+		truthy(a.HP < b.HP, a.Id .. " breaks faster than " .. b.Id)
+		truthy(a.Weight >= b.Weight, a.Id .. " at least as common as " .. b.Id)
+	end
+	local lime = M.Ores[1]
+	eq(lime.Id, "Limestone")
+	truthy(lime.ValueMin >= 3 * 40 and lime.ValueMax >= 3 * 55, "limestone worth at least 3x the old 40-55")
+	truthy(lime.HP >= 12 and lime.HP <= 16, "limestone stays the quickest ore (wooden still needs >= 12 normal hits)")
+	for i = 1, 3 do
+		eq(M.Ores[i].Rarity, "Common", "commons first")
+	end
+	truthy(M.Ores[#M.Ores].HP <= 250, "largest ore HP")
+end)
+
+test("stone per break: limestone gives the most, deeper layers give more, metals and gems give none", function()
+	local layers = #M.LayerValue
+	for L = 1, layers do
+		local lime = Rules.StoneForBreak(M, M.Ores[1], L)
+		for i = 2, #M.Ores do
+			truthy(Rules.StoneForBreak(M, M.Ores[i], L) < lime, M.Ores[i].Id .. " gives less Stone than limestone on layer " .. L)
+		end
+		if L > 1 then
+			truthy(lime > Rules.StoneForBreak(M, M.Ores[1], L - 1), "layer " .. L .. " gives more Stone than layer " .. (L - 1))
+			truthy(Rules.StoneForBreak(M, M.Ores[2], L) >= Rules.StoneForBreak(M, M.Ores[2], L - 1), "coal never less when deeper")
+		end
+	end
+	eq(Rules.StoneForBreak(M, M.Ores[1], 1), 4, "limestone gives 4 on layer 1")
+	eq(Rules.StoneForBreak(M, M.Ores[1], layers), 8, "and 8 on the deepest layer")
+	for i = 4, #M.Ores do
+		eq(Rules.StoneForBreak(M, M.Ores[i], layers), 0, M.Ores[i].Id .. " pays Coins only")
+	end
+	-- bad input never produces NaN or negative Stone
+	eq(Rules.StoneForBreak(M, nil, 1), 0)
+	eq(Rules.StoneForBreak(M, { Stone = 0 / 0 }, 3), 0)
+	eq(Rules.StoneForBreak(M, M.Ores[1], 99), Rules.StoneForBreak(M, M.Ores[1], layers), "layer clamped")
+	eq(Rules.StoneForBreak(M, M.Ores[1], -5), 4, "layer clamped low")
+end)
+
+test("a break on a deeper layer stores more Stone; no AddStone means no Stone; the cap is respected", function()
+	local function breakOnce(layer, addStone)
+		local m = Rules.New(M)
+		m.PickaxeOwned, m.PickaxeLevel, m.Strength = 7, 7, 1100
+		local ctx = newCtx(5)
+		ctx.Layer = layer
+		if addStone ~= nil then
+			ctx.AddStone = addStone
+		end
+		Rules.Action(m, M, "MiningBegin", {}, ctx)
+		local msg = hitAt(m, ctx, 0.8, 2)
+		eq(Text.Key(msg), "BROKE", "voidbreaker one-shots limestone")
+		return m, ctx, msg
+	end
+	local m1, c1, msg1 = breakOnce(1)
+	local m5, c5 = breakOnce(5)
+	truthy(c5.Stone > c1.Stone, "layer 5 stores more Stone than layer 1")
+	eq(c5.Stone, Rules.StoneForBreak(M, M.Ores[1], 5))
+	truthy(string.find(msg1, "|" .. c1.Stone, 1, true) ~= nil, "BROKE carries the Stone: " .. msg1)
+	eq(m1.StoneMined, c1.Stone)
+	eq(m5.LastStone, c5.Stone)
+	-- the pure rules without a resource store grant nothing (and say so)
+	local m0, _, msg0 = breakOnce(1, false)
+	eq(m0.LastStone, 0)
+	eq(m0.StoneMined, 0)
+	truthy(string.find(msg0, "|0", 1, true) ~= nil, msg0)
+	-- Resources.Add clamps at its Max and returns what it really added
+	local mc, cc = breakOnce(1, function(n)
+		return math.min(n, 1)
+	end)
+	eq(mc.LastStone, 1, "only the added amount is counted")
+	eq(cc.Stone, 0)
+	-- a normal hit after the break clears LastStone
+	local t = firstTarget(c5)
+	c5.Clock = t.SpawnAt + t.Window * 0.6
+	c5.Now = math.floor(c5.Clock)
+	Rules.Action(m5, M, "MiningHit", { Target = t.Id, Quality = 1 }, c5)
+	if not m5.LastBreak then
+		eq(m5.LastStone, 0, "LastStone belongs to the break only")
+	end
+end)
+
+test("StoneMined survives Normalize (old saves start at 0, corrupt values are healed)", function()
+	local old = Rules.Normalize({ Strength = 50, PickaxeOwned = 2, PickaxeLevel = 2, OreId = "Coal", Version = 2 }, M)
+	eq(old.StoneMined, 0, "old save without the field")
+	eq(old.LastStone, 0)
+	old.StoneMined = 1234
+	Rules.Normalize(old, M)
+	eq(old.StoneMined, 1234, "kept")
+	eq(Rules.Normalize({ StoneMined = -7, LastStone = 0 / 0 }, M).StoneMined, 0)
+	eq(Rules.Normalize({ StoneMined = 12.9 }, M).StoneMined, 12)
+end)
+
+test("pickaxe prices: first two unchanged, advanced ones several times higher", function()
+	for i, p in M.Pickaxes do
+		local x = p.Price / OLD_PRICES[i]
+		truthy(x >= PRICE_X[i][1] - 1e-9 and x <= PRICE_X[i][2] + 1e-9, string.format("%s x%.2f within %.1f-%.1f", p.Id, x, PRICE_X[i][1], PRICE_X[i][2]))
+	end
+	eq(M.Pickaxes[1].Price, 600)
+	eq(M.Pickaxes[2].Price, 7500)
+	-- an owned pickaxe stays owned and can be re-equipped for free after the price change
+	local m = Rules.Normalize({ Strength = 1100, PickaxeOwned = 7, PickaxeLevel = 3, Version = 2 }, M)
+	local ctx = newCtx()
+	eq(Text.Key(Rules.Action(m, M, "MiningPickaxe", { Level = 7 }, ctx)), "EQUIPPED")
+	eq(ctx.Cash, 0, "no charge for an owned pickaxe")
+end)
+
+test("BROKE text shows the Stone only when some was stored", function()
+	local lookup = function(id, key)
+		if key == "BROKE" then
+			return (Rules.OreById(M, id))
+		end
+		return nil
+	end
+	local withStone = Text.Message(Rules.Code("BROKE", "Limestone", 150, 4), lookup)
+	truthy(string.find(withStone, "Limestone", 1, true) and string.find(withStone, "150", 1, true) and string.find(withStone, "+4", 1, true), withStone)
+	truthy(string.find(withStone, "🪨", 1, true), withStone)
+	local noStone = Text.Message(Rules.Code("BROKE", "Ruby", 1500, 0), lookup)
+	truthy(string.find(noStone, "Ruby", 1, true) and not string.find(noStone, "🪨", 1, true), noStone)
+	local legacy = Text.Message("M:BROKE|Ruby|1500", lookup)
+	eq(legacy, noStone, "a 2-argument BROKE (older server) still reads the same")
+	eq(Text.Table.STONE[2], "Камень")
+	for _, key in { "YOUR_STONE", "STONE_GAIN", "ORE_STONE", "STONE_HINT", "BROKE_STONE" } do
+		truthy(Text.Table[key] and Text.Table[key][1] ~= "" and Text.Table[key][2] ~= "", key .. " has EN and RU")
+	end
 end)
 
 print(string.format("mining_rules: %d passed, %d failed", passed, failed))
