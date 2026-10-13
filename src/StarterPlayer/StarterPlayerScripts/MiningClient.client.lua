@@ -123,7 +123,8 @@ local function start(name)
  ctx[name]=load(name,function()return module.new(ctx)end)
 end
 -- World first: ore piles and prompt handling never wait for the main GUI or the menu modules.
-for _,name in ipairs({'Net','Anim','FX','World'})do start(name)end
+-- PickFX (pickaxe effects and living models) and Combo (2D hit juice) need only FX.
+for _,name in ipairs({'Net','Anim','FX','PickFX','Combo','World'})do start(name)end
 if ctx.World and ctx.World.Start then load('World.Start',ctx.World.Start)end
 
 -- The game's main GUI (HUD money counter, PAWPAD navigation, UITheme).
@@ -153,5 +154,5 @@ if not ctx.N then
 end
 for _,name in ipairs({'Mine','Shop','Gym','Debug'})do start(name)end
 local started={}
-for _,name in ipairs({'Net','Anim','FX','Hud','World','Mine','Shop','Gym','Debug'})do if ctx[name]then table.insert(started,name)end end
+for _,name in ipairs({'Net','Anim','FX','PickFX','Combo','Hud','World','Mine','Shop','Gym','Debug'})do if ctx[name]then table.insert(started,name)end end
 ctx.Log('client started: '..table.concat(started,', '))

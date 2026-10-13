@@ -1,6 +1,9 @@
 -- Active Mining session for the local owner: walk to the ore, frame the camera, show the
--- server-issued timing circles ON the ore pile, judge clicks/taps, swing the pickaxe and play
--- predicted effects instantly, then apply the server's verdict (coins, crits, breaks).
+-- server-issued timing circles ON the ore piles (the main pile and its satellites, so they are
+-- scattered over the dig site), judge clicks/taps, swing the pickaxe and play predicted effects
+-- instantly (MiningClient.Combo: shockwave + endless "xN" combo, PickFX: the pickaxe's own hit),
+-- then apply the server's verdict (coins, crits, breaks). The camera orbits the dig site:
+-- right mouse drag / one-finger swipe / right stick / Q-E, mouse wheel or pinch to zoom, R resets.
 local Players=game:GetService('Players')
 local RunService=game:GetService('RunService')
 local UIS=game:GetService('UserInputService')
@@ -9,6 +12,7 @@ local TweenService=game:GetService('TweenService')
 local Mine={}
 
 local CIRCLE_MAX=118 -- px, outer ring at the moment a circle opens (shrinks on small screens)
+local JITTER=.42 -- circles land up to this many circle sizes away from their hit point (random)
 local IDLE_EXIT=22 -- seconds without a hit before the session closes itself
 
 function Mine.new(ctx)
@@ -16,6 +20,7 @@ function Mine.new(ctx)
  local player=ctx.Player
  local M,Text,Audio,U=ctx.M,ctx.Text,ctx.Audio,ctx.U
  local Net,World,FX,Hud,Anim=ctx.Net,ctx.World,ctx.FX,ctx.Hud,ctx.Anim
+ local Combo,PickFX=ctx.Combo,ctx.PickFX
  local TM=M.Timing
  local CIRCLE=CIRCLE_MAX
  local gui=ctx.Gui::ScreenGui
@@ -117,6 +122,8 @@ function Mine.new(ctx)
  local lastPaidHit=0
  local function pick()return M.Pickaxes[(state and state.PickaxeLevel)or Net.Attr('MiningPickaxe',1)]or M.Pickaxes[1]end
  local function tier()return pick().FX or 1 end
+ local function theme()return pick().Theme or'Wood'end
+ local function pickColor()return Color3.fromRGB(table.unpack(pick().Color or{110,220,255}))end
 
  -- Short news in the panel title (break, new ore) instead of a toast over the ore and circles.
  local bannerUntil=0
@@ -142,8 +149,10 @@ function Mine.new(ctx)
   -- Stone this ore stores when broken (MiningRules.StoneForBreak, deepest unlocked layer).
   local stone=ctx.Rules.StoneForBreak(M,def,Net.Attr('MiningLayer',1))
   if stone>0 then infoLeft.Text..='  ·  '..Text.Get('ORE_STONE',stone)end
+  -- The panel shows the damage streak the server counts (perfect hits, capped); the endless
+  -- click combo lives on the right (MiningClient.Combo).
   local combo=(os.clock()-lastPaidHit<M.ComboTimeout)and(s.Combo or 0)or 0
-  comboLabel.Text=combo>=2 and Text.Get('COMBO',combo)or''
+  comboLabel.Text=combo>=2 and('⚡ '..Text.Get('COMBO',combo))or''
  end
 
  -- CIRCLES ------------------------------------------------------------------------------------
@@ -197,6 +206,7 @@ function Mine.new(ctx)
    TweenService:Create(c.Back,TweenInfo.new(.18),{BackgroundTransparency=1}):Play()
    TweenService:Create(c.Ring,TweenInfo.new(.18),{Transparency=1}):Play()
    TweenService:Create(c.Gold,TweenInfo.new(.18),{Transparency=1}):Play()
+   if c.Halo then TweenService:Create(c.Halo,TweenInfo.new(.18),{Transparency=1}):Play()end
    task.delay(.2,function()frame:Destroy()end)
   else frame:Destroy()end
  end
@@ -216,6 +226,9 @@ function Mine.new(ctx)
   end)
  end
  -- Player clicked circle c at the current time.
+ local function circleCenter(c)
+  return c.Frame.AbsolutePosition+c.Frame.AbsoluteSize/2
+ end
  local function judge(c)
   if c.Removed or c.Judged then return end
   local f=(os.clock()-c.LocalSpawn)/c.Window
@@ -223,25 +236,35 @@ function Mine.new(ctx)
   c.Judged=true;judged[c.Id]=true
   lastActivity=os.clock()
   local pos=c.Point and c.Point.WorldPosition
+  local screen=circleCenter(c)
   if f<TM.GoodFrom then
    removeCircle(c,U.Colors.red)
    if pos then FX.Popup(pos,Text.Get('TOO_EARLY'),U.Colors.red)end
+   if Combo then Combo.Miss(screen)end
    Audio.Play('Miss')
    sendHit(c,1,true)
    return
   end
   local perfect=f>=TM.PerfectFrom and f<=TM.PerfectTo
   removeCircle(c,perfect and U.Colors.gold or Color3.fromRGB(110,220,255))
-  Anim.Swing(1+tier()*.02)
+  local def=pick()
+  Anim.Swing(1+tier()*.02,nil,def.Swing)
+  -- Predicted feedback, instantly: shockwave + combo on screen, shake, the pickaxe's own hit.
+  local n=1
+  if Combo then n=Combo.Hit(screen,perfect and 2 or 1,pickColor())end
+  FX.Shake((perfect and .5 or .35)+math.min(.9,n*.025))
+  if PickFX then PickFX.HitPulse(player.Character,perfect and 1 or .7)end
+  if def.Theme=='TV'and Combo then Combo.Glitch()end
   if pos and view and view.Def then
    local normal=c.Point:GetAttribute('Normal')
+   local point=c.Point
    task.delay(.11,function()
     if not self.Active then return end
-    FX.Hit(pos,normal,World.OreColor(view.Def),Enum.Material.Slate,tier(),perfect and 2 or 1,false)
-    World.Wobble(view,perfect and 1.2 or .8)
+    FX.Hit(pos,normal,World.OreColor(view.Def),Enum.Material.Slate,tier(),perfect and 2 or 1,false,false,theme())
+    World.Wobble(view,perfect and 1.2 or .8,point)
    end)
   end
-  Audio.Play(perfect and'Perfect'or'Hit',nil,tier())
+  Audio.Play(perfect and'Perfect'or'Hit',nil,tier(),def.Sound)
   sendHit(c,perfect and 2 or 1,false)
  end
  -- Overlapping circles: one tap may reach several buttons. Resolve it once, preferring a circle
@@ -270,22 +293,41 @@ function Mine.new(ctx)
   if active[t.Id]or judged[t.Id]then return end
   local c={Id=t.Id,Window=t.Window,LocalSpawn=t.LocalSpawn,Slot=t.Slot}
   c.Point=pickPoint()
-  local color=Color3.fromRGB(table.unpack(pick().Color or{110,220,255}))
+  -- A random screen offset from the hit point: circles never sit on a fixed grid.
+  local a=math.random()*math.pi*2
+  c.Jitter=Vector2.new(math.cos(a),math.sin(a)*.8)*(math.random()*JITTER)
+  local color=pickColor()
   local frame=Instance.new('Frame');frame.Name='Circle'..t.Id;frame.AnchorPoint=Vector2.new(.5,.5);frame.Size=UDim2.fromOffset(CIRCLE,CIRCLE)
   frame.BackgroundTransparency=1;frame.Visible=false;frame.ZIndex=math.max(21,1000000-t.Id);frame.Parent=circles
+  local pop=Instance.new('UIScale');pop.Scale=.2;pop.Parent=frame
+  c.Pop=pop;c.Shown=false
   local back=Instance.new('Frame');back.Name='Back';back.AnchorPoint=Vector2.new(.5,.5);back.Position=UDim2.fromScale(.5,.5);back.Size=UDim2.fromScale(.62,.62)
   back.BackgroundColor3=Color3.fromRGB(23,43,76);back.BackgroundTransparency=.45;back.ZIndex=21;back.Parent=frame
-  do local cc=Instance.new('UICorner');cc.CornerRadius=UDim.new(1,0);cc.Parent=back end
+  do local cc=Instance.new('UICorner');cc.CornerRadius=UDim.new(1,0);cc.Parent=back
+   local bg=Instance.new('UIGradient');bg.Color=ColorSequence.new(color:Lerp(Color3.new(0,0,0),.55),Color3.fromRGB(23,43,76));bg.Rotation=90;bg.Parent=back end
+  -- Outer halo in the pickaxe's colours, slowly turning (rainbow for the magical ones).
+  local _,halo=ring(frame,'Halo',1.08,Color3.new(1,1,1),3,21)
+  local haloGrad=Instance.new('UIGradient')
+  local palette=PickFX and PickFX.Palette(theme())or{color,color}
+  local keys={}
+  for i,col in ipairs(palette)do keys[#keys+1]=ColorSequenceKeypoint.new((i-1)/math.max(1,#palette-1),col)end
+  if #keys<2 then keys={ColorSequenceKeypoint.new(0,color),ColorSequenceKeypoint.new(1,color)}end
+  haloGrad.Color=ColorSequence.new(keys);haloGrad.Parent=halo
+  halo.Transparency=.25
+  c.HaloGrad=haloGrad
   local _,gold=ring(frame,'Gold',ringScale((TM.PerfectFrom+TM.PerfectTo)/2),Color3.fromRGB(255,206,64),7,22)
   local shrink,white=ring(frame,'Ring',1,Color3.new(1,1,1),4,23)
-  local dot,dotStroke=ring(frame,'Core',.16,color,3,24)
+  local dot,dotStroke=ring(frame,'Core',.3,color,3,24)
   dot.BackgroundTransparency=0;dot.BackgroundColor3=color;dotStroke.Color=Color3.new(1,1,1)
+  local icon=Instance.new('TextLabel');icon.Name='Icon';icon.BackgroundTransparency=1;icon.Size=UDim2.fromScale(1,1);icon.TextScaled=true
+  icon.Text=pick().Icon or'⛏';icon.ZIndex=24;icon:SetAttribute('NoTranslate',true);icon.Parent=dot
   local button=Instance.new('TextButton');button.Name='Hit';button.Text='';button.BackgroundTransparency=1;button.AutoButtonColor=false
   button.AnchorPoint=Vector2.new(.5,.5);button.Position=UDim2.fromScale(.5,.5);button.Size=UDim2.fromScale(1,1);button.ZIndex=25;button.Parent=frame
   button.InputBegan:Connect(function(input)
    if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then judgeAt(input,c)end
   end)
   c.Frame,c.Ring,c.Gold,c.Back,c.Shrink=frame,white,gold,back,shrink
+  c.Halo=halo
   active[t.Id]=c
  end
  local function syncTargets(list)
@@ -352,15 +394,25 @@ function Mine.new(ctx)
   local fresh=type(s)=='table'and(not state or(s.Hits or 0)>=(state.Hits or 0))
   if fresh then state=s end
   if item.Miss or key=='MISS'or key=='STALE'then refreshPanel();return end
-  if key=='TOO_LATE'then if pos then FX.Popup(pos,message,U.Colors.red)end;refreshPanel();return end
+  if key=='TOO_LATE'then
+   if pos then FX.Popup(pos,message,U.Colors.red)end
+   if Combo then Combo.Miss()end
+   refreshPanel();return
+  end
   if type(s)~='table'then return end
   lastPaidHit=os.clock()
   local payout=s.LastPayout or 0
   if pos then
    if s.LastCrit then
     FX.Popup(pos,Text.Get('CRIT',Text.Short(payout)),Color3.fromRGB(255,110,70),true)
-    FX.Hit(pos,c.Point and c.Point:GetAttribute('Normal'),view and view.Def and World.OreColor(view.Def)or Color3.new(1,1,1),Enum.Material.Slate,tier(),2,true)
-    Audio.Play('Crit',nil,tier())
+    FX.Hit(pos,c.Point and c.Point:GetAttribute('Normal'),view and view.Def and World.OreColor(view.Def)or Color3.new(1,1,1),Enum.Material.Slate,tier(),2,true,false,theme())
+    Audio.Play('Crit',nil,tier(),pick().Sound)
+    if Combo then
+     local cam=workspace.CurrentCamera
+     local p2=cam and cam:WorldToViewportPoint(pos)
+     Combo.Crit(p2 and Vector2.new(p2.X,p2.Y)or gui.AbsoluteSize/2,pickColor(),theme()=='Digits'and'67!!'or nil)
+    end
+    FX.Shake(1.1)
    else
     FX.Popup(pos,'+'..Text.Short(payout),s.LastQuality==2 and U.Colors.gold or Color3.fromRGB(150,235,255),s.LastQuality==2)
    end
@@ -373,6 +425,13 @@ function Mine.new(ctx)
   if s.LastBreak and view then
    local brokenDef=World.OreDef(s.LastBrokenId)
    World.PlayBreak(view,true,s)
+   FX.Shake(1.7)
+   if Combo then
+    local cam=workspace.CurrentCamera
+    local corePos=view.Core and view.Core.Position or pos
+    local p2=cam and corePos and cam:WorldToViewportPoint(corePos)
+    Combo.Break(p2 and Vector2.new(p2.X,p2.Y)or gui.AbsoluteSize/2,World.OreColor(brokenDef))
+   end
    local center=(view.Core and view.Core.Position or pos)+Vector3.new(0,4,0)
    local root=player.Character and player.Character:FindFirstChild('HumanoidRootPart')
    if root then FX.Coins(center,18,root)end
@@ -402,6 +461,28 @@ function Mine.new(ctx)
  end
 
  -- CAMERA -------------------------------------------------------------------------------------
+ -- An orbit around the dig site (the main pile and its satellites). The player turns it with the
+ -- right mouse button / a swipe on empty screen / the right stick / Q-E, zooms with the wheel or
+ -- a pinch, and R puts it back. The orbit never goes under the ground or into the pile.
+ local orbit={Yaw=0,Pitch=0,Zoom=0,TYaw=0,TPitch=0,TZoom=0}
+ local frameInfo=nil
+ local function focusPoint()
+  local core=view and view.Core;if not core then return nil end
+  local sum=(core:FindFirstChild('OreRoot')and core.OreRoot.WorldPosition or core.Position)*2;local n=2
+  for _,a in ipairs(core:GetChildren())do
+   if a:IsA('Attachment')and string.match(a.Name,'^OreSat%d+$')then sum+=a.WorldPosition;n+=1 end
+  end
+  return sum/n+Vector3.new(0,2.6,0)
+ end
+ local function orbitGoal()
+  local f=frameInfo;if not f then return nil end
+  local yaw=f.Yaw+orbit.Yaw
+  local pitch=math.clamp(f.Pitch+orbit.Pitch,math.rad(8),math.rad(72))
+  local dist=math.clamp(f.Dist+orbit.Zoom,12,40)
+  local flat=Vector3.new(math.sin(yaw),0,math.cos(yaw))
+  local eye=f.Focus+flat*math.cos(pitch)*dist+Vector3.new(0,math.sin(pitch)*dist,0)
+  return CFrame.lookAt(eye,f.Focus)
+ end
  local function frameCamera()
   camera=workspace.CurrentCamera;if not camera or not view then return end
   if camera:GetAttribute('SecretZoom')or camera:GetAttribute('DiscoveryZoom')then savedCamera=nil;return end
@@ -411,16 +492,20 @@ function Mine.new(ctx)
   local stand=core:FindFirstChild('MinerStand')
   local away=stand and(stand.WorldPosition-orePos)or(-core.CFrame.LookVector)
   away=Vector3.new(away.X,0,away.Z);away=away.Magnitude>.1 and away.Unit or Vector3.new(0,0,1)
+  -- Behind the miner, a little to the side so the swing is visible, high enough to see every pile.
   local side=away:Cross(Vector3.new(0,1,0))
-  local goal=CFrame.lookAt(orePos+away*17+side*4+Vector3.new(0,8.5,0),orePos+Vector3.new(0,.5,0))
+  local dir=(away+side*.22).Unit
+  frameInfo={Focus=focusPoint()or orePos,Yaw=math.atan2(dir.X,dir.Z),Pitch=math.rad(30),Dist=22}
+  orbit.Yaw,orbit.Pitch,orbit.Zoom,orbit.TYaw,orbit.TPitch,orbit.TZoom=0,0,0,0,0,0
   camera.CameraType=Enum.CameraType.Scriptable
-  self.CameraBase=goal
   local start=camera.CFrame
   local t0=os.clock()
   self.CameraBlend=function()
-   local a=math.clamp((os.clock()-t0)/.55,0,1);a=a*a*(3-2*a)
+   local goal=orbitGoal()or start
+   local a=math.clamp((os.clock()-t0)/.6,0,1);a=a*a*(3-2*a)
    return start:Lerp(goal,a)
   end
+  TweenService:Create(camera,TweenInfo.new(.6,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{FieldOfView=68}):Play()
  end
  local function restoreCamera()
   camera=workspace.CurrentCamera
@@ -430,7 +515,55 @@ function Mine.new(ctx)
    camera.CameraSubject=hum or savedCamera.Subject
    camera.FieldOfView=savedCamera.FOV
   end
-  savedCamera=nil;self.CameraBlend=nil
+  savedCamera=nil;self.CameraBlend=nil;frameInfo=nil
+ end
+ -- Orbit input (bound while a session runs).
+ local dragging=false
+ local touches={}
+ local function orbitBy(dx,dy)
+  orbit.TYaw-=dx*.006
+  orbit.TPitch=math.clamp(orbit.TPitch+dy*.005,math.rad(-25),math.rad(45))
+ end
+ local function zoomBy(z)orbit.TZoom=math.clamp(orbit.TZoom+z,-10,18)end
+ local function bindOrbit()
+  table.insert(connections,UIS.InputBegan:Connect(function(input,processed)
+   if input.UserInputType==Enum.UserInputType.MouseButton2 then dragging=true
+   elseif input.UserInputType==Enum.UserInputType.Touch and not processed then touches[input]=input.Position
+   elseif input.KeyCode==Enum.KeyCode.R and not processed then orbit.TYaw,orbit.TPitch,orbit.TZoom=0,0,0 end
+  end))
+  table.insert(connections,UIS.InputEnded:Connect(function(input)
+   if input.UserInputType==Enum.UserInputType.MouseButton2 then dragging=false
+   elseif input.UserInputType==Enum.UserInputType.Touch then touches[input]=nil end
+  end))
+  table.insert(connections,UIS.InputChanged:Connect(function(input,processed)
+   if input.UserInputType==Enum.UserInputType.MouseMovement and dragging then orbitBy(input.Delta.X,input.Delta.Y)
+   elseif input.UserInputType==Enum.UserInputType.MouseWheel and not processed then zoomBy(-input.Position.Z*2.2)
+   elseif input.UserInputType==Enum.UserInputType.Touch and touches[input]then
+    local count=0;for _ in pairs(touches)do count+=1 end
+    local last=touches[input];touches[input]=input.Position
+    local d=input.Position-last
+    if count==1 then orbitBy(d.X*1.2,d.Y*1.2)
+    elseif count==2 then
+     -- Pinch: the distance between the two fingers changes.
+     local other
+     for k,pos in pairs(touches)do if k~=input then other=pos end end
+     if other then
+      local before=(last-other).Magnitude;local after=(input.Position-other).Magnitude
+      zoomBy((before-after)*.06)
+     end
+    end
+   elseif input.KeyCode==Enum.KeyCode.Thumbstick2 then
+    local v=input.Position
+    if v.Magnitude>.2 then orbit.Stick=Vector2.new(v.X,v.Y)else orbit.Stick=nil end
+   end
+  end))
+ end
+ local function updateOrbit(dt)
+  if UIS:IsKeyDown(Enum.KeyCode.Q)then orbit.TYaw+=dt*1.6 end
+  if UIS:IsKeyDown(Enum.KeyCode.E)then orbit.TYaw-=dt*1.6 end
+  if orbit.Stick then orbitBy(orbit.Stick.X*dt*420,-orbit.Stick.Y*dt*300)end
+  local k=math.min(1,dt*10)
+  orbit.Yaw+=(orbit.TYaw-orbit.Yaw)*k;orbit.Pitch+=(orbit.TPitch-orbit.Pitch)*k;orbit.Zoom+=(orbit.TZoom-orbit.Zoom)*k
  end
 
  -- MOVEMENT -----------------------------------------------------------------------------------
@@ -456,16 +589,13 @@ function Mine.new(ctx)
  end
 
  -- LOOP ----------------------------------------------------------------------------------------
+ local lastStep=os.clock()
  local function step()
   local cam=workspace.CurrentCamera
+  local dt=math.min(.1,os.clock()-lastStep);lastStep=os.clock()
   if self.CameraBlend and cam then
-   local base=self.CameraBlend()
-   local shake=FX.ShakeAmount
-   if shake>.001 then
-    base=base*CFrame.new((math.random()-.5)*shake*.6,(math.random()-.5)*shake*.6,0)
-    FX.ShakeAmount=math.max(0,shake-.06)
-   end
-   cam.CFrame=base
+   updateOrbit(dt)
+   cam.CFrame=self.CameraBlend()*FX.ShakeOffset(dt)
   end
   local now=os.clock()
   for _,c in pairs(active)do
@@ -475,6 +605,7 @@ function Mine.new(ctx)
     else
      if f>1+.05 and not c.Judged then
       c.Judged=true;judged[c.Id]=true
+      if Combo and c.Frame.Visible then Combo.Miss(circleCenter(c))end
       removeCircle(c,Color3.fromRGB(150,150,160))
       sendHit(c,1,true)
      else
@@ -482,14 +613,21 @@ function Mine.new(ctx)
       if not att or not att.Parent then c.Point=pickPoint();att=c.Point end
       if att and cam then
        local p,onScreen=cam:WorldToViewportPoint(att.WorldPosition)
-       c.Frame.Position=UDim2.fromOffset(p.X,p.Y)
+       local j=c.Jitter or Vector2.zero
+       c.Frame.Position=UDim2.fromOffset(p.X+j.X*CIRCLE,p.Y+j.Y*CIRCLE)
        c.Frame.Visible=onScreen
+       if onScreen and not c.Shown then
+        c.Shown=true
+        TweenService:Create(c.Pop,TweenInfo.new(.22,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Scale=1}):Play()
+       end
       end
       local s=ringScale(math.min(f,1))
       c.Shrink.Size=UDim2.fromScale(s,s)
       local inGold=f>=TM.PerfectFrom and f<=TM.PerfectTo
       c.Ring.Color=inGold and Color3.fromRGB(255,240,160)or Color3.new(1,1,1)
       c.Ring.Thickness=inGold and 6 or 4
+      if c.HaloGrad then c.HaloGrad.Rotation=(now*120+c.Id*37)%360 end
+      if inGold and c.Shown and c.Pop.Scale>=.99 then c.Pop.Scale=1+math.sin(now*30)*.04 end
      end
     end
    end
@@ -543,8 +681,11 @@ function Mine.new(ctx)
   local pad=UIS.GamepadEnabled and(last==Enum.UserInputType.Gamepad1 or not UIS.KeyboardEnabled and not UIS.TouchEnabled)
   local touch=UIS.TouchEnabled and(last==Enum.UserInputType.Touch or not UIS.KeyboardEnabled)
   local how=pad and'MINE_HINT_PAD'or touch and'MINE_HINT_TOUCH'or UIS.KeyboardEnabled and'MINE_HINT_KEYS'or'MINE_HINT'
-  hint.Text=Text.Get(how)
+  hint.Text=Text.Get(how)..'  ·  '..Text.Get(pad and'CAMERA_HINT_PAD'or touch and'CAMERA_HINT_TOUCH'or'CAMERA_HINT')
   Audio.Play('Whoosh')
+  Anim.Draw();Anim.SetReady(true,nil,pick().Swing);Audio.Play('Draw')
+  if Combo then Combo.Reset()end
+  bindOrbit()
   task.spawn(function()
    walkToStand()
    if self.Active then frameCamera()end
@@ -577,7 +718,10 @@ function Mine.new(ctx)
   for _,c in pairs(active)do removeCircle(c,nil)end
   table.clear(active);table.clear(usedPoints);table.clear(sendQueue);table.clear(judged)
   overlay.Visible=false
+  dragging=false;table.clear(touches);orbit.Stick=nil
   restoreCamera()
+  Anim.SetReady(false)
+  if Combo then Combo.Reset()end
   setControls(true)
   ctx.Main:SetAttribute('MiningActive',nil)
   self.Corner=nil;view=nil

@@ -218,7 +218,14 @@ function Gym.new(ctx)
     if pos then FX.Popup(pos,'+'..math.max(0,after-before)..' 💪',U.Colors.green,true)
      FX.Burst(pos-Vector3.new(0,1.5,0),{Color=Color3.fromRGB(150,255,140),Color2=Color3.fromRGB(255,230,120),Count=18,Speed=NumberRange.new(6,12),Spread=Vector2.new(180,180),Acceleration=Vector3.new(0,-10,0)})
      FX.Ring(pos-Vector3.new(0,6,0),U.Colors.green,10,.5)
+     -- Every rep is a little celebration: rainbow rings at the feet, a power burst at the weight.
+     for i=1,3 do task.delay(i*.06,function()FX.Ring(pos-Vector3.new(0,6,0),Color3.fromHSV((i*.27+os.clock()*.2)%1,.6,1),8+i*3,.45)end)end
+     FX.Burst(pos+Vector3.new(0,1,0),{Color=Color3.fromRGB(255,240,140),Color2=Color3.fromRGB(255,140,60),Count=14,Speed=NumberRange.new(8,16),Spread=Vector2.new(60,60),Direction=Vector3.new(0,1,0)})
+     local cam=workspace.CurrentCamera
+     local p2=cam and cam:WorldToViewportPoint(pos)
+     if ctx.Combo and p2 then ctx.Combo.Rep(Vector2.new(p2.X,p2.Y))end
     end
+    FX.Shake(.7)
     Audio.Play('LiftTop');Audio.Play('Strength')
     if nextBefore and after>=nextBefore.Strength then
      Hud.Toast(Text.L('Strong enough for: ','Теперь хватает силы: ')..Text.Name(nextBefore)..' ⛏',U.Colors.gold,4)
@@ -261,8 +268,22 @@ function Gym.new(ctx)
   if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then tap()end
  end)
 
+ local sweatAt=0
+ local cameraGoal=nil
  local function step(dt)
   local level=Net.Attr('MiningWeight',1)
+  local cam=workspace.CurrentCamera
+  if cameraGoal and cam and cam.CameraType==Enum.CameraType.Scriptable then
+   cameraGoal.T=math.min(1,cameraGoal.T+dt/.5)
+   local a=cameraGoal.T*cameraGoal.T*(3-2*cameraGoal.T)
+   cam.CFrame=cameraGoal.From:Lerp(cameraGoal.To,a)*FX.ShakeOffset(dt)*CFrame.new(0,0,-height*1.2)
+  end
+  -- Strain: sweat flies off the head while the weight is high.
+  if height>.55 and os.clock()-sweatAt>.35 then
+   sweatAt=os.clock()
+   local head=player.Character and player.Character:FindFirstChild('Head')
+   if head then FX.Burst(head.Position+Vector3.new(0,.6,0),{Color=Color3.fromRGB(150,210,255),Color2=Color3.fromRGB(220,240,255),Count=3,Speed=NumberRange.new(4,7),Spread=Vector2.new(70,70),Acceleration=Vector3.new(0,-30,0),Lifetime=NumberRange.new(.4,.7)})end
+  end
   if holding then
    height=1 -- locked out at the top until the server accepts the next rep
   elseif os.clock()<cooldownUntil or sending then
@@ -273,6 +294,8 @@ function Gym.new(ctx)
   fill.Size=UDim2.fromScale(1,height)
   weightIcon.Position=UDim2.fromScale(.5,1-height)
   weightIcon.TextColor3=height>.85 and U.Colors.gold or Color3.new(1,1,1)
+  fill.BackgroundColor3=height>.85 and Color3.fromHSV((os.clock()*.8)%1,.55,1)or U.Colors.gold
+  weightIcon.Rotation=height>.85 and math.sin(os.clock()*40)*8 or 0
   Anim.SetLift(true,height)
   if os.clock()-lastActivity>IDLE_EXIT then self.Exit('idle');return end
   -- Keep the weight in hand (server TrainingUntil) while the player is still here.
@@ -310,7 +333,8 @@ function Gym.new(ctx)
   camera.CameraType=Enum.CameraType.Scriptable
   local look=root.CFrame.LookVector
   local goal=CFrame.lookAt(root.Position+look*11+root.CFrame.RightVector*(compact and 0 or 3.5)+Vector3.new(0,3.4,0),root.Position+Vector3.new(0,1.8,0))
-  TweenService:Create(camera,TweenInfo.new(.5,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{CFrame=goal}):Play()
+  -- The step loop blends there and adds the rep shake / push-in.
+  cameraGoal={From=camera.CFrame,To=goal,T=0}
  end
  local function restoreCamera()
   local camera=workspace.CurrentCamera
@@ -320,7 +344,7 @@ function Gym.new(ctx)
    if hum then camera.CameraSubject=hum end
    camera.FieldOfView=savedCamera.FOV
   end
-  savedCamera=nil
+  savedCamera=nil;cameraGoal=nil
  end
 
  -- ENTER / EXIT -----------------------------------------------------------------------------
@@ -390,6 +414,7 @@ function Gym.new(ctx)
   table.clear(connections)
   overlay.Visible=false
   Anim.SetLift(false,0)
+  if ctx.Combo then ctx.Combo.Reset()end
   restoreCamera();setControls(true)
   ctx.Main:SetAttribute('MiningActive',nil)
   self.Corner=nil

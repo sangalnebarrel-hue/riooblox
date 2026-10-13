@@ -66,7 +66,32 @@ function World.new(ctx)
  end
  local function destroyPile(view)
   if view.Pile then view.Pile:Destroy();view.Pile=nil end
+  for _,sat in ipairs(view.Sats or{})do sat.Model:Destroy()end
+  view.Sats={}
   view.HitPoints={}
+ end
+ -- Satellite outcrops (Attachments OreSat* on the core, written by MiningWorld): the same ore in
+ -- smaller piles around the main one. Their hit points join the main pile's, so the timing
+ -- circles spread over the whole dig site. Low FX keeps them only on the player's own corner.
+ local function buildSats(view,def,serial,owner,index)
+  view.Sats={}
+  local core=view.Core;if not core then return end
+  if fx().Low()and not isOwner(view.Corner)then return end
+  for _,att in ipairs(core:GetChildren())do
+   local i=att:IsA('Attachment')and tonumber(string.match(att.Name,'^OreSat(%d+)$'))
+   if i then
+    local scale=att:GetAttribute('Scale')or .45
+    local cf=CFrame.new(att.WorldPosition)*CFrame.Angles(0,(i*1.7)%(math.pi*2),0)
+    local model,points=Models.Ore(def,serial*7919+(owner%100003)+index+i*131,cf,scale,true)
+    model.Name='OreSat_'..i
+    for _,d in ipairs(model:GetDescendants())do
+     if d:IsA('ParticleEmitter')then d.Rate*=.4 elseif d:IsA('PointLight')then d:Destroy()end
+    end
+    model.Parent=fx().Folder
+    table.insert(view.Sats,{Model=model,BaseCF=model:GetPivot()})
+    for _,a in ipairs(points)do table.insert(view.HitPoints,a)end
+   end
+  end
  end
  -- state (optional) overrides the corner attributes with a fresher server response.
  local function buildPile(view,grow,state)
@@ -86,25 +111,31 @@ function World.new(ctx)
   model.Parent=fx().Folder
   view.Pile=model;view.HitPoints=points;view.Def=def;view.Index=index;view.Serial=serial
   view.BaseCF=model:GetPivot()
+  buildSats(view,def,serial,owner,index)
   if not view.ScaleValue then
    view.ScaleValue=Instance.new('NumberValue');view.ScaleValue.Value=1
    view.ScaleValue.Changed:Connect(function(v)
-    local m=view.Pile;if m and m.Parent and v>.01 then pcall(function()m:ScaleTo(v)end)end
+    if v<=.01 then return end
+    local m=view.Pile;if m and m.Parent then pcall(function()m:ScaleTo(v)end)end
+    -- Satellites shrink less than the main pile (they are the "rest of the vein").
+    local k=.5+v*.5
+    for _,sat in ipairs(view.Sats or{})do if sat.Model.Parent then pcall(function()sat.Model:ScaleTo(k)end)end end
    end)
   end
   if grow then
    view.ScaleValue.Value=.05;pcall(function()model:ScaleTo(.05)end)
+   for _,sat in ipairs(view.Sats)do pcall(function()sat.Model:ScaleTo(.05)end)end
    setScale(view,targetScale(view,state),.65)
   else
    view.ScaleValue.Value=targetScale(view,state);pcall(function()model:ScaleTo(view.ScaleValue.Value)end)
+   local k=.5+view.ScaleValue.Value*.5
+   for _,sat in ipairs(view.Sats)do pcall(function()sat.Model:ScaleTo(k)end)end
   end
   self.UpdateLabel(view,state)
  end
 
- -- Every chunk of the old pile flies apart.
- local function shatter(view)
-  local model=view.Pile;if not model then return end
-  view.Pile=nil
+ -- Every chunk of the old pile (and its satellites) flies apart.
+ local function shatterModel(model)
   local center=model:GetPivot().Position+Vector3.new(0,3,0)
   for _,d in ipairs(model:GetDescendants())do
    if d:IsA('BasePart')and d.Transparency<1 then
@@ -117,6 +148,13 @@ function World.new(ctx)
    elseif d:IsA('PointLight')then d.Enabled=false end
   end
   task.delay(1.3,function()model:Destroy()end)
+ end
+ local function shatter(view)
+  local model=view.Pile;if not model then return end
+  view.Pile=nil
+  shatterModel(model)
+  for _,sat in ipairs(view.Sats or{})do shatterModel(sat.Model)end
+  view.Sats={}
  end
 
  -- Break + rebuild sequence (also used by the owner's Mine module, which passes the fresh
@@ -170,9 +208,14 @@ function World.new(ctx)
   end
   return best
  end
- function self.Wobble(view,strength)
-  local model=view.Pile;if not model or not model.Parent then return end
-  local base=view.BaseCF or model:GetPivot()
+ -- point (optional): the hit point that was struck; the pile (main or satellite) it sits on wobbles.
+ function self.Wobble(view,strength,point)
+  local model,base=view.Pile,view.BaseCF
+  if point then
+   for _,sat in ipairs(view.Sats or{})do if point:IsDescendantOf(sat.Model)then model,base=sat.Model,sat.BaseCF end end
+  end
+  if not model or not model.Parent then return end
+  base=base or model:GetPivot()
   local s=(strength or 1)*.35
   model:PivotTo(base*CFrame.new((math.random()-.5)*s,0,(math.random()-.5)*s)*CFrame.Angles(0,0,(math.random()-.5)*.06*(strength or 1)))
   task.delay(.06,function()if model.Parent then model:PivotTo(base)end end)
@@ -290,9 +333,9 @@ function World.new(ctx)
   local att=self.HitPoint(view,cam.CFrame.Position)
   if att and view.Def then
    local tier=M.Pickaxes[corner:GetAttribute('PickaxeLevel')or 1]
-   fx().Hit(att.WorldPosition,att:GetAttribute('Normal'),oreColor(view.Def),Enum.Material.Slate,tier and tier.FX or 1,corner:GetAttribute('HitQuality'),corner:GetAttribute('HitCrit'),true)
-   self.Wobble(view,.6)
-   Audio.Play(corner:GetAttribute('HitCrit')and'Crit'or'Hit',view.Core,tier and tier.FX or 1)
+   fx().Hit(att.WorldPosition,att:GetAttribute('Normal'),oreColor(view.Def),Enum.Material.Slate,tier and tier.FX or 1,corner:GetAttribute('HitQuality'),corner:GetAttribute('HitCrit'),true,tier and tier.Theme)
+   self.Wobble(view,.6,att)
+   Audio.Play(corner:GetAttribute('HitCrit')and'Crit'or'Hit',view.Core,tier and tier.FX or 1,tier and tier.Sound)
   end
  end
  local function onOre(view)
@@ -403,6 +446,10 @@ function World.new(ctx)
   end))
   if ctx.Anim then ctx.Anim.RemoteTraining(corner,false)end
   table.insert(view.Connections,corner:GetAttributeChangedSignal('HitSerial'):Connect(function()onHit(view)end))
+  -- Other miners hold their pickaxe ready while their session is open.
+  table.insert(view.Connections,corner:GetAttributeChangedSignal('Active'):Connect(function()
+   if ctx.Anim and ctx.Anim.RemoteActive then ctx.Anim.RemoteActive(corner)end
+  end))
   table.insert(view.Connections,corner:GetAttributeChangedSignal('OwnerUserId'):Connect(function()
    applyPromptAccess(view);updateRack(view);if view.Core then buildPile(view,false)end
   end))

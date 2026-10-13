@@ -9,8 +9,11 @@ local Models=require(RS:WaitForChild('Mining'):WaitForChild('MiningModels'))
 local M=Config.Mining
 local yardsFolder=workspace:WaitForChild('DOGROTS_District'):WaitForChild('04_PlayerYards')
 
-local LAYOUT_VERSION=24
-local PAD_SIZE=Vector3.new(23,.5,18)
+local LAYOUT_VERSION=25
+-- v25 (DOGROTS pickaxe pack): a wider dig site stretched along the garden edge, with satellite
+-- ore outcrops (Attachments "OreSat*" on the core; the client draws them) around the main pile.
+local PAD_SIZE=Vector3.new(31,.5,20)
+local PAD_SHIFT=1 -- the pad centre sits this many studs towards the walkway from the corner frame
 
 local function part(parent,name,size,cf,color,mat,props)
  local p=Models.Part(parent,name,size,cf,color,mat,props);return p
@@ -96,10 +99,18 @@ local function build(yard:Model):Model
  root:SetAttribute('LayoutVersion',LAYOUT_VERSION)
  local top=PAD_SIZE.Y*.5+.12
  local stone,trim,dark=rgb(92,84,76),rgb(118,104,88),rgb(58,52,48)
- part(root,'MiningPad',PAD_SIZE,cf*CFrame.new(0,.12,0),stone,Enum.Material.Slate,{CanCollide=true,CanQuery=true})
+ local padCF=cf*CFrame.new(0,0,-PAD_SHIFT)
+ part(root,'MiningPad',PAD_SIZE,padCF*CFrame.new(0,.12,0),stone,Enum.Material.Slate,{CanCollide=true,CanQuery=true})
  local hx,hz=PAD_SIZE.X*.5,PAD_SIZE.Z*.5
  for i,row in ipairs({{0,-hz+.4,PAD_SIZE.X+.6,.8},{0,hz-.4,PAD_SIZE.X+.6,.8},{-hx+.4,0,.8,PAD_SIZE.Z},{hx-.4,0,.8,PAD_SIZE.Z}})do
-  part(root,'Border'..i,Vector3.new(row[3],.7,row[4]),cf*CFrame.new(row[1],top,row[2]),trim,Enum.Material.Slate,{CanCollide=true})
+  part(root,'Border'..i,Vector3.new(row[3],.7,row[4]),padCF*CFrame.new(row[1],top,row[2]),trim,Enum.Material.Slate,{CanCollide=true})
+ end
+ -- Gravel patches and quarry cracks so the bigger site reads as a dig field, not a slab.
+ for i,g in ipairs({{-6,-6.5,5,3.6,20},{7,-7.2,6,3.2,-14},{-2,6.5,4.2,2.6,8},{11,4,3.6,2.4,30},{-11.5,-6,3.2,2.2,-25}})do
+  part(root,'Gravel'..i,Vector3.new(g[3],.08,g[4]),at(g[1],top+.01,g[2])*CFrame.Angles(0,math.rad(g[5]),0),rgb(112,100,88),Enum.Material.Pebble,{CastShadow=false})
+ end
+ for i,c in ipairs({{-3,-8.6,3.4,60},{5.5,-8.2,2.8,-40},{-9.6,2.6,2.6,15},{9.4,-2.6,3,75}})do
+  part(root,'Crack'..i,Vector3.new(.22,.05,c[3]),at(c[1],top+.02,c[2])*CFrame.Angles(0,math.rad(c[4]),0),rgb(36,30,28),Enum.Material.Slate,{CastShadow=false})
  end
  -- Gold guide stripe from the walkway edge to the strike spot.
  part(root,'GuideStripe',Vector3.new(1.1,.06,4.2),at(0,top+.02,7),rgb(232,190,80),Enum.Material.Neon,{CastShadow=false})
@@ -113,10 +124,18 @@ local function build(yard:Model):Model
  local stand=Instance.new('Attachment');stand.Name='MinerStand';stand.Parent=core
  local standPos=at(0,top+3,4.5).Position
  stand.WorldCFrame=CFrame.lookAt(standPos,Vector3.new(oreCF.Position.X,standPos.Y,oreCF.Position.Z))
+ -- Satellite outcrops: smaller piles of the same ore around the main one (drawn by the client,
+ -- every circle may land on any of them). Attachment CFrame = pile ground centre; Scale = size.
+ for i,o in ipairs({{-8.6,-5.2,.5},{8.6,-5.6,.5},{-12.4,-7.2,.36},{12.6,-7.0,.36}})do
+  local pad=at(o[1],top,o[2])
+  part(root,'OreSatBase'..i,Vector3.new(.5,6.4*o[3]+1.2,6.4*o[3]+1.2),pad*CFrame.new(0,.15,0)*CFrame.Angles(0,0,math.rad(90)),dark,Enum.Material.Basalt,{Shape=Enum.PartType.Cylinder,CanCollide=true})
+  local a=Instance.new('Attachment');a.Name='OreSat'..i;a:SetAttribute('Scale',o[3]);a.Parent=core
+  a.WorldCFrame=pad*CFrame.new(0,.42,0)
+ end
  prompt(core,'MiningOrePrompt','Mine','Ore pile',10)
  click(core,'MiningOreClick')
  -- PICKAXE PLAQUE: a sign with a pickaxe icon; pressing it opens the pickaxe market.
- local signCF=at(8.6,top,.5)
+ local signCF=at(12.2,top,.5)
  for s=-1,1,2 do part(root,'SignPost',Vector3.new(.4,5.4,.4),signCF*CFrame.new(s*2.05,2.7,.25),rgb(84,58,36),Enum.Material.WoodPlanks,{CanCollide=true})end
  local board=part(root,'MiningPickaxeShop',Vector3.new(4.4,3.5,.35),signCF*CFrame.new(0,3.55,0),rgb(110,76,46),Enum.Material.WoodPlanks,{CanCollide=true,CanQuery=true})
  part(root,'SignRoof',Vector3.new(5.1,.3,1.2),signCF*CFrame.new(0,5.5,.1),rgb(70,46,30),Enum.Material.WoodPlanks)
@@ -130,9 +149,9 @@ local function build(yard:Model):Model
  prompt(board,'MiningPickaxeShopPrompt','Open','Pickaxes',7)
  click(board,'MiningPickaxeShopClick')
  -- STRENGTH STATION: rubber platform, two-shelf rack with the 7 weights, and a sign.
- local gymCF=at(-8.4,top,1)
+ local gymCF=at(-12.3,top,1.4)
  part(root,'GymMat',Vector3.new(5.6,.16,6),gymCF*CFrame.new(0,.08,0),rgb(36,40,46),Enum.Material.Rubber)
- local rackCF=at(-8.4,top,-2.4)
+ local rackCF=at(-12.3,top,-2.2)
  local rack=part(root,'MiningStrengthRack',Vector3.new(5.6,.3,1.2),rackCF*CFrame.new(0,2.9,0),rgb(54,58,66),Enum.Material.Metal,{CanCollide=true,CanQuery=true})
  for s=-1,1,2 do part(root,'RackPost',Vector3.new(.35,3.1,1.2),rackCF*CFrame.new(s*2.65,1.55,0),rgb(44,48,54),Enum.Material.Metal,{CanCollide=true})end
  part(root,'RackShelf',Vector3.new(5.6,.25,1.3),rackCF*CFrame.new(0,1.05,0),rgb(54,58,66),Enum.Material.Metal,{CanCollide=true})
@@ -160,8 +179,8 @@ local function build(yard:Model):Model
  end)
  prompt(rack,'MiningStrengthPrompt','Train','Weights',7)
  click(rack,'MiningStrengthClick')
- -- Decor in the free back corners: a loaded mine cart (kennel side) and a lantern with crates.
- local cartCF=at(8.4,top,-6.4)*CFrame.Angles(0,math.rad(8),0)
+ -- Decor: a loaded mine cart by the walkway (kennel side), a lantern with crates, rails.
+ local cartCF=at(13.4,top,6.8)*CFrame.Angles(0,math.rad(-12),0)
  part(root,'CartBody',Vector3.new(3,1.7,2.1),cartCF*CFrame.new(0,1.35,0),rgb(96,70,48),Enum.Material.WoodPlanks,{CanCollide=true})
  part(root,'CartRim',Vector3.new(3.2,.28,2.3),cartCF*CFrame.new(0,2.25,0),rgb(70,70,74),Enum.Material.Metal)
  for _,o in ipairs({{-1,-1.1},{1,-1.1},{-1,1.1},{1,1.1}})do
@@ -170,12 +189,22 @@ local function build(yard:Model):Model
  for i=1,4 do
   part(root,'CartOre',Vector3.new(.95,.75,.85),cartCF*CFrame.new(-1.05+i*.42,2.4+(i%2)*.2,(i%2==0)and .4 or-.3)*CFrame.Angles(i,i*.7,0),rgb(150,140,130),Enum.Material.Slate)
  end
- local postCF=at(-10.3,top,-7.4)
+ local postCF=at(-14.6,top,-8.3)
  local post=part(root,'LanternPost',Vector3.new(.45,6.2,.45),postCF*CFrame.new(0,3.1,0),rgb(40,36,34),Enum.Material.Metal,{CanCollide=true})
  local lantern=part(root,'Lantern',Vector3.new(1,1.2,1),post.CFrame*CFrame.new(0,3.55,0),rgb(255,196,110),Enum.Material.Neon,{CastShadow=false})
  local l=Instance.new('PointLight');l.Range=13;l.Brightness=1.1;l.Color=rgb(255,190,120);l.Shadows=false;l.Parent=lantern
- for i,o in ipairs({{-7,-7.3,0},{-7.9,-6.6,.4},{-7.4,-7,1.1}})do
+ for i,o in ipairs({{14.4,-2.4,0},{14.6,-3.8,.4},{14.5,-3.1,1.1}})do
   part(root,'Crate'..i,Vector3.new(1.3,1.1,1.3),at(o[1],top+.55+(i==3 and 1.1 or 0),o[2])*CFrame.Angles(0,o[3],0),rgb(150,110,70),Enum.Material.WoodPlanks,{CanCollide=i~=3})
+ end
+ -- Rails from the cart into the dig field.
+ for _,x in ipairs({-.8,.8})do part(root,'Rail',Vector3.new(.22,.2,9),at(13.4,top+.1,2.8)*CFrame.Angles(0,math.rad(-12),0)*CFrame.new(x,0,0),rgb(120,110,100),Enum.Material.Metal)end
+ for i=-3,3 do part(root,'Sleeper',Vector3.new(2.4,.16,.45),at(13.4,top+.02,2.8)*CFrame.Angles(0,math.rad(-12),0)*CFrame.new(0,0,i*1.3),rgb(86,58,36),Enum.Material.WoodPlanks)end
+ -- Lamp posts at the walkway corners light the bigger site at night.
+ for i,k in ipairs({-14.6,14.6})do
+  local lp=at(k,top,10.2)
+  part(root,'SiteLampPost'..i,Vector3.new(.35,5.2,.35),lp*CFrame.new(0,2.6,0),rgb(40,36,34),Enum.Material.Metal,{CanCollide=true})
+  local bulb=part(root,'SiteLamp'..i,Vector3.new(.8,.8,.8),lp*CFrame.new(0,5.4,0),rgb(255,206,130),Enum.Material.Neon,{CastShadow=false,Shape=Enum.PartType.Ball})
+  local pl=Instance.new('PointLight');pl.Range=14;pl.Brightness=.9;pl.Color=rgb(255,196,130);pl.Shadows=false;pl.Parent=bulb
  end
  root:SetAttribute('OwnerUserId',0)
  root.Parent=yard
@@ -216,40 +245,62 @@ local function setPrompts(root,enabled)
 end
 
 -- HELD ITEMS ----------------------------------------------------------------------------------
-local function hand(character)
- return character and(character:FindFirstChild('RightHand')or character:FindFirstChild('Right Arm'))
+-- The pickaxe is always on the owner: on the back while walking, in the hand while mining (the
+-- swap is the "draw" the client animates). Twin Claws are gloves: one on each hand, always.
+local function limb(character,r15,r6)
+ return character and(character:FindFirstChild(r15)or character:FindFirstChild(r6))
 end
 local function clearHeld(character,name)
  local old=character and character:FindFirstChild(name);if old then old:Destroy()end
 end
-local function attach(character,name,model,gripCF)
- local h=hand(character);if not h then return end
+local function attach(character,name,model,partName,gripCF)
+ local h=limb(character,partName[1],partName[2]);if not h then return end
  clearHeld(character,name)
  model.Name=name;Models.WeldToSelf(model)
  local handle=model.PrimaryPart
+ -- R6 arms are 2 studs long: hold at the bottom of the arm.
+ if h.Name=='Right Arm'or h.Name=='Left Arm'then gripCF=CFrame.new(0,-.85,0)*gripCF end
  local weld=Instance.new('Weld');weld.Name='HandGrip';weld.Part0=h;weld.Part1=handle;weld.C0=gripCF;weld.Parent=handle
  model.Parent=character
 end
+local RIGHT,LEFT,TORSO={'RightHand','Right Arm'},{'LeftHand','Left Arm'},{'UpperTorso','Torso'}
 local PICK_GRIP=CFrame.new(0,-.25,-.1)*CFrame.Angles(-math.pi/2,0,0)*CFrame.new(0,1.3,0)
+local BACK_GRIP=CFrame.new(0,.1,.78)*CFrame.Angles(0,0,math.rad(-38))
+local GLOVE_GRIP=CFrame.new(0,-.2,0)*CFrame.Angles(math.pi,0,0)
 local WEIGHT_GRIP=CFrame.new(0,-.3,0)
 local function syncHeld(player)
  local character=player.Character;if not character then return end
  local active=(player:GetAttribute('MiningActiveUntil')or 0)>=os.time()
+ local lifting=(player:GetAttribute('MiningTrainingUntil')or 0)>=os.time()and not active
  local level=player:GetAttribute('MiningPickaxe')or 0
+ local def=M.Pickaxes[level]
  local held=character:FindFirstChild('MiningHeldPickaxe')
- if active and M.Pickaxes[level]then
-  if not held or held:GetAttribute('Level')~=level then
-   local model=Models.Pickaxe(M.Pickaxes[level],level);model:SetAttribute('Level',level)
-   attach(character,'MiningHeldPickaxe',model,PICK_GRIP)
+ local off=character:FindFirstChild('MiningHeldPickaxeL')
+ if def then
+  local glove=(def.Visual or{}).Grip=='Glove'
+  local mount=glove and'Glove'or(active and'Hand'or'Back')
+  if not held or held:GetAttribute('Level')~=level or held:GetAttribute('Mount')~=mount then
+   local model=Models.Pickaxe(def,level);model:SetAttribute('Level',level);model:SetAttribute('Mount',mount)
+   if mount=='Back'then attach(character,'MiningHeldPickaxe',model,TORSO,BACK_GRIP)
+   elseif mount=='Glove'then attach(character,'MiningHeldPickaxe',model,RIGHT,GLOVE_GRIP)
+   else attach(character,'MiningHeldPickaxe',model,RIGHT,PICK_GRIP)end
   end
- elseif held then held:Destroy()end
- local lifting=(player:GetAttribute('MiningTrainingUntil')or 0)>=os.time()
+  if glove then
+   if not off or off:GetAttribute('Level')~=level then
+    local model=Models.PickaxeOffhand(def,level)
+    if model then model:SetAttribute('Level',level);model:SetAttribute('Mount','Glove');attach(character,'MiningHeldPickaxeL',model,LEFT,GLOVE_GRIP)end
+   end
+  elseif off then off:Destroy()end
+ else
+  if held then held:Destroy()end
+  if off then off:Destroy()end
+ end
  local weightLevel=player:GetAttribute('MiningWeight')or 0
  local weight=character:FindFirstChild('MiningHeldWeight')
- if lifting and M.Weights[weightLevel]and not active then
+ if lifting and M.Weights[weightLevel]then
   if not weight or weight:GetAttribute('Level')~=weightLevel then
    local model=Models.Weight(M.Weights[weightLevel],weightLevel);model:SetAttribute('Level',weightLevel)
-   attach(character,'MiningHeldWeight',model,WEIGHT_GRIP)
+   attach(character,'MiningHeldWeight',model,RIGHT,WEIGHT_GRIP)
   end
  elseif weight then weight:Destroy()end
 end
@@ -260,7 +311,9 @@ local function unbind(yard)
  local root=yard:FindFirstChild('MiningCorner')
  if b then
   for _,c in ipairs(b.Connections)do c:Disconnect()end
-  if b.Player.Character then clearHeld(b.Player.Character,'MiningHeldPickaxe');clearHeld(b.Player.Character,'MiningHeldWeight')end
+  if b.Player.Character then
+   for _,n in ipairs({'MiningHeldPickaxe','MiningHeldPickaxeL','MiningHeldWeight'})do clearHeld(b.Player.Character,n)end
+  end
   if root then pcall(function()(root::Model):RemovePersistentPlayer(b.Player)end)end
  end
  if root then apply(root,nil);setPrompts(root,false)end

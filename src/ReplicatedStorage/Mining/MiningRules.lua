@@ -26,6 +26,10 @@ local function check(ok,key,...)if not ok then error(code(key,...),0)end end
 
 -- v1 (MINING_POLISH_1) stored only the ore index; these were its ids in order.
 local LEGACY_ORE_IDS={'Limestone','Copper','Iron','Quartz','Amethyst','Ruby','Emerald','Meteorite','VoidCrystal'}
+-- v2 saved an index into the old 7-pickaxe list (Wooden, Stone, Iron, Steel, Crystal, Inferno,
+-- Voidbreaker); v3 (the DOGROTS pickaxe pack) maps each to the pack pickaxe with the closest
+-- Strength requirement at or below the old one, so nobody loses power they already earned.
+local LEGACY_PICKAXES={1,3,4,6,8,11,15}
 
 function Rules.OreById(M,id)
  for i,ore in ipairs(M.Ores)do if ore.Id==id then return ore,i end end
@@ -36,7 +40,7 @@ local function oreMid(ore)return math.floor((ore.ValueMin+ore.ValueMax)/2)end
 
 function Rules.New(M)
  local ore=M.Ores[1]
- return {Version=2,Strength=0,PickaxeOwned=0,PickaxeLevel=0,WeightOwned=0,WeightLevel=0,Hits=0,OresBroken=0,CoinsEarned=0,
+ return {Version=3,Strength=0,PickaxeOwned=0,PickaxeLevel=0,WeightOwned=0,WeightLevel=0,Hits=0,OresBroken=0,CoinsEarned=0,
   TrainingReps=0,OreIndex=1,OreId=ore.Id,OreMaxHP=ore.HP,OreHP=ore.HP,OreValue=oreMid(ore),OreEarned=0,OreSerial=1,
   Combo=0,BestOre=0,Collection={},LastHitAt=0,LastTrainAt=0,ActiveUntil=0,TrainingUntil=0,LastPayout=0,LastDamage=0,LastQuality=1,
   LastBreak=false,LastCrit=false,LastBrokenId='',LastBrokenValue=0,LastStone=0,StoneMined=0}
@@ -46,6 +50,14 @@ end
 function Rules.Normalize(m,M)
  if type(m)~='table'then m=Rules.New(M)end
  local pickCount,weightCount=#M.Pickaxes,#M.Weights
+ if (tonumber(m.Version)or 1)<3 then
+  local function remap(level)
+   level=int(level,0)
+   if level<1 then return 0 end
+   return LEGACY_PICKAXES[math.min(level,#LEGACY_PICKAXES)]
+  end
+  m.PickaxeOwned=remap(m.PickaxeOwned);m.PickaxeLevel=remap(m.PickaxeLevel)
+ end
  m.Strength=math.clamp(int(m.Strength,0),0,M.MaxStrength)
  m.PickaxeOwned=math.clamp(int(m.PickaxeOwned,0),0,pickCount)
  m.PickaxeLevel=math.clamp(int(m.PickaxeLevel,0),0,m.PickaxeOwned)
@@ -82,7 +94,7 @@ function Rules.Normalize(m,M)
  m.TrainingUntil=tonumber(m.TrainingUntil)or 0
  m.LastQuality=math.clamp(int(m.LastQuality,1),1,2);m.LastBreak=m.LastBreak==true;m.LastCrit=m.LastCrit==true
  m.LastBrokenId=type(m.LastBrokenId)=='string'and m.LastBrokenId or''
- m.Version=2
+ m.Version=3
  return m
 end
 

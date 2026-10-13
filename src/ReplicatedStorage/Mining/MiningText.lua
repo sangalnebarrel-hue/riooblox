@@ -105,6 +105,24 @@ local T={
  BUSY={'Wait a moment','Подожди немного'},
  COLLECTION={'Ores broken: %1','Разбито руды: %1'},
  STAT_LINE={'Damage %1 · %2 circle(s) · crit %3%','Урон %1 · кругов: %2 · крит %3%'},
+ CAMERA_HINT={'Right mouse / Q-E: turn camera · wheel: zoom','ПКМ / Q-E: поворот камеры · колесо: зум'},
+ CAMERA_HINT_TOUCH={'Swipe: turn camera · pinch: zoom','Свайп: поворот камеры · щипок: зум'},
+ CAMERA_HINT_PAD={'Right stick: turn camera','Правый стик: поворот камеры'},
+ -- Pickaxe market (Kit window)
+ SHOP_SUB={'%1 pickaxes · each one hits differently','%1 кирок · каждая бьёт по-своему'},
+ RARITY={'Rarity','Редкость'},
+ SPEED={'Speed','Скорость'},
+ POWER={'Power','Мощь'},
+ STRENGTH_NEED={'Needs %1 💪','Нужно %1 💪'},
+ OWNED={'OWNED','КУПЛЕНО'},
+ EQUIP={'EQUIP','ВЗЯТЬ В РУКИ'},
+ TRY_HIT={'TRY A HIT','ПРОБНЫЙ УДАР'},
+ NEXT_UP={'NEXT','СЛЕДУЮЩАЯ'},
+ YOU_HAVE={'You have','У тебя'},
+ PICK_TRAIT={'Special','Фишка'},
+ BREAKS={'Hits to break','Ударов до разлома'},
+ LOCKED_SHORT={'LOCKED','ЗАКРЫТО'},
+
 }
 Text.Table=T
 
