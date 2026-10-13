@@ -282,7 +282,7 @@ bind(dex.Discoveries,function() switch('Discoveries') end)
 
 renderTrade=function()
  if not snapshot then return end
- if snapshot.Trade and Navigation.Owner=='Page'and gui:GetAttribute('OpenMenu')=='Trade'then Navigation.OpenScreen('Trade');return end
+ if snapshot.Trade and Navigation.Owner=='Page'and gui:GetAttribute('OpenMenu')=='Trade'then local ok,trade=pcall(require,gui.Modules:FindFirstChild('TradeScreen'));if ok and type(trade)=='table'then trade.Open()end;return end -- Trade 2.0 kit window (docs/TRADE.md), never the old Menus trade
  local page=pages.TradePage;local s=page.ServerPlayersPanel.Players
  clearRows(s);local rows=0;local selected
  for i,p in ipairs(snapshot.Players or {}) do
