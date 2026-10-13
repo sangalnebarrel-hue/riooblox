@@ -31,6 +31,8 @@ local function percent(chance)return string.format('%.6g%%',math.max(0,chance or
 function S.Odds(c)
  local U,s,p,W,H=c.U,c.State,c.Snapshot.Profile,c.W,c.H;local P=U.Colors
  local function oddsColor(rarity)return rarity=='Common'and P.muted or U.Rarity[rarity]or P.muted end
+ -- The rarity colour as readable text on a white card (gold and pink darken toward navy).
+ local function oddsInk(rarity)return oddsColor(rarity):Lerp(P.edge,.3)end
  local sc=U.Scroll(c.Parent,'LuckyOddsView',0,0,W,H)
  local offer=type(s.LuckyOffer)=='table'and s.LuckyOffer or nil
  local owned=type(s.BlockOddsUid)=='string'and(p.OwnedBlocks or{})[s.BlockOddsUid]or nil
@@ -38,15 +40,15 @@ function S.Odds(c)
  local rows=offer and offer.Odds or owned and owned.Odds or s.BlockCatalog and s.BlockCatalog.Odds[tier]
  local y=8
  if offer then
-  U.Text(sc,tier:upper()..' LUCKY BLOCK · '..U.Fmt(offer.Price or C.ConveyorPrices[tier])..' COINS',10,y,W-28,43,24,P.gold,true);y+=49
- elseif owned then U.Text(sc,tier:upper()..' · YOUR LUCKY BLOCK',10,y,W-28,43,24,P.gold,true);y+=49
+  U.Section(sc,tier:upper()..' LUCKY BLOCK · '..U.Fmt(offer.Price or C.ConveyorPrices[tier])..' COINS',10,y,W-28,42);y+=50
+ elseif owned then U.Section(sc,tier:upper()..' · YOUR LUCKY BLOCK',10,y,W-28,42);y+=50
  else
   U.Cycle(sc,'OddsTier',tier:upper()..' LUCKY BLOCK',C.Rarities,tier,10,y,W-28,function(value)s.BlockOddsTier=value;s.BlockOddsPage=1;c.Draw()end);y+=49
  end
  local explanation=owned and owned.Odds and 'These chances were saved for this exact block.'or offer and 'The block keeps moving. Buy before it leaves the tongue. One block gives one dog.'or 'Current server chances. Each percentage is per block; a higher block tier improves its reward pool.'
  U.Text(sc,explanation,10,y,W-28,55,17,P.muted);y+=62
  if not rows then
-  U.Text(sc,s.BlockMessage or 'Loading exact server chances…',10,y,W-28,55,20,P.gold)
+  U.Text(sc,s.BlockMessage or 'Loading exact server chances…',10,y,W-28,55,19,s.BlockMessage and U.TextGold or P.muted)
   if not s.BlockBusy and not s.BlockCatalogFailed then
    s.BlockCatalogFailed=true;request(c,'Catalog',{},function(value)s.BlockCatalog=value;s.BlockCatalogFailed=nil end)
   elseif s.BlockCatalogFailed and not s.BlockBusy then
@@ -62,7 +64,8 @@ function S.Odds(c)
  local columns=c.Mobile and 2 or 3;local width=(W-28-(columns-1)*10)/columns
  for i,rarity in ipairs(C.Rarities)do
   local card=U.Panel(sc,'OddsTier'..i,10+((i-1)%columns)*(width+10),y+math.floor((i-1)/columns)*55,width,47)
-  U.Text(card,rarity..' · '..percent(totals[rarity]),8,4,width-16,37,18,oddsColor(rarity),true)
+  local tier=U.Frame(card,'Tier',7,9,5,29,oddsColor(rarity));U.New('UICorner',{CornerRadius=UDim.new(.5,0)},tier)
+  U.Text(card,rarity..' · '..percent(totals[rarity]),20,4,width-28,37,18,oddsInk(rarity),true)
  end
  y+=math.ceil(#C.Rarities/columns)*55+7
  if offer then
@@ -72,21 +75,21 @@ function S.Odds(c)
    local clock=U.Text(sc,'Reservation: '..string.format('%02d:%02d:%02d',math.floor(left/3600),math.floor(left/60)%60,math.floor(left)%60),10,y,W-28,28,17,P.muted)
    clock:SetAttribute('Deadline',offer.ExpiresAt);clock:SetAttribute('CountdownStyle','Clock');clock:SetAttribute('CountdownPrefix','Reservation: ');y+=34
   end
-  if expired then U.Text(sc,'This offer expired. Close this page and choose a block on the conveyor.',10,y,W-28,56,18,P.gold);y+=62 end
+  if expired then U.Text(sc,'This offer expired. Close this page and choose a block on the conveyor.',10,y,W-28,56,18,U.TextGold);y+=62 end
   U.Button(sc,'BuyBlock',expired and 'OFFER EXPIRED'or s.BlockBusy and 'SAVING…'or 'BUY · '..U.Fmt(offer.Price or C.ConveyorPrices[tier])..' COINS',10,y,W-28,46,not expired and not s.BlockBusy and function()
    request(c,'BuyBlock',{BlockUid=offer.BlockUid,OddsVersion=offer.OddsVersion},function()s.LuckyOffer=nil;N.Close()end)
   end or nil,P.green);y+=54
  end
- if s.BlockMessage then U.Text(sc,s.BlockMessage,10,y,W-28,52,18,P.gold);y+=58 end
+ if s.BlockMessage then U.Text(sc,s.BlockMessage,10,y,W-28,52,18,U.TextGold);y+=58 end
  table.sort(ordered,function(a,b)if a.Chance~=b.Chance then return a.Chance>b.Chance end;return tostring(a.Id)<tostring(b.Id)end)
  local pageSize=12;local pages=math.max(1,math.ceil(#ordered/pageSize));local page=math.clamp(s.BlockOddsPage or 1,1,pages)
- U.Text(sc,'ALL DOGS · '..#ordered..' possible · page '..page..' / '..pages,10,y,W-28,33,19,P.text,true);y+=39
+ U.Section(sc,'ALL DOGS · '..#ordered..' possible · page '..page..' / '..pages,10,y,W-28,36);y+=44
  local dogColumns=c.Mobile and 1 or 2;local dogWidth=(W-28-(dogColumns-1)*12)/dogColumns
  for i=(page-1)*pageSize+1,math.min(page*pageSize,#ordered)do
   local row=ordered[i];local index=i-(page-1)*pageSize-1
   local card=U.Panel(sc,'DogOdds'..i,10+(index%dogColumns)*(dogWidth+12),y+math.floor(index/dogColumns)*73,dogWidth,65)
   U.Text(card,row.Name or row.Id,9,3,dogWidth-18,28,18,P.text,true)
-  U.Text(card,(row.Rarity or '')..' · '..percent(row.Chance),9,32,dogWidth-18,27,17,oddsColor(row.Rarity))
+  U.Text(card,(row.Rarity or '')..' · '..percent(row.Chance),9,32,dogWidth-18,27,17,oddsInk(row.Rarity))
  end
  y+=math.ceil(math.min(pageSize,#ordered-(page-1)*pageSize)/dogColumns)*73+8
  U.Button(sc,'OddsPrevious','‹ PREVIOUS',10,y,(W-40)/2,40,page>1 and function()s.BlockOddsPage=page-1;c.Draw()end or nil,P.blue)
@@ -105,7 +108,7 @@ function S.Build(c)
    local now=c.Now and c.Now()or os.time();local ready=(occupied.ReadyAt or math.huge)<=now
    art(c,sc,occupied.Tier,math.max(12,(W-240)/2),6,240,200)
    U.Center(sc,occupied.Tier:upper()..' LUCKY BLOCK',12,212,W-24,45,26,P.text,true)
-   local timer=U.Center(sc,ready and 'READY TO OPEN'or 'PREPARING...',12,268,W-24,42,23,P.gold,true)
+   local timer=U.Center(sc,ready and 'READY TO OPEN'or 'PREPARING...',12,268,W-24,42,23,ready and U.TextGreen or U.TextGold,true)
    if not ready then timer:SetAttribute('Deadline',occupied.ReadyAt);timer:SetAttribute('CountdownPrefix','Ready in ');timer:SetAttribute('CountdownStyle','Clock')end
    U.Text(sc,'Your reward is safe. Press OPEN when the timer ends.',12,317,W-24,54,18,P.muted)
    U.Button(sc,'OpenBlock',s.BlockBusy and 'OPENING...'or ready and 'OPEN'or 'WAIT FOR TIMER',12,384,W-24,58,ready and not s.BlockBusy and function()
@@ -113,7 +116,7 @@ function S.Build(c)
     N.Close()
     request(c,'OpenBlock',{Uid=occupied.Uid,Slot=ctx.Slot,YardId=ctx.YardId},function()end)
    end or nil,P.green)
-   if s.BlockMessage then U.Text(sc,s.BlockMessage,12,455,W-24,70,18,P.gold)end
+   if s.BlockMessage then U.Text(sc,s.BlockMessage,12,455,W-24,70,18,U.TextGold)end
    return
   end
   U.Text(sc,'YOUR YARD · PAD '..ctx.Slot..'\nChoose one owned block. Placement starts its timer.',12,6,W-24,74,23,P.text,true)
@@ -121,7 +124,7 @@ function S.Build(c)
   for uid,b in pairs(p.OwnedBlocks or{})do if b.State=='Stored'or b.State=='Carried'then table.insert(rows,{Key=uid,Uid=uid,Tier=b.Tier,Quantity=1})end end
   for tier,n in pairs(p.LuckyCredits or{})do if n>0 then table.insert(rows,{Key='credit:'..tier,Tier=tier,Quantity=n,CreditTier=tier})end end
   table.sort(rows,function(a,b)return a.Tier==b.Tier and a.Key<b.Key or C.Rank(a.Tier)<C.Rank(b.Tier)end)
-  if #rows==0 then U.Text(sc,'No Lucky Blocks in Inventory',12,100,W-24,85,25,P.gold,true);return end
+  if #rows==0 then U.Center(sc,'No Lucky Blocks in Inventory',12,100,W-24,85,23,P.muted,true);return end
   local cols=c.Mobile and 1 or 3;local width=(W-24-(cols-1)*14)/cols
   s.PlacementRequests=s.PlacementRequests or{}
   for i,row in ipairs(rows)do
@@ -138,7 +141,7 @@ function S.Build(c)
    end or nil,P.green)
    U.Button(panel,'BlockOdds','CHANCES',10,270,width-20,35,function()N.OpenScreen('LuckyOdds',{LuckyOffer=false,BlockOddsUid=row.Uid or false,BlockOddsTier=row.Tier,BlockOddsPage=1,BlockCatalog=false,BlockCatalogFailed=false,BlockMessage=false})end,P.blue)
   end
-  if s.BlockMessage then U.Text(sc,s.BlockMessage,12,100+math.ceil(#rows/cols)*334,W-24,75,20,P.gold)end
+  if s.BlockMessage then U.Text(sc,s.BlockMessage,12,100+math.ceil(#rows/cols)*334,W-24,75,19,U.TextGold)end
   return
  end
 end

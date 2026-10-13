@@ -4,13 +4,13 @@ local tiers={'All','TINY','SMALL','STANDARD','HEAVY','MASSIVE','COLOSSAL','TITAN
 function Screens.Build(c)
  local U,p,s,root,W,H=c.U,c.Snapshot.Profile,c.State,c.Parent,c.W,c.H;local P=U.Colors
  local function change(k,v)s[k]=v;c.Draw()end
- local function section(parent,title,x,y,w)local b=U.Header(parent,'Section',x,y,w,38);U.Text(b,title,14,0,w-28,38,24,P.gold,true);return b end
+ local function section(parent,title,x,y,w)return U.Section(parent,title,x,y,w,38)end
  local function info(parent,label,value,x,y,w)U.Text(parent,label,x,y,w,20,14,P.muted);U.Text(parent,value,x,y+19,w,29,19,nil,true)end
  local function list(parent,n,values,cols,ch,w,h,callback)
   local grid,cw=U.Grid(parent,n,0,0,w,h,cols,ch)
   for i,x in ipairs(values)do local card=U.Panel(grid,'ItemCard',0,0,cw,ch);card.LayoutOrder=i
-   local tone=U.Tiers[x.TierIndex or 3];if s.SelectedItem==x.ItemUid then U.Glow(card,P.gold)else U.Stroke(card,tone,1.4)end
-   V.Item(card,x,7,6,cw-14,ch-121);if x.Mutation~='NORMAL'then U.Text(card,x.Mutation,6,6,cw-44,21,11,P.gold,true)end;U.Center(card,x.DisplayName,6,ch-113,cw-12,52,18,nil,true)
+   local tone=U.Tiers[x.TierIndex or 3];if s.SelectedItem==x.ItemUid then U.Glow(card)else U.Stroke(card,tone:Lerp(P.edge,.45),2)end
+   V.Item(card,x,7,6,cw-14,ch-121);if x.Mutation~='NORMAL'then U.Text(card,x.Mutation,8,6,cw-46,21,12,U.TextGold,true)end;U.Center(card,x.DisplayName,6,ch-113,cw-12,52,18,nil,true)
    U.Center(card,U.Weight(x.WeightKg),5,ch-59,cw-10,23,15,P.muted)
    U.Badge(card,x.WeightTier or x.Class,8,ch-33,cw-16,tone)
    local click=U.New('TextButton',{Name='SelectItem',Text='',BackgroundTransparency=1,Size=UDim2.fromScale(1,1),ZIndex=4},card);click.Activated:Connect(function()callback(x)end)
@@ -26,9 +26,9 @@ function Screens.Build(c)
   local previewY=y;local previewW=width*.45;V.Item(sc,x,6,y,previewW-10,244)
   local rows={{'Exact weight',U.Weight(x.WeightKg)},{'Weight tier',x.WeightTier},{'Mutation',x.Mutation},{'Discovery chance',U.Odds(x.BaseDropChance)},{'Weight chance',U.Odds(x.WeightTierChance)},{'Mutation chance',U.Odds(x.MutationChance)},{'Combined odds',x.CombinedOdds and '1 in '..string.format('%.8g',x.CombinedOdds)or '—'},{'NPC value',U.Fmt(require(Rep.ItemValuation).Price(x))..' Cash'}}
   for _,v in ipairs(rows)do local pw=width-previewW-8;local b=U.Panel(sc,'Property',previewW+4,y,pw,43);U.Text(b,v[1],7,1,pw-14,16,11,P.muted);U.Text(b,v[2]or '—',7,17,pw-14,25,15,nil,true);y+=48 end
-  U.Text(sc,D[x.ItemId].Description~=''and D[x.ItemId].Description or 'Every find tells a story.',8,y,width-16,46,17,P.gold);y+=50
+  U.Text(sc,D[x.ItemId].Description~=''and D[x.ItemId].Description or 'Every find tells a story.',8,y,width-16,46,17,U.TextGold);y+=50
   U.Text(sc,'Collection: '..(p.Collection[x.ItemId]and 'DISCOVERED'or 'MISSING')..'\nOriginal finder: '..tostring(x.OriginalFinderUserId or x.FoundByUserId or '—')..'\n'..(x.FoundAt and os.date('!%d %b %Y, %H:%M UTC',x.FoundAt)or ''),8,y,width-16,78,15,P.muted);y+=82
-  if x.RecordAtCreation then local names={};for _,k in ipairs({'Personal','Server','Global'})do if x.RecordAtCreation[k]then table.insert(names,k)end end;if #names>0 then U.Text(sc,'RECORD AT FIND: '..table.concat(names,' / '),8,y,width-16,44,16,P.gold,true);y+=48 end end
+  if x.RecordAtCreation then local names={};for _,k in ipairs({'Personal','Server','Global'})do if x.RecordAtCreation[k]then table.insert(names,k)end end;if #names>0 then U.Text(sc,'RECORD AT FIND: '..table.concat(names,' / '),8,y,width-16,44,16,U.TextGold,true);y+=48 end end
   if owned then
    local dock=U.Panel(parent,'ItemActions',10,h-99,w-20,90);local dw=w-34
    U.Button(dock,'Favorite',x.Favorite and '★ FAVORITE'or '☆ FAVORITE',7,7,dw,37,function()c.Send('ItemFavorite',{Uid=x.ItemUid,Enabled=not x.Favorite})end,P.blue)
@@ -38,7 +38,7 @@ function Screens.Build(c)
   U.Frame(sc,'End',0,y,1,1).BackgroundTransparency=1
  end
  if c.Page=='Discoveries'then
-  local heading=U.Header(root,'DiscoveriesHeading',0,0,W,42);U.Center(heading,'DISCOVERIES',W*.24,0,W*.5,42,35,P.text,true);U.Text(root,'Found '..U.Count(p.Collection)..' / '..U.Count(D),W-220,5,210,30,20,P.gold,true)
+  local heading=U.Header(root,'DiscoveriesHeading',0,0,W,42);U.Center(heading,'DISCOVERIES',W*.24,0,W*.5,42,35,P.text,true);U.Text(root,'Found '..U.Count(p.Collection)..' / '..U.Count(D),W-220,5,210,30,20,U.TextGold,true)
   local detailW=c.Mobile and 0 or math.floor(W*.32);local leftW=W-detailW-(detailW>0 and 12 or 0)
   U.Search(root,'SearchFinds','Search discoveries…',s.FindSearch,0,49,leftW,function(v)change('FindSearch',v)end)
   local filters={{'FindDepth',{'All',1,2,3,4,5},function(v)return v=='All'and 'All depths'or Depth[tostring(v)].Name end},{'FindClass',{'All','Treasure','Artifact','Special','Secret','World Find'},function(v)return v=='All'and 'All classes'or v end},{'FindTier',tiers,function(v)return v=='All'and 'All weights'or v end},{'FindMutation',{'All','NORMAL','GOLDEN','RAINBOW','CURSED','GLITCHED'},function(v)return v=='All'and 'All types'or v end},{'FindSort',{'Newest','Heaviest','Lightest','Rarest','Value','Favorites'},function(v)return v end}}
@@ -63,9 +63,7 @@ function Screens.Build(c)
    local depth=Depth[tostring(i)];local count=0
    for _,id in ipairs(depth.Items)do if p.Collection[id]then count+=1 end end
    local selected=(s.CollectionDepth or 1)==i
-   local button=U.Button(sc,'Depth'..i,depth.Name..'\n'..count..' / '..#depth.Items,8+(i-1)%columns*(bw+10),122+math.floor((i-1)/columns)*72,bw,62,function()change('CollectionDepth',i)end,selected and P.purple or P.blue)
-   button.Caption.TextSize=18
-   if selected then U.Glow(button,P.gold)end
+   U.Tab(sc,'Depth'..i,depth.Name..'\n'..count..' / '..#depth.Items,8+(i-1)%columns*(bw+10),122+math.floor((i-1)/columns)*72,bw,62,function()change('CollectionDepth',i)end,selected,P.purple)
   end
   local y=136+math.ceil(5/columns)*72
   local depth=Depth[tostring(s.CollectionDepth or 1)]
@@ -105,8 +103,8 @@ function Screens.Build(c)
   local market=s.Market;local gy=fy+52
   if market then
    if not c.Mobile and #market.Items>0 then
-    local strip=U.Panel(root,'FeaturedListings',0,gy,lw,102);U.Text(strip,'LIVE LISTINGS',10,3,lw-20,22,15,P.gold,true);local fw=(lw-24)/3
-    for i=1,math.min(3,#market.Items)do local l=market.Items[i];local x=(i-1)*(fw+6)+6;V.Item(strip,l.Dog,x,28,65,63);U.Text(strip,l.Dog.DisplayName..'\n'..U.Fmt(l.Price)..' Cash',x+72,29,fw-78,60,16,P.gold,true)end;gy+=113
+    local strip=U.Panel(root,'FeaturedListings',0,gy,lw,102);U.Text(strip,'LIVE LISTINGS',10,3,lw-20,22,15,P.text,true);local fw=(lw-24)/3
+    for i=1,math.min(3,#market.Items)do local l=market.Items[i];local x=(i-1)*(fw+6)+6;V.Item(strip,l.Dog,x,28,65,63);U.Text(strip,l.Dog.DisplayName..'\n'..U.Fmt(l.Price)..' Cash',x+72,29,fw-78,60,16,U.TextGold,true)end;gy+=113
    end
    local g,cw=U.Grid(root,'MarketGrid',0,gy,lw,H-gy,math.max(1,math.floor(lw/185)),232)
    for i,l in ipairs(market.Items)do local x=l.Dog;local card=U.Panel(g,'ListingCard',0,0,cw,232);card.LayoutOrder=i;V.Item(card,x,5,5,cw-10,117);U.Center(card,x.DisplayName,5,121,cw-10,48,18,nil,true);U.Center(card,U.Weight(x.WeightKg)..' · '..x.Mutation,4,166,cw-8,25,14,P.muted);U.Badge(card,U.Fmt(l.Price)..' Cash',6,200,cw-12,P.gold)
@@ -120,7 +118,7 @@ function Screens.Build(c)
    if c.Mobile then root:ClearAllChildren()end
    local panel=U.Panel(root,'ListingDetail',px,detailW>0 and 47 or 0,pw,H-(detailW>0 and 47 or 0),true)
    local sc=U.Scroll(panel,'ListingScroll',10,8,pw-20,H-73);local x=l.Dog;local iw=pw-44
-   U.Text(sc,x.DisplayName,8,0,iw-16,43,25,P.gold,true);V.Item(sc,x,8,49,iw*.43,154)
+   U.Text(sc,x.DisplayName,8,0,iw-16,43,25,P.text,true);V.Item(sc,x,8,49,iw*.43,154)
    U.Text(sc,U.Fmt(l.Price)..' CASH · '..l.Mode..'\nSeller '..l.Seller..'\n'..U.Weight(x.WeightKg)..'\n'..x.WeightTier..' · '..x.Mutation..'\n'..Depth[tostring(x.Depth)].Name,iw*.47,51,iw*.5,152,16)
    local y=214
    if l.Mode=='BuyNow'then U.Button(sc,'BuyNow','BUY NOW',8,y,iw-16,44,function()c.Confirm('BUY '..x.DisplayName,'Pay '..U.Fmt(l.Price)..' Cash for this exact '..U.Weight(x.WeightKg)..' find.','BuyListing',{DogId=l.AssetKey,Id=l.Id})end,P.green)
@@ -167,15 +165,15 @@ function Screens.Records(c,section,info)
  local y=50+math.ceil(#summary/cols)*94;section(sc,'PERSONAL RECORDS',0,y,W-8);y+=48
  local records={{'HEAVIEST FIND',stats.Heaviest},{'MOST VALUABLE',stats.MostValuable},{'RAREST FIND',stats.Rarest}}
  local rc=c.Mobile and 1 or 3;local rw=(W-18-(rc-1)*10)/rc
- for i,v in ipairs(records)do local card=U.Panel(sc,'FeaturedRecord',((i-1)%rc)*(rw+10),y+math.floor((i-1)/rc)*248,rw,238,true);U.Text(card,v[1],14,9,rw-28,30,22,P.gold,true)
+ for i,v in ipairs(records)do local card=U.Panel(sc,'FeaturedRecord',((i-1)%rc)*(rw+10),y+math.floor((i-1)/rc)*248,rw,238,true);U.Text(card,v[1],14,9,rw-28,30,21,P.text,true)
   if v[2]then V.Item(card,v[2],10,45,rw*.48,150);U.Text(card,v[2].DisplayName..'\n'..U.Weight(v[2].WeightKg)..'\n'..v[2].WeightTier..'\n1 in '..string.format('%.6g',v[2].CombinedOdds),rw*.51,50,rw*.45,148,17);else U.Center(card,'Your story starts with your next find.',15,66,rw-30,110,20,P.muted,true)end
  end;y+=math.ceil(3/rc)*248
  U.Text(sc,'Best session: '..stats.BestSession..' finds    •    Best day: '..(stats.BestDay and os.date('!%d %b %Y',stats.BestDay)or '—')..' ('..stats.BestDayCount..')',10,y,W-28,45,18,P.muted);y+=51
  section(sc,'DEPTH RECORDS',0,y,W-8);y+=47
- for i=1,5 do local d=stats.Depths[tostring(i)]or {};local card=U.Panel(sc,'DepthRecord',0,y,W-8,65);U.Text(card,Depth[tostring(i)].Name,12,4,W*.22,57,18,U.Tiers[i+3],true);U.Text(card,(d.Item and d.Item.DisplayName or '—')..'   '..U.Weight(d.BestWeight)..'   Value '..U.Fmt(d.BestValue)..'   Finds '..(d.Finds or 0),W*.25,4,W*.7,57,17);y+=73 end
+ for i=1,5 do local d=stats.Depths[tostring(i)]or {};local card=U.Panel(sc,'DepthRecord',0,y,W-8,65);U.Text(card,Depth[tostring(i)].Name,12,4,W*.22,57,18,U.Tiers[i+3]:Lerp(P.edge,.3),true);U.Text(card,(d.Item and d.Item.DisplayName or '—')..'   '..U.Weight(d.BestWeight)..'   Value '..U.Fmt(d.BestValue)..'   Finds '..(d.Finds or 0),W*.25,4,W*.7,57,17);y+=73 end
  section(sc,'RECORD PROGRESSION',0,y,W-8);y+=48
  for _,n in ipairs({25,50,100,250,500,1000,2500})do local key=tostring(n);local achieved=stats.Milestones[key];local claimed=stats.Claims[key];local card=U.Panel(sc,'Milestone',0,y,W-8,65)
-  U.Text(card,n..' FINDS · 10 Bones + title',12,4,W*.64,55,19,achieved and P.gold or P.muted,true)
+  U.Text(card,n..' FINDS · 10 Bones + title',12,4,W*.64,55,19,achieved and U.TextGold or P.muted,true)
   U.Button(card,'ClaimRecord',claimed and 'CLAIMED'or achieved and 'CLAIM'or 'LOCKED',W*.7,12,W*.27,39,achieved and not claimed and function()c.Send('RecordClaim',{Count=n})end or nil,P.green);y+=73
  end
  U.Text(sc,'Counters track activity since '..os.date('!%d %b %Y',stats.Since)..'. Existing collection and weight records are preserved.',10,y,W-28,53,15,P.muted);y+=62
@@ -195,19 +193,19 @@ function Screens.DesktopRecords(c,section)
  local deepest=1;for k in pairs(p.UnlockedLayers)do deepest=math.max(deepest,tonumber(k)or 1)end
  local summary={{'Total finds',s.TotalFinds},{'Unique discoveries',U.Count(p.Collection)..' / '..U.Count(D)},{'Best weight tier',tiers[(s.BestTier or 0)+1]or '—'},{'Total sell value',U.Fmt(s.TotalSellValue)},{'Secret finds',s.SecretFinds},{'Deepest layer',Depth[tostring(deepest)].Name},{'Total digs',s.TotalDigs},{'Completed trades',s.CompletedTrades}}
  local sh=(bh-61)/#summary
- for i,v in ipairs(summary)do local y=51+(i-1)*sh;U.Text(left,v[1],12,y,lw*.55,sh,15,P.muted);local t=U.Text(left,tostring(v[2]),lw*.58,y,lw*.38,sh,18,P.gold,true);t.TextXAlignment=Enum.TextXAlignment.Right end
+ for i,v in ipairs(summary)do local y=51+(i-1)*sh;U.Text(left,v[1],12,y,lw*.55,sh,15,P.muted);local t=U.Text(left,tostring(v[2]),lw*.58,y,lw*.38,sh,18,P.text,true);t.TextXAlignment=Enum.TextXAlignment.Right end
  local mid=U.Scroll(root,'PersonalRecords',mx,49,mw,bh);section(mid,'PERSONAL RECORDS',0,0,mw-8)
  local records={{'Heaviest find',s.Heaviest and U.Weight(s.Heaviest.WeightKg)or '—'},{'Most valuable find',s.MostValuable and U.Fmt(s.MostValuable.SellValue)or '—'},{'Rarest find',s.Rarest and '1 in '..string.format('%.5g',s.Rarest.CombinedOdds)or '—'},{'Longest dig streak',s.LongestStreak},{'Biggest sale',U.Fmt(s.BiggestSale)},{'Best session',s.BestSession},{'Best day',s.BestDay and os.date('!%d %b %Y',s.BestDay)or '—'},{'Finds on best day',s.BestDayCount},{'Collection progress',math.floor(U.Count(p.Collection)/U.Count(D)*100)..'%'}}
  local cw=(mw-28)/3
- for i,v in ipairs(records)do local card=U.Panel(mid,'PersonalRecord',((i-1)%3)*(cw+9),48+math.floor((i-1)/3)*77,cw,69);U.Text(card,v[1],8,5,cw-16,24,13,P.muted);U.Text(card,tostring(v[2]),8,29,cw-16,32,19,P.gold,true)end
+ for i,v in ipairs(records)do local card=U.Panel(mid,'PersonalRecord',((i-1)%3)*(cw+9),48+math.floor((i-1)/3)*77,cw,69);U.Text(card,v[1],8,5,cw-16,24,13,P.muted);U.Text(card,tostring(v[2]),8,29,cw-16,32,19,P.text,true)end
  local y=285;section(mid,'DEPTH RECORDS',0,y,mw-8);y+=45
- for i=1,5 do local d=s.Depths[tostring(i)]or {};local row=U.Panel(mid,'DepthRecord',0,y,mw-8,44);U.Text(row,Depth[tostring(i)].Name,8,2,mw*.3,40,14,U.Tiers[i+3],true);U.Text(row,U.Weight(d.BestWeight)..'   •   '..U.Fmt(d.BestValue)..' Cash   •   '..(d.Finds or 0)..' finds',mw*.32,2,mw*.64,40,14);y+=50 end
+ for i=1,5 do local d=s.Depths[tostring(i)]or {};local row=U.Panel(mid,'DepthRecord',0,y,mw-8,44);U.Text(row,Depth[tostring(i)].Name,8,2,mw*.3,40,14,U.Tiers[i+3]:Lerp(P.edge,.3),true);U.Text(row,U.Weight(d.BestWeight)..'   •   '..U.Fmt(d.BestValue)..' Cash   •   '..(d.Finds or 0)..' finds',mw*.32,2,mw*.64,40,14);y+=50 end
  U.Text(mid,'Tracking since '..os.date('!%d %b %Y',s.Since)..'. Historical weight records remain below.',8,y,mw-24,44,14,P.muted);y+=51
  for id,r in pairs(p.PersonalRecords)do local global=c.Snapshot.GlobalRecords[id];local server=c.Snapshot.ServerRecords[id];U.Text(mid,D[id].DisplayName..'\nYou '..U.Weight(r.WeightKg)..' · Server '..U.Weight(server and server.WeightKg)..' · Global '..U.Weight(global and global.WeightKg),8,y,mw-24,57,14);y+=62 end
  local right=U.Panel(root,'FeaturedRecord',rx,49,rw,bh,true);section(right,'FEATURED RECORD',5,5,rw-10);local x=s.Rarest
- if x then U.Text(right,x.DisplayName:upper(),14,51,rw-28,38,24,P.gold,true);local ph=math.max(95,bh-241);V.Item(right,x,12,96,rw-24,ph);U.Text(right,U.Weight(x.WeightKg)..' · '..x.WeightTier..'\nValue '..U.Fmt(x.SellValue)..' Cash\nDiscovery 1 in '..string.format('%.6g',x.CombinedOdds)..'\n'..Depth[tostring(x.Depth)].Name..' · '..os.date('!%d %b %Y',x.FoundAt),14,ph+105,rw-28,125,18)
+ if x then U.Text(right,x.DisplayName:upper(),14,51,rw-28,38,24,P.text,true);local ph=math.max(95,bh-241);V.Item(right,x,12,96,rw-24,ph);U.Text(right,U.Weight(x.WeightKg)..' · '..x.WeightTier..'\nValue '..U.Fmt(x.SellValue)..' Cash\nDiscovery 1 in '..string.format('%.6g',x.CombinedOdds)..'\n'..Depth[tostring(x.Depth)].Name..' · '..os.date('!%d %b %Y',x.FoundAt),14,ph+105,rw-28,125,18)
  else U.Center(right,'Your first record is waiting.',18,90,rw-36,120,24,P.muted,true)end
- local strip=U.Header(root,'RecordProgression',0,H-64,W-8,60);local sw=(W-170)/7;U.Text(strip,'MILESTONES',10,8,141,43,20,P.gold,true)
+ local strip=U.Header(root,'RecordProgression',0,H-64,W-8,60);local sw=(W-170)/7;U.Text(strip,'MILESTONES',10,8,141,43,20,P.text,true)
  for i,n in ipairs({25,50,100,250,500,1000,2500})do local key=tostring(n);local claimed=s.Claims[key];local reached=s.Milestones[key];U.Button(strip,'ClaimRecord'..n,claimed and '✓ '..n or tostring(n)..(reached and ' CLAIM'or ' FINDS'),154+(i-1)*sw,11,sw-7,38,reached and not claimed and function()c.Send('RecordClaim',{Count=n})end or nil,reached and P.green or P.panel)end
 end
 return Screens

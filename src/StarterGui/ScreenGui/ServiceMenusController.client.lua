@@ -142,7 +142,7 @@ updateSeller=function()
  for _,card in ipairs(gridCards)do
   local on=sellerSelection[card.Key]==true
   local stroke=card.Frame.Main:FindFirstChild('BorderStroke')
-  if stroke then stroke.Color=on and U.accent or gui.MainWindow.Content.PageContainer.YardPage.LatestFoundCard.Main.BorderStroke.Color end
+  if stroke then stroke.Color=on and U.select or gui.MainWindow.Content.PageContainer.YardPage.LatestFoundCard.Main.BorderStroke.Color;stroke.Thickness=on and 4 or 2 end
   local mark=card.Frame.Main:FindFirstChild('SelectionMark')
   if mark then mark.Text=on and'✓ SELECTED'or'□ SELECT';mark.TextColor3=on and U.accent or U.muted end
  end
@@ -190,7 +190,7 @@ selectRow=function(row)
  end
  for _,c in ipairs(gridCards)do
   local border=c.Frame.Main:FindFirstChild('BorderStroke')
-  if border then border.Color=row and c.Key==selected and U.accent or gui.MainWindow.Content.PageContainer.YardPage.LatestFoundCard.Main.BorderStroke.Color end
+  if border then local on=row and c.Key==selected;border.Color=on and U.select or gui.MainWindow.Content.PageContainer.YardPage.LatestFoundCard.Main.BorderStroke.Color;border.Thickness=on and 4 or 2 end
  end
  if mode=='Seller'then updateSeller()end
 end
@@ -289,6 +289,9 @@ open=function(name,context)
  viewToken+=1;mode=name;selected=nil;quote=nil;kennelContext=context;snapshot=nil;table.clear(sellerSelection)
  clearGrid();ui.Status.Text='Loading saved data...'
  ui.Title.Text=({Layers='DIGGING LAYERS',Seller='SELL FINDS',Kennels='ASSIGN DOG'})[name]
+ -- Kit header colour + icon per service (Layers: dig blue, Seller: coin gold, Kennels: dog orange).
+ local look=({Layers={Color3.fromRGB(38,164,243),'Dig'},Seller={Color3.fromRGB(249,180,35),'Coins'},Kennels={Color3.fromRGB(255,169,38),'Dogs'}})[name]
+ if look and ui.SetAccent then ui.SetAccent(look[1],look[2])end
  navigation:Fire('Service',name)
  if ui[name] and ui[name].Grid then ui[name].Empty.Visible=true;ui[name].Empty.Text='Loading...';selectRow(nil) end
  task.spawn(function()refresh(true);if active() and snapshot then status('')end end)

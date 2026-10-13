@@ -11,7 +11,7 @@ function S.Build(c)
  if c.State.CommerceMessage then U.Text(sc,c.State.CommerceMessage,8,0,W-184,38,16,P.muted)end
  local y=48
  -- Server luck: Robux, for everyone here.
- local header2=U.Header(sc,'ServerLuck',8,y,W-24,40);U.Text(header2,'SERVER LUCK · FOR EVERYONE HERE',12,0,W-48,40,23,P.text,true);y+=50
+ U.Section(sc,'SERVER LUCK · FOR EVERYONE HERE',8,y,W-24,40).Name='ServerLuck';y+=50
  local state=RS:FindFirstChild('ServerLuckState')
  local mult=state and state:GetAttribute('Multiplier')or 1;local ends=state and state:GetAttribute('EndsAt')or 0;local by=state and state:GetAttribute('By')or''
  local live=mult>1 and ends>now
@@ -29,9 +29,9 @@ function S.Build(c)
   local card=U.Panel(sc,'Offer_'..row.Key,8+(i-1)%cols2*(cw2+12),y+math.floor((i-1)/cols2)*262,cw2,250,true)
   card:SetAttribute('CommerceOffer',row.Key)
   if row.Featured then U.Glow(card,P.red)end
-  local art=U.Frame(card,'Art',8,8,cw2-16,80,tierColors[math.clamp(reward.Multiplier,1,5)]);U.Round(art,12)
+  local tone=tierColors[math.clamp(reward.Multiplier,1,5)];local art=U.Frame(card,'Art',8,8,cw2-16,80,tone);U.Round(art,12);U.Gradient(art,tone:Lerp(Color3.new(1,1,1),.3),tone)
   U.Icon(art,'Luck',8,6,66,P.text)
-  local big=U.Text(art,'x'..reward.Multiplier,80,4,cw2-104,72,44,Color3.new(1,1,1),true);big.TextStrokeTransparency=0;big.TextStrokeColor3=P.edge
+  local big=U.Text(art,'x'..reward.Multiplier,80,4,cw2-104,72,44,Color3.new(1,1,1),true);big.TextStrokeTransparency=.15;big.TextStrokeColor3=P.edge
   U.Center(card,row.Name,8,94,cw2-16,30,21,P.text,true)
   local text=string.format('x%d RARE DOGS FOR EVERYONE\n%d MINUTES',reward.Multiplier,math.floor(reward.Seconds/60))
   if row.Rewards.Luck then text..='\n+ YOUR '..row.Rewards.Luck.Tier..'x LUCK · '..math.floor(row.Rewards.Luck.Seconds/60)..' MIN'end

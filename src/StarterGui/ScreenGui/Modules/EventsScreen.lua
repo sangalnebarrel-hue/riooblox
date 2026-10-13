@@ -80,7 +80,7 @@ function S.Build(c)
  end
  y+=(phase=='ACTIVE'and 300 or 170)+14
  -- Why wait.
- local why=U.Header(sc,'WhyWait',8,y,W-24,40);U.Text(why,'WHY WAIT FOR AN EVENT?',12,0,W-48,40,22,P.text,true);y+=48
+ U.Section(sc,'WHY WAIT FOR AN EVENT?',8,y,W-24,40).Name='WhyWait';y+=48
  local reasons={{'Luck','RARER DOGS','The tongue brings Legendary, Mythic and Secret dogs more often during every event.'},
   {'Coins','END REWARD','Stay active and DIG during the event to qualify. End rewards are now a bonus, not an AFK income source.'},
   {'Events','THE WORLD CHANGES','Low gravity, zoomies, quakes, tractor beams: every event plays differently.'}}
@@ -92,7 +92,7 @@ function S.Build(c)
  end
  y+=math.ceil(#reasons/cols)*136+6
  -- Coming up.
- local up=U.Header(sc,'Upcoming',8,y,W-24,40);U.Text(up,'COMING UP',12,0,W-48,40,22,P.text,true);y+=48
+ U.Section(sc,'COMING UP',8,y,W-24,40).Name='Upcoming';y+=48
  local first=at.Cycle+((phase=='NORMAL'or phase=='WARNING')and 0 or 1)
  for k=0,4 do
   local index=first+k
@@ -100,7 +100,7 @@ function S.Build(c)
   if def then
    local start=EventConfig.Epoch+index*period+EventConfig.NormalInterval+EventConfig.WarningDuration
    local card=U.Panel(sc,'Upcoming'..k,8,y,W-24,66)
-   local stripe=U.Frame(card,'Stripe',0,0,8,66,rarityColors[def.Rarity]or P.gold);U.Round(stripe,4)
+   local stripe=U.Frame(card,'Stripe',7,9,5,48,rarityColors[def.Rarity]or P.gold);U.New('UICorner',{CornerRadius=UDim.new(.5,0)},stripe)
    local name=hidden(def)and'??? · A SECRET EVENT'or def.DisplayName:upper()..' · '..string.upper(def.Rarity)
    U.Text(card,name,20,4,W*.55,30,19,P.text,true)
    local lines=hidden(def)and {'NOBODY KNOWS WHAT IT DOES'}or Definitions.PerkLines(def)

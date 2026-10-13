@@ -10,10 +10,13 @@ function B.Start(gui)
  local detail=U.Panel(hud,'SupplyTooltip',0,0,252,86);detail.Visible=false;detail.ZIndex=30
  local tip=U.Text(detail,'',10,6,232,74,16,P.text,true);tip.ZIndex=31
  local function row(key,name,icon,color,text,open)
+  -- HUD glass, like the currency pills: navy, white-to-steel sheen, the boost's colour as the rim.
   local card=U.Panel(holder,key,0,0,226,52);card.Visible=false
-  U.Stroke(card,color,2);local glyph=U.Icon(card,icon,6,7,38,color)
-  local title=U.Text(card,name,51,4,168,19,14,P.text,true)
-  local timer=U.Text(card,'',51,24,168,23,20,P.text,true);timer.Name='Remaining'
+  card.BackgroundColor3=P.edge;card.BackgroundTransparency=.25;U.Stroke(card,color,2,.1)
+  U.New('UIGradient',{Color=ColorSequence.new(Color3.new(1,1,1),Color3.fromRGB(165,175,195)),Rotation=90},card)
+  local glyph=U.Icon(card,icon,6,7,38,color)
+  local title=U.Text(card,name,51,4,168,19,14,Color3.fromRGB(214,230,248),true);title.TextStrokeColor3=P.edge;title.TextStrokeTransparency=.4
+  local timer=U.Text(card,'',51,24,168,23,20,Color3.new(1,1,1),true);timer.Name='Remaining';timer.TextStrokeColor3=P.edge;timer.TextStrokeTransparency=.2
   local hit=U.New('TextButton',{Name='Details',Text='',BackgroundTransparency=1,Size=UDim2.fromScale(1,1)},card)
   local function show()tip.Text=title.Text..'\n'..text();detail.Visible=true end
   hit.MouseEnter:Connect(show);hit.MouseLeave:Connect(function()detail.Visible=false end)

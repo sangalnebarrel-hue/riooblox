@@ -110,7 +110,7 @@ function S.PresentWorld(c,result)
   U.Text(toast,tostring(rarity):upper()..' · SAVED',98,80,196,18,15,U.Colors.muted,true)
   if detail then local line=Text.Own(U.Text(toast,detail,10,102,400,20,14,result.Storage and U.Colors.red or U.Colors.purple,true));line.Name='Detail';line.TextScaled=true;U.New('UITextSizeConstraint',{MaxTextSize=14,MinTextSize=9},line)end
   preview(c,toast,result,4,7,90,90)
-  U.Button(toast,'Collect','COLLECT',302,77,110,23,function()toast:Destroy()end,U.Colors.green).Caption.TextSize=13
+  U.Button(toast,'Collect','COLLECT',302,70,110,30,function()toast:Destroy()end,U.Colors.green)
   local function layout()
    if not gui:GetAttribute('RewardMachineWorldOpen')then toast:Destroy();return end
    local left,top,width,height=U.SafeArea(gui)
@@ -146,7 +146,7 @@ local function classic(c:any,result:any,overlay:any)
  Audio.Cue('buy');local U=c.U
  local box=U.Modal(overlay,'RewardCard','OPENING…',580,480)
  local heading=box:FindFirstChild('Label');if heading then heading.Name='RewardStatus'end
- local title=U.Center(box,result.Tier:upper()..' LUCKY BLOCK',20,66,540,44,24,U.Colors.gold,true)
+ local title=U.Center(box,result.Tier:upper()..' LUCKY BLOCK',20,66,540,44,24,U.TextGold,true)
  local art=U.New('Frame',{Name='OpeningArt',Position=UDim2.fromOffset(30,110),Size=UDim2.fromOffset(520,230),BackgroundTransparency=1},box)
  local view=block(art,result.Tier,0,0,520,225);local state='opening';local t=0;local phase=-1;local skip,done
  local function reveal()
@@ -213,7 +213,7 @@ end
 local function infoOrLoad(c)
  local s=c.State;local U=c.U
  if s.RewardMachineInfo then return s.RewardMachineInfo end
- U.Center(c.Parent,s.RewardMessage or'Getting your DOG TOKEN…',10,40,c.W-20,85,25,U.Colors.purple,true)
+ U.Center(c.Parent,s.RewardMessage or'Getting your DOG TOKEN…',10,40,c.W-20,85,22,U.Colors.muted,true)
  if not s.RewardBusy and not s.MachineLoadFailed then
   s.MachineLoadFailed=true;request(c,'RewardMachineInfo',{},function(v)s.RewardMachineInfo=v;s.MachineLoadFailed=nil end)
  elseif not s.RewardBusy then U.Button(c.Parent,'Retry','TRY AGAIN',20,146,c.W-40,48,function()s.MachineLoadFailed=nil;c.Draw()end,U.Colors.blue)end
@@ -354,7 +354,7 @@ local function refusalNotice(c,host,message,code,width)
  local height=narrow and(#actions>0 and 98 or 58)or 60
  frame=U.Frame(host,'RefusalNotice',0,0,width,height,Color3.fromRGB(255,244,246));frame.LayoutOrder=2;frame.ZIndex=73;frame:SetAttribute('Key',key)
  U.Round(frame,12);U.Stroke(frame,P.red,3)
- local stripe=U.Frame(frame,'Stripe',0,0,8,height,P.red);stripe.ZIndex=74;U.Round(stripe,4)
+ local stripe=U.Frame(frame,'Stripe',6,8,5,height-16,P.red);stripe.ZIndex=74;U.New('UICorner',{CornerRadius=UDim.new(.5,0)},stripe)
  local textW=narrow and width-56 or width-56-buttonsW-8
  local label=U.Text(frame,message,16,narrow and 4 or 2,textW,narrow and 50 or 56,narrow and 15 or 16,P.text,true);label.ZIndex=74
  label.TextYAlignment=Enum.TextYAlignment.Center;U.New('UITextSizeConstraint',{MinTextSize=11,MaxTextSize=narrow and 15 or 16},label);label.TextScaled=true
@@ -403,7 +403,7 @@ function S.WorldRewardMachine(c)
  local U,W,H,s=c.U,c.W,c.H,c.State;local P=U.Colors;local wide=W>=600
  local panel=U.Panel(c.Parent,'WorldControls',0,0,W,H)
  U.Round(panel,15);U.Gradient(panel,Color3.fromRGB(255,248,219),Color3.fromRGB(234,220,255))
- local close=U.Button(panel,'Close','×',W-40,6,30,30,c.Close,P.red)
+ local close=U.Button(panel,'Close','X',W-40,6,32,32,c.Close,P.red);close:SetAttribute('KitSound','')
  local info=s.RewardMachineInfo
  if not info then
   U.Text(panel,'Loading your DOG TOKEN…',12,12,W-68,36,20,P.muted)
@@ -444,13 +444,16 @@ function S.WorldRewardMachine(c)
  odds.Caption.TextSize=wide and 14 or 10;tickets.Caption.TextSize=wide and 16 or 12
  if c.Gui then
   local old=c.Gui:FindFirstChild('RewardMachineOddsOverlay');local previous=old and old:FindFirstChild('OddsList',true);local savedScroll=previous and previous.CanvasPosition
+  local redraw=old~=nil -- a refresh of an open dialog: no second open motion
   if old then old:Destroy()end
   c.Gui:SetAttribute('RewardMachineOddsOpen',s.WorldOddsOpen==true)
   if s.WorldOddsOpen then
    local _,_,width,height=U.SafeArea(c.Gui);local ow=math.min(430,width-28);local oh=math.min(420,height-28)
-   local overlay=U.New('Frame',{Name='RewardMachineOddsOverlay',Size=UDim2.fromScale(1,1),BackgroundTransparency=1,Active=true,ZIndex=85},c.Gui)
-   local window=U.Modal(overlay,'OddsWindow','REWARD CHANCES',ow,oh)
-   U.Button(window,'CloseOdds','×',ow-43,18,28,30,function()s.WorldOddsOpen=false;c.Draw()end,P.red)
+   -- Kit dialog shade (faded in on the first draw only; refreshes redraw the dialog in place).
+   local overlay=U.New('Frame',{Name='RewardMachineOddsOverlay',Size=UDim2.fromScale(1,1),BackgroundColor3=U.Backdrop,BackgroundTransparency=redraw and .4 or 1,Active=true,ZIndex=85},c.Gui)
+   if not redraw then require(script.Parent.Kit.Motion).Tween(overlay,.18,{BackgroundTransparency=.4})end
+   local window=U.Modal(overlay,'OddsWindow','REWARD CHANCES',ow,oh,redraw)
+   U.Button(window,'CloseOdds','X',ow-52,14,40,40,function()s.WorldOddsOpen=false;c.Draw()end,P.red):SetAttribute('KitSound','')
    local sc=U.Scroll(window,'OddsList',12,75,ow-24,oh-89)
    local y=0
    U.Text(sc,'Every activation uses these exact chances, for free and bought DOG TOKENS.',5,y,ow-48,38,14,P.muted);y+=42
@@ -497,7 +500,7 @@ function S.RewardMachine(c)
   local text=fit(U.Center(strip,boostTitle(info.ActiveBoost),6,0,W-36,40,19,Color3.new(1,1,1),true),19);text.TextStrokeTransparency=0;text.TextStrokeColor3=P.edge
   y+=50
  end
- U.Text(sc,'YOUR POSSIBLE REWARDS',12,y,W-32,31,24,P.text,true);y+=36
+ U.Section(sc,'YOUR POSSIBLE REWARDS',8,y,W-24,38);y+=46
  U.Text(sc,'One DOG TOKEN gives one random reward. Exact chances are shown below.',12,y,W-32,45,16,P.muted);y+=49
  local cols=c.Mobile and 2 or 4;local cw=(W-24-(cols-1)*12)/cols
  for i,row in ipairs(info.Rewards or{})do
@@ -508,8 +511,7 @@ function S.RewardMachine(c)
   U.Center(card,row.Name or row.Kind,7,99,cw-14,34,18,P.text,true)
   local lines,owned=oddsLines(row)
   oddsLabel(fit(U.Center(card,table.concat(lines,'\n'),7,134,cw-14,42,13,P.muted,true),13),owned)
-  local chance=U.Frame(card,'Chance',8,182,cw-16,25,row.Multiplier and P.red or tone);U.Round(chance,7)
-  U.Center(chance,string.format('%.6g%%',(row.Chance or 0)*100),3,0,cw-22,25,18,P.text,true)
+  local chance=U.Badge(card,string.format('%.6g%%',(row.Chance or 0)*100),8,180,cw-16,row.Multiplier and P.red or tone);chance.Name='Chance'
  end
 end
 function S.TicketShop(c)
@@ -520,7 +522,7 @@ function S.TicketShop(c)
  U.Text(sc,'Use one DOG TOKEN to activate the world machine and receive one random reward. View REWARD CHANCES before activating.',12,y,W-32,60,18,P.text);y+=66
  U.Text(sc,'Your next free DOG TOKEN arrives 5 hours after use, including time away. Free tokens are always used before bought ones.',12,y,W-32,60,17,P.muted);y+=68
  if info.FreeOnly==false then
-  U.Text(sc,'LUCKY SPIN PACKS',12,y,W-32,40,23,P.purple,true);y+=46
+  U.Section(sc,'LUCKY SPIN PACKS',8,y,W-24,38);y+=46
   -- ProductPricing reports a refused or failed prompt here.
   if c.State.CommerceMessage then U.Text(sc,c.State.CommerceMessage,12,y,W-32,40,16,P.red);y+=44 end
   local Pricing=require(script.Parent.ProductPricing)
@@ -538,7 +540,7 @@ function S.TicketShop(c)
   end
   y+=math.ceil(#products/cols)*172+4
   -- Paid random items: the exact odds a bought token rolls, before purchase.
-  U.Text(sc,'REWARD CHANCES · EVERY TOKEN',12,y,W-32,34,21,P.text,true);y+=38
+  U.Section(sc,'REWARD CHANCES · EVERY TOKEN',8,y,W-24,38);y+=46
   local aurion
   for _,row in ipairs(info.Rewards or{})do
    if row.Id=='Aurion'then aurion=row end

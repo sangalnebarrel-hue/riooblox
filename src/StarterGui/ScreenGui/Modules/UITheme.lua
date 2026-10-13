@@ -6,6 +6,9 @@ local GameIcons=require(game:GetService('ReplicatedStorage'):WaitForChild('GameI
 -- Kit motion (one reduced-motion switch) and UI sounds for the legacy buttons and the HUD.
 local Motion=require(script.Parent:WaitForChild('Kit'):WaitForChild('Motion'))
 local Sound=require(script.Parent.Kit:WaitForChild('Sound'))
+-- Kit design tokens (pure data): the legacy primitives below draw with the same shapes, strokes,
+-- radii and motion as the Kit windows (DOGS / LAB / BAG), so every menu reads as one game.
+local KitTheme=require(script.Parent.Kit:WaitForChild('Theme'))
 local gui=script.Parent.Parent;local main=gui:WaitForChild('MainWindow')
 local yard=main.Content.PageContainer.YardPage
 local cardTemplate=yard.LatestFoundCard.Main
@@ -18,6 +21,9 @@ function U.AbilityLabel(id)return(tostring(id or '—'):gsub('(%l)(%u)','%1 %2')
 function U.DigSlotLabel(id)local value=tostring(id or '');local number=value:match('^DigSlot_(%d+)$');return number and 'DIG SPOT '..number or(value~=''and value or 'Storage')end
 local function ink(instance,fallback)local stroke=instance:FindFirstChildWhichIsA('UIStroke');return stroke and stroke.Color or fallback end
 U.Colors={metal=C(232,244,255),secondary=C(220,237,253),navy=C(218,237,253),panel=C(255,255,255),edge=C(23,43,76),orange=C(34,184,242),nav=C(55,168,241),gold=C(249,180,35),blue=C(38,164,243),green=C(125,219,48),red=C(247,73,112),purple=C(161,103,242),text=C(23,43,76),muted=C(83,112,150),light=C(247,251,255)}
+-- Kit surfaces and readable accent inks (gold / green text on white or Surface cards).
+U.Surface=KitTheme.Surface;U.SurfaceAlt=KitTheme.SurfaceAlt;U.Backdrop=KitTheme.Backdrop;U.Field=KitTheme.Field
+U.TextGold=KitTheme.Darken(U.Colors.gold,.25);U.TextGreen=KitTheme.Darken(U.Colors.green,.35)
 U.Rarity={Common=C(170,190,205),Rare=U.Colors.blue,Epic=U.Colors.purple,Legendary=U.Colors.gold,Mythic=U.Colors.red,Secret=C(230,115,245),Uncommon=U.Colors.green,['Brainrot God']=U.Colors.red}
 U.Tiers={C(102,166,225),C(130,219,76),C(162,181,202),C(249,180,57),C(255,146,32),C(228,75,153),C(255,48,116),C(203,58,245),C(179,114,255),C(255,55,144)}
 function U.New(class,props,parent)local o=Instance.new(class);for k,v in pairs(props)do o[k]=v end;o.Parent=parent;return o end
@@ -96,41 +102,74 @@ end
 function U.Frame(p,n,x,y,w,h,c)return U.New('Frame',{Name=n,Position=UDim2.fromOffset(x,y),Size=UDim2.fromOffset(w,h),BackgroundColor3=c or U.Colors.panel,BorderSizePixel=0},p)end
 function U.Shadow(o)
  -- A sibling shadow must not become an extra cell in an automatic layout.
- if o.Parent:FindFirstChildWhichIsA('UIGridLayout')or o.Parent:FindFirstChildWhichIsA('UIListLayout')then return end
- local shadow=U.New('Frame',{Name='DropShadow',Position=o.Position+UDim2.fromOffset(3,5),Size=o.Size,AnchorPoint=o.AnchorPoint,BackgroundColor3=U.Colors.edge,BackgroundTransparency=.18,BorderSizePixel=0,ZIndex=math.max(1,o.ZIndex-1)},o.Parent)
- U.Round(shadow,10)
+ if o.Parent:FindFirstChildWhichIsA('UIGridLayout')or o.Parent:FindFirstChildWhichIsA('UIListLayout')or o.Parent:FindFirstChildWhichIsA('UIPageLayout')then return end
+ -- Soft depth under a raised card (no hard offset block): a faint navy drop, same corners.
+ local offset=UDim2.fromOffset(0,4)
+ local shadow=U.New('Frame',{Name='DropShadow',Position=o.Position+offset,Size=o.Size,AnchorPoint=o.AnchorPoint,BackgroundColor3=U.Colors.edge,BackgroundTransparency=.82,BorderSizePixel=0,Visible=o.Visible,ZIndex=math.max(1,o.ZIndex-1)},o.Parent)
+ local corner=o:FindFirstChildWhichIsA('UICorner');U.Round(shadow,corner and corner.CornerRadius.Offset>0 and corner.CornerRadius.Offset or KitTheme.Radius.Card)
  local cs={}
- for _,key in ipairs({'Position','Size','AnchorPoint','Visible'})do table.insert(cs,o:GetPropertyChangedSignal(key):Connect(function()shadow[key]=key=='Position'and(o.Position+UDim2.fromOffset(3,5))or o[key]end))end
+ for _,key in ipairs({'Position','Size','AnchorPoint','Visible'})do table.insert(cs,o:GetPropertyChangedSignal(key):Connect(function()shadow[key]=key=='Position'and(o.Position+offset)or o[key]end))end
  o.Destroying:Connect(function()for _,c in ipairs(cs)do c:Disconnect()end;shadow:Destroy()end)
  return shadow
 end
+-- Kit card (Kit.Cards): white, radius 14, a 2 px navy outline; raised cards add a soft shadow.
 function U.Panel(p,n,x,y,w,h,raised)
- local o=U.Frame(p,n,x,y,w,h);o.ZIndex=2;decorate(o,cardTemplate)
- if not o:FindFirstChildWhichIsA('UIStroke')then U.Stroke(o)end
+ local o=U.Frame(p,n,x,y,w,h);o.ZIndex=2
+ U.Round(o,KitTheme.Radius.Card);U.Stroke(o,U.Colors.edge,KitTheme.StrokeWidth.Card)
  if raised then U.Shadow(o)end
  return o
 end
 U.Card=U.Panel;U.PreviewCard=U.Panel
+-- Section heading band (Kit SurfaceAlt rows): callers put an Ink title inside it.
 function U.Header(p,n,x,y,w,h)
- local o=U.Frame(p,n,x,y,w,h,headerTemplate.BackgroundColor3);o.ZIndex=3;decorate(o,headerTemplate)
- if not o:FindFirstChildWhichIsA('UIStroke')then U.Stroke(o)end
+ local o=U.Frame(p,n,x,y,w,h,U.SurfaceAlt);o.ZIndex=3
+ U.Round(o,KitTheme.Radius.Field);U.Stroke(o,U.Colors.edge,2,.55)
  return o
+end
+-- A titled section band (U.Header + an Ink heading, Kit Heading size); returns the band.
+function U.Section(p,title,x,y,w,h)
+ local band=U.Header(p,'Section',x,y,w,h or 38)
+ local t=U.Text(band,title,14,0,w-28,h or 38,KitTheme.TextSize.Heading,U.Colors.text,true);t.Name='Title';t.TextWrapped=false;t.TextScaled=true
+ U.New('UITextSizeConstraint',{MinTextSize=12,MaxTextSize=KitTheme.TextSize.Heading},t)
+ return band
 end
 function U.Text(p,s,x,y,w,h,size,color,bold)
  return U.New('TextLabel',{Name='Label',Text=tostring(s),Position=UDim2.fromOffset(x,y),Size=UDim2.fromOffset(w,h),BackgroundTransparency=1,TextColor3=color or U.Colors.text,FontFace=U.FontFace,TextSize=size or 20,TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center,TextStrokeColor3=buttonTemplate.TextStrokeColor3,TextStrokeTransparency=1,ZIndex=4},p)
 end
 function U.Center(p,s,x,y,w,h,size,c,b)local t=U.Text(p,s,x,y,w,h,size,c,b);t.TextXAlignment=Enum.TextXAlignment.Center;return t end
 function U.Title(p,s,x,y,w,h)return U.Text(p,s,x,y,w,h,30,U.Colors.text,true)end
-function U.Glow(o,c)U.Stroke(o,c or U.Colors.gold,4)end
+-- Selection highlight (Kit card Selected: a 4 px accent outline). Gold, the old highlight colour,
+-- maps to the kit accent; other colours (red: featured offers) stay.
+function U.Glow(o,c)U.Stroke(o,(c==nil or c==U.Colors.gold)and KitTheme.Accent or c,4)end
 local enhanced=setmetatable({},{__mode='k'})
+local captions=setmetatable({},{__mode='k'}) -- U.Button captions: their ink follows the button style
+local WHITE0=Color3.new(1,1,1)
+-- White / panel colours make the Kit secondary button: a white face with Ink text.
+local function light(color)local _,s,v=color:ToHSV();return s<.12 and v>.94 end
 local function saturated(color)
  local h,s,v=color:ToHSV()
- if s<.22 then return U.Colors.blue:Lerp(Color3.new(1,1,1),.28)end
+ if s<.22 then return v>.9 and WHITE0 or U.Colors.blue:Lerp(WHITE0,.28)end
  return Color3.fromHSV(h,math.max(s,.72),math.max(v,.84))
+end
+-- The soft white halo of a hovered button (Kit.Base hoverGlow): 2 px outside the face, made on the
+-- first mouse hover only. Faces that lay out or pad their children get none (it would become a cell,
+-- sit off-centre or grow an auto-sized button).
+local function hoverGlow(face)
+ if face:FindFirstChildWhichIsA('UIGridLayout')or face:FindFirstChildWhichIsA('UIListLayout')or face:FindFirstChildWhichIsA('UIPadding')or face.AutomaticSize~=Enum.AutomaticSize.None then return nil end
+ local old=face:FindFirstChild('KitHoverGlow');if old then return old:FindFirstChild('Glow')end
+ local corner=face:FindFirstChildWhichIsA('UICorner');local radius=corner and corner.CornerRadius or UDim.new(0,KitTheme.Radius.Button)
+ local glow=U.New('Frame',{Name='KitHoverGlow',BackgroundTransparency=1,BorderSizePixel=0,Active=false,Position=UDim2.fromOffset(-2,-2),Size=UDim2.new(1,4,1,4),ZIndex=face.ZIndex},face)
+ U.New('UICorner',{CornerRadius=UDim.new(radius.Scale,radius.Offset>0 and radius.Offset+2 or 0)},glow)
+ local stroke=U.New('UIStroke',{Name='Glow',ApplyStrokeMode=Enum.ApplyStrokeMode.Border,Color=WHITE0,Thickness=3,Transparency=1,LineJoinMode=Enum.LineJoinMode.Round},glow)
+ stroke:SetAttribute('KitGlow',true)
+ return stroke
 end
 function U.SetButtonEnabled(button,on)
  button.Active=on==true;button.Selectable=on==true;button:SetAttribute('UIEnabled',on==true)
 end
+-- Kit button look on any legacy button: gradient face (radius 12, 2 px navy outline), hover lift with
+-- a soft white halo, press squash, the release spring and Kit.Sound cues. Disabled: greyed face,
+-- faded caption, no motion.
 function U.EnhanceButton(button,color)
  if not button:IsA('GuiButton')then return end
  if enhanced[button]then return end
@@ -145,71 +184,134 @@ function U.EnhanceButton(button,color)
  Sound.Attach(button) -- hover + click sounds (every legacy menu button sounds like the kit)
  local base=saturated(color or button:GetAttribute('ButtonBaseColor')or face.BackgroundColor3)
  button:SetAttribute('ButtonBaseColor',base)
- U.Round(face,10)
+ U.Round(face,KitTheme.Radius.Button)
  local existingStroke=face:FindFirstChildWhichIsA('UIStroke')
- if existingStroke then existingStroke.Enabled=true;existingStroke.Color=U.Colors.edge;existingStroke.Thickness=3;existingStroke.ApplyStrokeMode=Enum.ApplyStrokeMode.Border else U.Stroke(face,U.Colors.edge,3)end
+ if existingStroke then existingStroke.Enabled=true;existingStroke.Color=U.Colors.edge;existingStroke.Thickness=KitTheme.StrokeWidth.Button;existingStroke.ApplyStrokeMode=Enum.ApplyStrokeMode.Border else U.Stroke(face,U.Colors.edge,KitTheme.StrokeWidth.Button)end
  local gradient=face:FindFirstChildWhichIsA('UIGradient')or U.New('UIGradient',{},face)
  local motionTarget=face==button and button or button.Parent
  local scale=motionTarget:FindFirstChildWhichIsA('UIScale')or U.New('UIScale',{Name='ButtonMotion'},motionTarget)
- local hover,pressed=false,false;local tween
+ local hover,pressed=false,false;local glow=nil;local saved=nil
+ local caption=captions[button]
+ -- Caption ink: white with a navy outline on colour, Ink on a white (secondary) face. A plain
+ -- TextButton keeps its own text colours unless it turns secondary (restored when it stops).
+ local function ink(isLight,enabled)
+  if caption then
+   caption.TextColor3=isLight and U.Colors.text or WHITE0;caption.TextStrokeColor3=U.Colors.edge;caption.TextStrokeTransparency=isLight and 1 or .15
+   caption.TextTransparency=enabled and 0 or .35
+  elseif button:IsA('TextButton')and button.Text~=''then
+   if isLight and not saved then saved={button.TextColor3,button.TextStrokeTransparency};button.TextColor3=U.Colors.text;button.TextStrokeTransparency=1
+   elseif not isLight and saved then button.TextColor3=saved[1];button.TextStrokeTransparency=saved[2];saved=nil end
+  end
+ end
  local function draw()
   if not button.Parent then return end
   local enabled=button.Active and button:GetAttribute('UIEnabled')~=false
   local current=button:GetAttribute('ButtonBaseColor')or base
-  local tone=not enabled and current:Lerp(Color3.fromRGB(117,133,158),.7)or pressed and current:Lerp(U.Colors.edge,.24)or hover and current:Lerp(Color3.new(1,1,1),.12)or current
-  face.BackgroundColor3=Color3.new(1,1,1);gradient.Color=ColorSequence.new(tone:Lerp(Color3.new(1,1,1),.1),tone);gradient.Rotation=90
+  local tone=enabled and current or current:Lerp(KitTheme.Disabled,.7)
+  face.BackgroundColor3=WHITE0;gradient.Color=ColorSequence.new(tone:Lerp(WHITE0,.12),tone);gradient.Rotation=90;gradient.Enabled=true
   local stroke=face:FindFirstChildWhichIsA('UIStroke');if stroke then stroke.Color=enabled and U.Colors.edge or Color3.fromRGB(99,116,144)end
-  if tween then tween:Cancel();tween=nil end
-  local goal=not enabled and 1 or pressed and .95 or hover and 1.03 or 1
-  if Motion.Reduced()then(scale::any).Scale=goal
-  else tween=Tween:Create(scale,TweenInfo.new(pressed and .07 or .15,pressed and Enum.EasingStyle.Quad or Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Scale=goal});tween:Play()end
+  ink(light(current),enabled)
+  local goal=not enabled and 1 or pressed and .94 or hover and 1.03 or 1
+  if pressed and enabled then Motion.Tween(scale,KitTheme.Motion.Press*.8,{Scale=goal})
+  else Motion.Tween(scale,KitTheme.Motion.Press*1.6,{Scale=goal},Enum.EasingStyle.Back)end
+  if glow then Motion.Tween(glow,KitTheme.Motion.Fast,{Transparency=(hover and enabled)and .35 or 1})end
  end
- button.MouseEnter:Connect(function()hover=true;draw()end);button.MouseLeave:Connect(function()hover=false;pressed=false;draw()end)
+ local function hovered(mouse)
+  hover=true
+  if mouse and not glow and button.Active and button:GetAttribute('UIEnabled')~=false then local ok,stroke=pcall(hoverGlow,face);glow=ok and stroke or nil end
+  draw()
+ end
+ button.MouseEnter:Connect(function()hovered(Sound.MouseInput())end);button.MouseLeave:Connect(function()hover=false;pressed=false;draw()end)
  button.MouseButton1Down:Connect(function()pressed=true;draw()end);button.MouseButton1Up:Connect(function()pressed=false;draw()end)
- button.SelectionGained:Connect(function()hover=true;draw()end);button.SelectionLost:Connect(function()hover=false;pressed=false;draw()end)
+ button.SelectionGained:Connect(function()hovered(false)end);button.SelectionLost:Connect(function()hover=false;pressed=false;draw()end)
  button:GetPropertyChangedSignal('Active'):Connect(draw);button:GetAttributeChangedSignal('UIEnabled'):Connect(draw);button:GetAttributeChangedSignal('ButtonBaseColor'):Connect(draw)
+ -- A script recolouring the face (layouts, tab states) sets the base colour; repaint at once even
+ -- when the attribute keeps its value (the face would otherwise stay flat).
  face:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
   local value=face.BackgroundColor3
-  if value~=Color3.new(1,1,1)then button:SetAttribute('ButtonBaseColor',saturated(value))end
+  if value~=WHITE0 then button:SetAttribute('ButtonBaseColor',saturated(value));draw()end
  end)
  draw()
 end
 function U.Button(p,n,s,x,y,w,h,fn,c)
  local b=U.New('TextButton',{Name=n,Text='',Position=UDim2.fromOffset(x,y),Size=UDim2.fromOffset(w,h),BackgroundColor3=c or U.Colors.blue,BorderSizePixel=0,AutoButtonColor=false,Selectable=fn~=nil,Active=fn~=nil,ZIndex=3},p)
- local caption=U.Center(b,s,6,2,w-12,h-4,math.min(23,h*.45),Color3.new(1,1,1),true);caption.TextStrokeTransparency=0;caption.TextStrokeColor3=U.Colors.edge;caption.Name='Caption';caption.Size=UDim2.new(1,-12,1,-4);caption.TextWrapped=false;caption.TextScaled=true;U.New('UITextSizeConstraint',{MinTextSize=12,MaxTextSize=math.min(23,h*.45)},caption)
+ -- Kit caption: ~19-21 px on a 44-50 px button, shrinking to fit.
+ local size=math.max(8,math.min(21,math.floor(h*.44)))
+ local caption=U.Center(b,s,6,2,w-12,h-4,size,WHITE0,true);caption.TextStrokeTransparency=.15;caption.TextStrokeColor3=U.Colors.edge;caption.Name='Caption';caption.Size=UDim2.new(1,-12,1,-4);caption.TextWrapped=false;caption.TextScaled=true;U.New('UITextSizeConstraint',{MinTextSize=math.min(12,size),MaxTextSize=size},caption)
+ captions[b]=caption
  U.EnhanceButton(b,c or U.Colors.blue)
  if fn then b.Activated:Connect(function(...)if b.Active and b:GetAttribute('UIEnabled')~=false then fn(...)end end)end
  return b
 end
-function U.SecondaryButton(...)return U.Button(...)end
+function U.SecondaryButton(p,n,s,x,y,w,h,fn,c)return U.Button(p,n,s,x,y,w,h,fn,c or U.Colors.panel)end
 function U.DangerButton(p,n,s,x,y,w,h,fn)return U.Button(p,n,s,x,y,w,h,fn,U.Colors.red)end
-function U.Tab(p,n,s,x,y,w,h,fn,on)return U.Button(p,n,s,x,y,w,h,fn,on and activeTemplate.BackgroundColor3 or U.Colors.nav)end
-function U.Badge(p,s,x,y,w,c)local b=U.Frame(p,'Badge',x,y,w,28,c or U.Colors.nav);U.Round(b,7);U.Stroke(b,U.Colors.edge,2);U.Center(b,s,3,0,w-6,28,16,U.Colors.text,true);return b end
+-- Kit tab (Kit.Tabs): a pill. Idle: white, Ink text, faint outline. Selected: filled with the accent
+-- (Kit accent by default) and underlined.
+function U.Tab(p,n,s,x,y,w,h,fn,on,accent)
+ local color=accent or KitTheme.Accent
+ local b=U.Button(p,n,s,x,y,w,h,fn,on and color or U.Colors.panel);U.Round(b,math.floor(h/2))
+ local stroke=b:FindFirstChildWhichIsA('UIStroke');if stroke then stroke.Transparency=on and 0 or .55 end
+ b:SetAttribute('KitSound','Tab')
+ if on then
+  local line=U.Frame(b,'Underline',0,0,0,0,KitTheme.Darken(color,.28));line.AnchorPoint=Vector2.new(.5,1);line.Position=UDim2.new(.5,0,1,-3);line.Size=UDim2.new(.6,0,0,4);line.ZIndex=b.ZIndex+1
+  U.New('UICorner',{CornerRadius=UDim.new(.5,0)},line)
+ end
+ return b
+end
+-- Kit pill (Kit.Pill): fully rounded, filled, readable text (Ink on light colours, white with a navy
+-- outline on strong ones).
+function U.Badge(p,s,x,y,w,c)
+ local color=c or U.Colors.nav;local b=U.Frame(p,'Badge',x,y,w,28,color);U.New('UICorner',{CornerRadius=UDim.new(.5,0)},b)
+ local ink=KitTheme.OnColor(color);local t=U.Center(b,s,8,0,w-16,28,15,ink,true)
+ t.TextWrapped=false;t.TextScaled=true;U.New('UITextSizeConstraint',{MinTextSize=8,MaxTextSize=15},t)
+ if ink==KitTheme.White then t.TextStrokeColor3=U.Colors.edge;t.TextStrokeTransparency=.35 end
+ return b
+end
+-- Kit progress bar (Kit.ProgressBar): pale pill track, gradient pill fill, white text with a navy outline.
 function U.Bar(p,x,y,w,h,value,c,caption)
- local b=U.Panel(p,'Progress',x,y,w,h);local f=U.Frame(b,'Fill',3,3,math.max(0,(w-6)*math.clamp(value,0,1)),h-6,c or U.Colors.green);U.Round(f,6)
- if caption then U.Center(b,caption,0,0,w,h,15,nil,true)end;return b
+ local b=U.Frame(p,'Progress',x,y,w,h,U.Colors.secondary);b.ZIndex=2;U.New('UICorner',{CornerRadius=UDim.new(.5,0)},b);U.Stroke(b,U.Colors.edge,2,.35)
+ local v=math.clamp(tonumber(value)or 0,0,1);local tone=c or U.Colors.green
+ local f=U.New('Frame',{Name='Fill',Size=UDim2.fromScale(v,1),BackgroundColor3=WHITE0,BorderSizePixel=0,Visible=v>0,ZIndex=3},b);U.New('UICorner',{CornerRadius=UDim.new(.5,0)},f)
+ U.New('UIGradient',{Color=ColorSequence.new(tone:Lerp(WHITE0,.25),tone),Rotation=90},f)
+ if caption then local t=U.Center(b,caption,0,0,w,h,math.min(15,math.floor(h*.62)),WHITE0,true);t.TextStrokeColor3=U.Colors.edge;t.TextStrokeTransparency=.1;t.ZIndex=4 end
+ return b
 end
 U.ProgressBar=U.Bar
-function U.Scroll(p,n,x,y,w,h)return U.New('ScrollingFrame',{Name=n,Position=UDim2.fromOffset(x,y),Size=UDim2.fromOffset(w,h),CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=6,ScrollBarImageColor3=U.Colors.gold,ScrollingDirection=Enum.ScrollingDirection.Y},p)end
+function U.Scroll(p,n,x,y,w,h)return U.New('ScrollingFrame',{Name=n,Position=UDim2.fromOffset(x,y),Size=UDim2.fromOffset(w,h),CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=5,ScrollBarImageColor3=U.Colors.nav,ScrollingDirection=Enum.ScrollingDirection.Y},p)end
 function U.Grid(p,n,x,y,w,h,columns,cellH)local sc=U.Scroll(p,n,x,y,w,h);local cw=math.floor((w-12-(columns-1)*12)/columns);U.New('UIGridLayout',{CellSize=UDim2.fromOffset(cw,cellH),CellPadding=UDim2.fromOffset(12,12),SortOrder=Enum.SortOrder.LayoutOrder},sc);return sc,cw end
+-- Kit field (Kit.SearchBox): pale field, radius 10, faint outline that turns accent while typing.
 function U.Search(p,n,placeholder,value,x,y,w,fn)
- local b=U.New('TextBox',{Name=n,Text=value or'',PlaceholderText=placeholder,Position=UDim2.fromOffset(x,y),Size=UDim2.fromOffset(w,42),BackgroundColor3=U.Colors.navy,TextColor3=U.Colors.text,PlaceholderColor3=U.Colors.muted,FontFace=U.FontFace,TextSize=18,ClearTextOnFocus=false,TextXAlignment=Enum.TextXAlignment.Left},p)
- U.Round(b,8);U.Stroke(b);U.New('UIPadding',{PaddingLeft=UDim.new(0,12),PaddingRight=UDim.new(0,8)},b);b.FocusLost:Connect(function()fn(b.Text)end);return b
+ local b=U.New('TextBox',{Name=n,Text=value or'',PlaceholderText=placeholder,Position=UDim2.fromOffset(x,y),Size=UDim2.fromOffset(w,42),BackgroundColor3=U.Field,TextColor3=U.Colors.text,PlaceholderColor3=U.Colors.muted,FontFace=U.FontFace,TextSize=17,ClearTextOnFocus=false,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd},p)
+ U.Round(b,KitTheme.Radius.Field);local stroke=U.Stroke(b,U.Colors.edge,2,.5);U.New('UIPadding',{PaddingLeft=UDim.new(0,12),PaddingRight=UDim.new(0,8)},b)
+ b.Focused:Connect(function()stroke.Color=KitTheme.Accent;stroke.Transparency=0 end)
+ b.FocusLost:Connect(function()stroke.Color=U.Colors.edge;stroke.Transparency=.5;fn(b.Text)end);return b
 end
 U.Input=U.Search
-function U.Cycle(p,n,label,values,current,x,y,w,fn)return U.Button(p,n,label..'  ▾',x,y,w,40,#values>0 and function()local i=table.find(values,current)or 1;fn(values[i%#values+1])end or nil)end
-function U.Modal(parent,name,title,w,h)
- local box=U.Frame(parent,name,0,0,w,h,main.BackgroundColor3);box.AnchorPoint=Vector2.new(.5,.5);box.Position=UDim2.fromScale(.5,.5);box.ZIndex=2;decorate(box,main)
- U.Round(box,18);U.Stroke(box,U.Colors.edge,3);box.BackgroundColor3=Color3.fromRGB(255,251,242)
- local body=U.Panel(box,'ModalBody',10,64,w-20,h-74);body.ZIndex=1
- U.Header(box,'ModalHeader',10,10,w-20,48);U.Text(box,title,24,14,w-48,40,26,U.Colors.text,true)
+-- A value picker (Kit SortSelect look): a white secondary button with a ▾.
+function U.Cycle(p,n,label,values,current,x,y,w,fn)return U.Button(p,n,label..'  ▾',x,y,w,40,#values>0 and function()local i=table.find(values,current)or 1;fn(values[i%#values+1])end or nil,U.Colors.panel)end
+-- Kit dialog card (Kit.Modal): Surface card, radius 18, 3 px outline, a short accent bar over an Ink
+-- title (the first child named 'Label': callers rename / retitle it), content below y = 64. It springs
+-- in like the kit (0.9 -> 1, Back) unless `still` (redrawn dialogs) or the caller animates its UIScale.
+function U.Modal(parent,name,title,w,h,still)
+ local box=U.Frame(parent,name,0,0,w,h,U.Surface);box.AnchorPoint=Vector2.new(.5,.5);box.Position=UDim2.fromScale(.5,.5);box.ZIndex=2
+ U.Round(box,KitTheme.Radius.Window);U.Stroke(box,U.Colors.edge,KitTheme.StrokeWidth.Window)
+ U.Text(box,title,24,18,w-48,40,24,U.Colors.text,true)
+ local bar=U.Frame(box,'AccentBar',24,12,46,5,KitTheme.Accent);bar.ZIndex=4;U.New('UICorner',{CornerRadius=UDim.new(.5,0)},bar)
  local scale=U.New('UIScale',{Scale=1},box)
+ local fit=1
  local function resize()
-  local _,_,width,height=U.SafeArea(gui);scale.Scale=math.min(1,(width-24)/w,(height-24)/h)
-  box.Position=U.SafePosition(gui,w,h,scale.Scale,12)
+  local _,_,width,height=U.SafeArea(gui);fit=math.min(1,(width-24)/w,(height-24)/h);scale.Scale=fit
+  box.Position=U.SafePosition(gui,w,h,fit,12)
  end
  local c=gui:GetPropertyChangedSignal('AbsoluteSize'):Connect(resize);local inset=GuiService:GetPropertyChangedSignal('TopbarInset'):Connect(resize)
  box.Destroying:Connect(function()c:Disconnect();inset:Disconnect()end);resize()
+ if not still then
+  task.defer(function()
+   -- A caller that tweens the UIScale itself (LuckyReel's bounce) keeps its own motion.
+   if not box.Parent or Motion.Reduced()or math.abs(scale.Scale-fit)>.001 then return end
+   scale.Scale=fit*.9;Motion.Tween(scale,KitTheme.Motion.Open,{Scale=fit},Enum.EasingStyle.Back)
+  end)
+ end
  return box
 end
 function U.Overlay(parent,name)return U.New('Frame',{Name=name,Size=UDim2.fromScale(1,1),BackgroundTransparency=1,Active=true,ZIndex=80},parent)end
@@ -331,7 +433,7 @@ function U.LayoutYard(y)
  rect(y.ActionButtons,14,520,903,60)
  for i,name in ipairs({'Upgrades','DiggingLayers','GlobalDig'})do
   local holder=y.ActionButtons[name];rect(holder,(i-1)*306,0,291,60)
-  surface(holder.Main,({C(134,220,57),C(39,190,241),C(255,185,38)})[i],12,3)
+  surface(holder.Main,({C(134,220,57),C(39,190,241),C(255,185,38)})[i],12,2)
   holder.Main.Position=UDim2.new();holder.Main.Size=UDim2.fromScale(1,1)
   typeface(holder.Main,22,true)
   if not holder.Main:FindFirstChildWhichIsA('UIGradient')then U.New('UIGradient',{Color=ColorSequence.new(WHITE,WHITE)},holder.Main)end
@@ -953,52 +1055,127 @@ U.WindowSpecs={
  TicketShop={Title='DOG TOKENS',Subtitle='A free token every 5 hours · Lucky Spin packs',Color=C(171,105,247),Icon='Ticket'},
  Settings={Title='SETTINGS',Subtitle='Play your way',Color=C(92,142,250),Icon='Settings'},
 }
+-- Window shell metrics (Kit.Window): desktop 12 px padding and a 74 px header over the legacy
+-- 931 x 610 body at (16, 100); phones are a full-screen sheet with an 8 px (portrait) / 6 px
+-- (landscape) padding and a 58 / 50 px header.
+function U.ShellMetrics(compact,landscape)
+ if not compact then return {Pad=12,Header=74,ContentX=16,ContentY=100,Bottom=16}end
+ local pad=landscape and 6 or 8;local header=landscape and 50 or 58
+ return {Pad=pad,Header=header,ContentX=pad,ContentY=pad+header+pad,Bottom=pad}
+end
+-- The Kit window header of a legacy page (a child of the page, drawn over the card's top band):
+-- accent gradient, radius 14, 2 px outline, icon, white title + subtitle, the red X (WindowClose).
 function U.WindowChrome(page,key,width,close)
  local old=page:FindFirstChild('WindowChrome');if old then old:Destroy()end
  local spec=U.WindowSpecs[key]or{Title=key:gsub('(%l)(%u)','%1 %2'):upper(),Subtitle='',Color=U.Colors.blue,Icon='Dogs'}
- local chrome=U.Frame(page,'WindowChrome',-12,-91,width+24,79,spec.Color);chrome.ZIndex=10;chrome.Size=UDim2.new(1,24,0,79)
- U.Round(chrome,18);U.Stroke(chrome,U.Colors.edge,3)
- local icon=U.Icon(chrome,spec.Icon,10,-5,82)
- local title=U.Text(chrome,spec.Title,98,5,width-193,43,31,WHITE,true);title.TextStrokeTransparency=0;title.ZIndex=14;title.Size=UDim2.new(1,-193,0,43)
- local subtitle=U.Text(chrome,spec.Subtitle,100,47,width-189,24,16,WHITE);subtitle.TextStrokeTransparency=.5;subtitle.ZIndex=14;subtitle.Size=UDim2.new(1,-189,0,24)
- local x=U.Button(chrome,'WindowClose','X',width-47,14,56,50,close,U.Colors.red);x.ZIndex=15;x.Position=UDim2.new(1,-71,0,14)
+ local chrome=U.Frame(page,'WindowChrome',-4,-88,width+8,74,WHITE);chrome.ZIndex=10;chrome.Size=UDim2.new(1,8,0,74)
+ U.Round(chrome,KitTheme.Radius.Card);U.Stroke(chrome,U.Colors.edge,2)
+ U.New('UIGradient',{Color=ColorSequence.new(spec.Color:Lerp(WHITE,.18),spec.Color),Rotation=90},chrome)
+ local icon=U.Icon(chrome,spec.Icon,8,6,62)
+ local title=U.Text(chrome,spec.Title,84,0,width-160,38,KitTheme.TextSize.Title,WHITE,true);title.Name='Title';title.TextStrokeColor3=NAVY;title.TextStrokeTransparency=0;title.ZIndex=14;title.TextWrapped=false;title.TextScaled=true
+ local limit=U.New('UITextSizeConstraint',{MinTextSize=14,MaxTextSize=KitTheme.TextSize.Title},title)
+ local subtitle=U.Text(chrome,spec.Subtitle,85,0,width-160,22,KitTheme.TextSize.Subtitle,WHITE);subtitle.Name='Subtitle';subtitle.TextStrokeColor3=NAVY;subtitle.TextStrokeTransparency=.45;subtitle.ZIndex=14;subtitle.TextWrapped=false;subtitle.TextTruncate=Enum.TextTruncate.AtEnd
+ local x=U.Button(chrome,'WindowClose','X',0,0,48,48,close,U.Colors.red);x.ZIndex=15;x.AnchorPoint=Vector2.new(1,.5);x:SetAttribute('KitSound','')
+ local caption=x:FindFirstChild('Caption');if caption then caption:SetAttribute('NoTranslate',true)end
  local function layoutChrome()
-  local compact=gui:GetAttribute('CompactMenus')==true;local landscape=gui:GetAttribute('LandscapeMenus')==true
-  local narrow=compact or chrome.AbsoluteSize.X<500
-  chrome.Position=UDim2.fromOffset(compact and -4 or -12,compact and -70 or -91);chrome.Size=UDim2.new(1,compact and 8 or 24,0,compact and 64 or 79)
-  icon.Position=UDim2.fromOffset(narrow and 6 or 10,narrow and 6 or -5);icon.Size=UDim2.fromOffset(narrow and 52 or 82,narrow and 52 or 82)
-  title.Position=UDim2.fromOffset(narrow and 64 or 98,compact and(landscape and 13 or 3)or 7);title.Size=UDim2.new(1,narrow and -128 or -193,0,compact and 34 or 38);title.TextWrapped=false;title.TextScaled=true
-  subtitle.Visible=not landscape;subtitle.Position=UDim2.fromOffset(narrow and 66 or 100,compact and 38 or 46);subtitle.Size=UDim2.new(1,narrow and -130 or -189,0,compact and 21 or 23);subtitle.TextWrapped=false;subtitle.TextTruncate=Enum.TextTruncate.AtEnd;subtitle.TextSize=compact and 14 or 16
-  x.Position=UDim2.new(1,compact and -54 or -71,0,compact and 10 or 14);x.Size=UDim2.fromOffset(compact and 44 or 56,compact and 44 or 50)
+  local compact=gui:GetAttribute('CompactMenus')==true;local landscape=compact and gui:GetAttribute('LandscapeMenus')==true
+  local m=U.ShellMetrics(compact,landscape);local headerH=m.Header
+  chrome.Position=UDim2.fromOffset(m.Pad-m.ContentX,m.Pad-m.ContentY);chrome.Size=UDim2.new(1,2*(m.ContentX-m.Pad),0,headerH)
+  local iconSize=headerH-(compact and 10 or 12)
+  icon.Position=UDim2.fromOffset(8,math.floor((headerH-iconSize)/2));icon.Size=UDim2.fromOffset(iconSize,iconSize)
+  local closeSize=compact and math.min(44,headerH-8)or 48 -- >= 42 px touch target
+  x.Size=UDim2.fromOffset(closeSize,closeSize);x.Position=UDim2.new(1,-math.floor((headerH-closeSize)/2),.5,0)
+  local textX=iconSize+16;local textW=-(textX+closeSize+18)
+  local showSubtitle=not landscape and subtitle.Text~=''
+  local titleH=compact and 30 or 38;local subtitleH=compact and 18 or 22
+  local top=math.floor((headerH-(titleH+(showSubtitle and subtitleH or 0)))/2)
+  title.Position=UDim2.fromOffset(textX,top);title.Size=UDim2.new(1,textW,0,titleH);limit.MaxTextSize=KitTheme.Size('Title',compact)
+  subtitle.Visible=showSubtitle;subtitle.Position=UDim2.fromOffset(textX+1,top+titleH-2);subtitle.Size=UDim2.new(1,textW,0,subtitleH);subtitle.TextSize=KitTheme.Size('Subtitle',compact)
  end
- U.New('UITextSizeConstraint',{MinTextSize=17,MaxTextSize=31},title)
  local changed=page:GetPropertyChangedSignal('AbsoluteSize'):Connect(layoutChrome);local compactChanged=gui:GetAttributeChangedSignal('CompactMenus'):Connect(layoutChrome);local landscapeChanged=gui:GetAttributeChangedSignal('LandscapeMenus'):Connect(layoutChrome);chrome.Destroying:Connect(function()changed:Disconnect();compactChanged:Disconnect();landscapeChanged:Disconnect()end);layoutChrome()
  page:SetAttribute('StandaloneWindow',true)
  return chrome
 end
+-- Kit window motion for a legacy window root: the card springs from 0.9 (Back easing) while a
+-- Surface cover fades off it (Kit.Window open, ~0.18 s; instant with reduced motion).
+-- setScale(k) applies the open multiplier (the caller keeps its own responsive scale).
+function U.OpenMotion(root,setScale,radius)
+ local cover=U.New('Frame',{Name='KitFadeCover',BackgroundColor3=U.Surface,BackgroundTransparency=1,BorderSizePixel=0,Size=UDim2.fromScale(1,1),Visible=false,Active=false,ZIndex=60},root)
+ local corner=U.Round(cover,radius or KitTheme.Radius.Window)
+ local value=U.New('NumberValue',{Name='KitOpenMotion',Value=1},root)
+ value.Changed:Connect(function(v)setScale(v)end)
+ local token=0
+ local function play()
+  if not root.Visible then return end
+  token+=1;local mine=token
+  if Motion.Reduced()then value.Value=1;cover.Visible=false;return end
+  value.Value=.9;cover.BackgroundTransparency=0;cover.Visible=true
+  Motion.Tween(value,KitTheme.Motion.Open+.06,{Value=1},Enum.EasingStyle.Back)
+  Motion.Tween(cover,KitTheme.Motion.Open,{BackgroundTransparency=1})
+  task.delay(KitTheme.Motion.Open,function()if token==mine then cover.Visible=false end end)
+ end
+ root:GetPropertyChangedSignal('Visible'):Connect(play)
+ return value,corner
+end
+-- The bag notification (InventoryController writes InventoryToast.Main.Message): the Kit toast look
+-- (white card, radius 14, faint navy outline, info dot, Ink text) and its slide-in from above.
+local function styleToast(screen)
+ local toast=find(screen,'InventoryToast');local face=toast and find(toast,'Main')
+ if not(face and face:IsA('GuiObject'))then return end
+ for _,o in ipairs(toast:GetChildren())do if o.Name=='Shadow'and o:IsA('GuiObject')then o.Visible=false end end
+ face.BackgroundColor3=WHITE;face.BackgroundTransparency=0;U.Round(face,14)
+ local stroke=findClass(face,'UIStroke');if stroke then stroke.Enabled=true;stroke.Color=NAVY;stroke.Thickness=2;stroke.Transparency=.2 else U.Stroke(face,NAVY,2,.2)end
+ local message=find(face,'Message')
+ if message and message:IsA('TextLabel')then message.TextColor3=NAVY;message.TextStrokeTransparency=1;message.TextXAlignment=Enum.TextXAlignment.Left;message.Position=UDim2.new(0,46,.1,0);message.Size=UDim2.new(1,-58,.8,0)end
+ local dot=find(face,'KitKind')
+ if not dot then
+  dot=make('Frame',{Name='KitKind',BackgroundColor3=KitTheme.Info,BorderSizePixel=0,AnchorPoint=Vector2.new(0,.5),Position=UDim2.new(0,10,.5,0),Size=UDim2.fromScale(.62,.62),SizeConstraint=Enum.SizeConstraint.RelativeYY,ZIndex=face.ZIndex+1},face)
+  make('UICorner',{CornerRadius=UDim.new(.5,0)},dot);make('UISizeConstraint',{MaxSize=Vector2.new(28,28)},dot)
+  local glyph=label(dot,'Glyph','i',face.ZIndex+2,{Size=UDim2.fromScale(1,1)});glyph:SetAttribute('NoTranslate',true);textLimit(glyph,17,8)
+ end
+ toast:GetPropertyChangedSignal('Visible'):Connect(function()
+  if not toast.Visible or Motion.Reduced()then face.Position=UDim2.new();face.BackgroundTransparency=0;return end
+  face.Position=UDim2.fromOffset(0,-18);face.BackgroundTransparency=.3
+  Motion.Tween(face,KitTheme.Motion.Slide+.06,{Position=UDim2.new(),BackgroundTransparency=0},Enum.EasingStyle.Back)
+ end)
+end
 function U.ApplyStandalone(screen)
  screen:SetAttribute('StandaloneWindows',true)
  local main=screen.MainWindow;local pages=main.Content.PageContainer
- main.BackgroundTransparency=1;main.ClipsDescendants=false
- for _,o in ipairs(main:GetChildren())do if o:IsA('UIStroke')then o.Enabled=false end end
+ -- MainWindow is the Kit window card (Surface, radius 18, 3 px outline); each page brings its Kit
+ -- header (U.WindowChrome) and draws straight on the card, like a Kit window body.
+ main.BackgroundTransparency=0;main.BackgroundColor3=U.Surface;main.ClipsDescendants=false
+ local mainGradient=findClass(main,'UIGradient');if mainGradient then mainGradient.Enabled=false end
+ local cardCorner=U.Round(main,KitTheme.Radius.Window);local cardStroke=U.Stroke(main,U.Colors.edge,KitTheme.StrokeWidth.Window)
  main.Header.Visible=false;main.Sidebar.Visible=false
  main.Size=UDim2.fromOffset(963,726);main.Position=UDim2.new(.5,0,.5,16)
  main.Content.Position=UDim2.fromOffset(16,100);main.Content.Size=UDim2.fromOffset(931,610);main.Content.ClipsDescendants=false
+ local contentStroke=findClass(main.Content,'UIStroke');if contentStroke then contentStroke.Enabled=false end
  pages.ClipsDescendants=false
  for _,page in ipairs(pages:GetChildren())do
   if page:IsA('Frame')and page.Name:match('Page$')then
-   page.BackgroundTransparency=0;page.BackgroundColor3=C(255,251,242);page.BorderSizePixel=0;page.ClipsDescendants=false
-   U.Round(page,16);U.Stroke(page,U.Colors.edge,3)
+   page.BackgroundTransparency=1;page.BorderSizePixel=0;page.ClipsDescendants=false
+   local pageStroke=findClass(page,'UIStroke');if pageStroke then pageStroke.Enabled=false end
    U.WindowChrome(page,page.Name:gsub('Page$',''),931)
    -- Original in-page headings remain useful section labels and preserve controller paths.
    local heading=page:FindFirstChild('PageHeader')or page:FindFirstChild('InventoryHeader')or page:FindFirstChild('YardHeader')
    if heading then
-    heading.BackgroundColor3=C(244,240,232)
+    heading.BackgroundColor3=U.SurfaceAlt
+    local headingStroke=findClass(heading,'UIStroke');if headingStroke then headingStroke.Transparency=.55 end
     for _,o in ipairs(heading:GetDescendants())do if o:IsA('TextLabel')then o.TextColor3=U.Colors.text;o.TextStrokeTransparency=1 end end
    end
   end
  end
- screen.Backdrop.BackgroundTransparency=.5
+ -- Kit backdrop: the same dim as kit windows, faded in when a legacy window opens.
+ local backdrop=screen.Backdrop
+ backdrop.BackgroundColor3=U.Backdrop;backdrop.BackgroundTransparency=KitTheme.BackdropTransparency
+ backdrop:GetPropertyChangedSignal('Visible'):Connect(function()
+  if not backdrop.Visible or Motion.Reduced()then backdrop.BackgroundTransparency=KitTheme.BackdropTransparency;return end
+  backdrop.BackgroundTransparency=1;Motion.Tween(backdrop,KitTheme.Motion.Open,{BackgroundTransparency=KitTheme.BackdropTransparency})
+ end)
+ local baseScale=1
+ local openMotion,coverCorner=U.OpenMotion(main,function(k)local s=findClass(main,'UIScale');if s then s.Scale=baseScale*k end end)
+ styleToast(screen)
  local dig=screen.HUD:FindFirstChild('GlobalDigWidget');if dig then dig.Visible=false end
  -- NAVIGATE, TITLES, HIDE UI and SETTINGS (HUD.SimpleSettings.Open keeps its name).
  U.BuildCluster(screen)
@@ -1027,19 +1204,21 @@ function U.ApplyStandalone(screen)
  bagGrid.ChildAdded:Connect(bindBagCard);for _,card in ipairs(bagGrid:GetChildren())do bindBagCard(card)end
  inv:GetPropertyChangedSignal('Visible'):Connect(function()if inv.Visible and screen:GetAttribute('CompactMenus')then bagDetails=false;inv.Browser.Visible=true;inv.Details.Visible=false;inv.Tabs.Visible=true;bagBack.Visible=false end end)
  local function resize()
-  local v=screen.AbsoluteSize;local scale=main:FindFirstChildWhichIsA('UIScale')
+  local scale=findClass(main,'UIScale')
   local _,_,width,height=U.SafeArea(screen)
   local compact=width<700 or height<560
   local landscape=compact and width>height*1.25
-  -- Reflow compact windows in actual pixels. A fixed tall design canvas made
-  -- landscape text ~8px and left only a sliver of the scrolling content visible.
-  local designW=compact and math.min(963,math.max(280,width-24))or 963
-  local designH=compact and math.min(1000,math.max(180,height-20))or 726
+  local m=U.ShellMetrics(compact,landscape)
+  -- Desktop: the 963 x 726 card, scaled to fit. Phones: a full-screen sheet in the safe area that
+  -- reflows in real pixels (Kit.Window); a fixed tall canvas made landscape text ~8 px.
+  local designW=compact and math.max(280,math.floor(width))or 963
+  local designH=compact and math.max(180,math.floor(height))or 726
   local factor=compact and 1 or math.max(.2,math.min(1,(width-28)/designW,(height-36)/designH))
   screen:SetAttribute('CompactMenus',compact);screen:SetAttribute('LandscapeMenus',landscape)
-  scale.Scale=factor;main.Size=UDim2.fromOffset(designW,designH);main.Position=U.SafePosition(screen,designW,designH,factor,compact and 10 or 14)
-  main.Content.Position=UDim2.fromOffset(compact and 12 or 16,compact and 76 or 100)
-  main.Content.Size=UDim2.fromOffset(designW-(compact and 24 or 32),designH-(compact and 86 or 116))
+  baseScale=factor;scale.Scale=factor*openMotion.Value;main.Size=UDim2.fromOffset(designW,designH);main.Position=U.SafePosition(screen,designW,designH,factor,compact and 0 or 14)
+  cardCorner.CornerRadius=UDim.new(0,compact and 0 or KitTheme.Radius.Window);coverCorner.CornerRadius=cardCorner.CornerRadius;cardStroke.Enabled=not compact
+  main.Content.Position=UDim2.fromOffset(m.ContentX,m.ContentY)
+  main.Content.Size=UDim2.fromOffset(designW-2*m.ContentX,designH-m.ContentY-m.Bottom)
   local inv=pages.InventoryPage
   for o,layout in pairs(inventoryHeaderLayout)do o.Position=layout.Position;o.Size=layout.Size;o.AnchorPoint=layout.AnchorPoint;o.Visible=layout.Visible end
   if compact then

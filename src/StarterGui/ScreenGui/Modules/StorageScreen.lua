@@ -2,9 +2,9 @@ local S={}
 function S.Build(c)
  local U,V=c.U,require(script.Parent.PreviewRenderer);local p,s=c.Snapshot.Profile,c.State;local W,H=c.W,c.H;local P=U.Colors
  local sc=U.Scroll(c.Parent,'StorageContent',0,0,W,H)
- U.Text(sc,'YOUR DOGS · YOUR DISPLAY',8,0,W-16,35,25,P.gold,true)
- local instructionH=W<450 and 76 or 48;local slotsTop=37+instructionH+14
- U.Text(sc,'Choose a slot, then place one of your dogs. Displays do not change kennel assignments.',8,37,W-16,instructionH,17,P.muted)
+ U.Section(sc,'YOUR DOGS · YOUR DISPLAY',8,0,W-24,36)
+ local instructionH=W<450 and 76 or 48;local slotsTop=44+instructionH+10
+ U.Text(sc,'Choose a slot, then place one of your dogs. Displays do not change kennel assignments.',10,44,W-20,instructionH,17,P.muted)
  local slotCols=math.max(1,math.min(3,math.floor((W-8)/220)));local cw=(W-24-(slotCols-1)*10)/slotCols;local chosen=s.DisplaySlot or 1
  for i=1,3 do
   local uid=(p.DisplayDogs or{})[tostring(i)];local d=uid and p.Dogs[uid]
@@ -13,8 +13,8 @@ function S.Build(c)
   U.Center(b,'DISPLAY '..i,5,4,cw-10,28,19,P.text,true)
   if d then V.Dog(b,d,6,34,cw-12,109);U.Center(b,d.DisplayName,5,143,cw-10,44,18,P.text,true)
   else U.Center(b,'EMPTY',5,54,cw-10,65,23,P.muted,true);U.Center(b,'Choose your dog below',5,127,cw-10,44,14,P.muted)end
-  U.Button(b,'SelectDisplay'..i,chosen==i and'SELECTED'or'SELECT',7,189,cw-14,38,function()s.DisplaySlot=i;c.Draw()end,P.blue)
-  U.Button(b,'ClearDisplay'..i,'CLEAR',7,233,cw-14,38,d and function()c.Send('DisplayDog',{Slot=i,Uid=''})end or nil)
+  U.Tab(b,'SelectDisplay'..i,chosen==i and'SELECTED'or'SELECT',7,189,cw-14,38,function()s.DisplaySlot=i;c.Draw()end,chosen==i)
+  U.Button(b,'ClearDisplay'..i,'CLEAR',7,233,cw-14,38,d and function()c.Send('DisplayDog',{Slot=i,Uid=''})end or nil,P.panel)
  end
  local listTop=slotsTop+math.ceil(3/slotCols)*290+10
  U.Button(sc,'ManageDogs','DOG LIST / ASSIGN TO KENNELS',6,listTop,W-20,44,function()c.Show('Dogs')end,P.blue)

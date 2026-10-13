@@ -16,12 +16,12 @@ function S.Build(c)
   local remaining=math.max(0,at-now);local full=remaining+def.Seconds>def.MaxSeconds
   local price=Boosts.Supply(key,p,now)
   local card=U.Panel(sc,'Supply_'..key,8+(i-1)%cols*(cw+14),99+math.floor((i-1)/cols)*470,cw,456,true)
-  local art=U.Frame(card,'Art',10,10,cw-20,86,style.Color);U.Round(art,12);U.Icon(art,style.Icon,(cw-20-82)/2,2,82,P.text)
+  local art=U.Frame(card,'Art',10,10,cw-20,86,style.Color);U.Round(art,12);U.Gradient(art,style.Color:Lerp(Color3.new(1,1,1),.3),style.Color);U.Icon(art,style.Icon,(cw-20-82)/2,2,82,P.text)
   U.Center(card,def.Name,10,103,cw-20,32,25,P.text,true)
   U.Center(card,def.EffectText,12,143,cw-24,39,18,P.text,true)
   U.Center(card,def.Description,14,184,cw-28,74,17,P.muted)
   U.Center(card,'10 MINUTES · STACKS UP TO 1 HOUR',12,266,cw-24,23,15,P.text,true)
-  local active=U.Center(card,remaining>0 and'ACTIVE · '..Price.Clock(remaining)or'READY TO USE',12,294,cw-24,25,18,P.text,true)
+  local active=U.Center(card,remaining>0 and'ACTIVE · '..Price.Clock(remaining)or'READY TO USE',12,294,cw-24,25,18,remaining>0 and U.TextGreen or P.text,true)
   if remaining>0 then active:SetAttribute('Deadline',at);active:SetAttribute('CountdownStyle','Supply')end
   local canBuy=not c.Busy and not full and p.Cash>=price
   local buy=U.Button(card,'BuyCoins','BUY · '..Price.Coins(price),12,328,cw-24,44,canBuy and function()c.Send('Supply',{Kind=key,Quote=price})end or nil,style.Color)
