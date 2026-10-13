@@ -212,9 +212,16 @@ function Screens.Build(c)
  elseif c.Page=='Settings'then
   local settings=U.Scroll(root,'SettingsContent',0,0,W,H)
   U.Text(settings,'MAKE YOURSELF AT HOME',20,8,W-40,36,24,P.text,true)
-  for i,k in ipairs({'Motion','Leaderboard','World Event FX'})do U.Button(settings,'Setting'..k,k,20,58+(i-1)*64,W-40,50,function()c.Options.setting(k)end,P.blue)end
-  U.Button(settings,'ReplayTutorial','HOW TO PLAY',20,264,W-40,50,function()c.Close();require(script.Parent.OnboardingGuide).Replay()end,P.green)
-  U.Text(settings,'Learn kennels, selling, mining and Lucky Blocks.',20,323,W-40,48,18,P.muted)
+  -- Each toggle shows its state (docs/UI.md). UI SOUNDS switches Kit.Sound; HIDE UI is the H key / eye button.
+  local state=c.Options.settings and c.Options.settings()or{}
+  local fx=tostring(Players.LocalPlayer:GetAttribute('WorldEventFX')or'High'):upper()
+  local rows={{'Motion','MOTION: '..(state.motion~=false and'ON'or'OFF'),state.motion~=false},{'UI Sounds','UI SOUNDS: '..(state.sounds~=false and'ON'or'OFF'),state.sounds~=false},
+   {'Leaderboard','LEADERBOARD: '..(state.players and'ON'or'OFF'),state.players==true},{'World Event FX','WORLD EVENT FX: '..fx,true}}
+  for i,row in ipairs(rows)do U.Button(settings,'Setting'..row[1],row[2],20,58+(i-1)*64,W-40,50,function()c.Options.setting(row[1]);c.Draw()end,row[3]and P.blue or P.muted)end
+  local y=58+#rows*64
+  U.Button(settings,'ReplayTutorial','HOW TO PLAY',20,y,W-40,50,function()c.Close();require(script.Parent.OnboardingGuide).Replay()end,P.green)
+  U.Text(settings,'Learn kennels, selling, mining and Lucky Blocks.',20,y+59,W-40,48,18,P.muted)
+  U.Text(settings,'HIDE UI: press H or the eye button at the top-right for clean screenshots.',20,y+108,W-40,48,18,P.muted)
  else
   local help=U.Scroll(root,'HelpContent',0,0,W,H)
   -- Room for four lines that wrap on phones and run longer in Russian.

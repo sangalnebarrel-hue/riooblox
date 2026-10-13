@@ -5,6 +5,7 @@ local Motion = require(script.Parent.Motion)
 local Maid = require(script.Parent.Maid)
 local Lang = require(script.Parent.Lang)
 local Overlay = require(script.Parent.Overlay)
+local Sound = require(script.Parent.Sound)
 
 local Controls = {}
 
@@ -30,6 +31,10 @@ local Tabs = {}
 Tabs.__index = Tabs
 Controls.Tabs = Tabs
 
+-- The pills are placed by hand (no UIListLayout) so the accent underline below the selected tab
+-- can slide between them in the strip's own pixels.
+local TAB_GAP, TAB_PAD, UNDERLINE_H = 8, 2, 4
+
 function Tabs.new(parent: Instance?, props: any): any
 	local self: any = setmetatable({}, Tabs)
 	self.Maid = Maid.new()
@@ -37,14 +42,66 @@ function Tabs.new(parent: Instance?, props: any): any
 	self.Accent = props.Accent or Theme.Accent
 	self.Buttons = {}
 	self.Z = props.ZIndex or 1
-	local strip = Base.Strip(parent, props.Name or "KitTabs", 8)
-	strip.ZIndex = self.Z
-	strip.Size = UDim2.new(1, 0, 0, 44)
+	local strip = Base.New("ScrollingFrame", {
+		Name = props.Name or "KitTabs",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollingDirection = Enum.ScrollingDirection.X,
+		ScrollBarThickness = 0,
+		CanvasSize = UDim2.new(),
+		ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
+		ClipsDescendants = true,
+		Selectable = false,
+		ZIndex = self.Z,
+		Size = UDim2.new(1, 0, 0, 44),
+	}, parent)
 	place(strip, props)
 	self.Instance = strip
 	self.Maid:Give(strip)
+	self.Underline = Base.New("Frame", {
+		Name = "Underline",
+		BackgroundColor3 = Theme.Darken(self.Accent, 0.28),
+		BorderSizePixel = 0,
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, TAB_PAD, 1, 0),
+		Size = UDim2.fromOffset(0, UNDERLINE_H),
+		Visible = false,
+		ZIndex = self.Z + 3,
+	}, strip)
+	Base.Corner(self.Underline, "pill")
 	self:SetTabs(props.Tabs or {}, props.Selected)
 	return self
+end
+
+-- Positions the pills left to right and the underline under the selected one.
+function Tabs._arrange(self: any, animate: boolean?)
+	local x = TAB_PAD
+	for _, id in ipairs(self.Order or {}) do
+		local entry = self.Buttons[id]
+		if entry then
+			local width = entry.Button.Size.X.Offset
+			entry.X, entry.W = x, width
+			entry.Button.Position = UDim2.fromOffset(x, TAB_PAD)
+			x += width + TAB_GAP
+		end
+	end
+	self.Instance.CanvasSize = UDim2.fromOffset(math.max(0, x - TAB_GAP + TAB_PAD), 0)
+	local selected = self.Selected and self.Buttons[self.Selected]
+	local line = self.Underline
+	line.BackgroundColor3 = Theme.Darken(self.Accent, 0.28)
+	line.Visible = selected ~= nil
+	if selected then
+		local inset = math.floor(selected.W * 0.18)
+		local goal = {
+			Position = UDim2.new(0, selected.X + inset, 1, 0),
+			Size = UDim2.fromOffset(math.max(12, selected.W - inset * 2), UNDERLINE_H),
+		}
+		if animate and line.Size.X.Offset > 0 then
+			Motion.Tween(line, Theme.Motion.Slide, goal, Enum.EasingStyle.Back)
+		else
+			line.Position, line.Size = goal.Position, goal.Size
+		end
+	end
 end
 
 function Tabs.SetTabs(self: any, tabs: { any }, selected: string?)
@@ -59,11 +116,16 @@ function Tabs.SetTabs(self: any, tabs: { any }, selected: string?)
 			Text = tab.Text,
 			TextSize = self.Props.TextSize or 17,
 			MinWidth = 84,
-			HeightOffset = -4,
+			HeightOffset = -(TAB_PAD + UNDERLINE_H),
 			LayoutOrder = i,
 			ZIndex = self.Z + 1,
 			NoTranslate = tab.NoTranslate,
 		})
+		button:SetAttribute("KitSound", "Tab")
+		-- The width follows the caption (AutoTranslate may change it later): re-place the pills.
+		self.Maid:Give(button:GetPropertyChangedSignal("Size"):Connect(function()
+			self:_arrange(false)
+		end))
 		local badge = Base.Text(button, {
 			Name = "Badge",
 			Text = tab.Badge and tostring(tab.Badge) or "",
@@ -93,6 +155,7 @@ function Tabs.SetTabs(self: any, tabs: { any }, selected: string?)
 		self.Selected = tabs[1] and tabs[1].Id
 	end
 	self:_paint(true)
+	self:_arrange(false)
 end
 
 function Tabs._paint(self: any, instant: boolean?)
@@ -121,6 +184,7 @@ function Tabs.Select(self: any, id: string, silent: boolean?)
 	local changed = self.Selected ~= id
 	self.Selected = id
 	self:_paint(false)
+	self:_arrange(changed)
 	Base.Reveal(self.Instance, self.Buttons[id].Button)
 	if changed and not silent and self.Props.OnChange then
 		task.spawn(self.Props.OnChange, id)
@@ -140,6 +204,7 @@ end
 function Tabs.SetAccent(self: any, color: Color3)
 	self.Accent = color
 	self:_paint(true)
+	self.Underline.BackgroundColor3 = Theme.Darken(color, 0.28)
 end
 
 function Tabs.Destroy(self: any)
@@ -226,6 +291,9 @@ function SearchBox.new(parent: Instance?, props: any): any
 	})
 	clear.Visible = box.Text ~= ""
 	self.Clear = clear
+	for _, connection in ipairs(Sound.Attach(clear, { Cue = "Toggle" }) or {}) do
+		self.Maid:Give(connection)
+	end
 	local token = 0
 	local function emit()
 		token += 1
@@ -357,6 +425,7 @@ function Chips.SetOptions(self: any, options: { any })
 			ZIndex = self.Z + 2,
 		}, button)
 		Base.Corner(dot, "pill")
+		button:SetAttribute("KitSound", "Toggle")
 		Base.Press(button, nil, self.Maid)
 		self.Maid:Give(button.Activated:Connect(function()
 			self:Toggle(option.Id)
@@ -591,6 +660,7 @@ function SortSelect.Open(self: any)
 	end
 	local panel, catcher = Overlay.Popup(self.Instance, w, h, close)
 	self.Popup, self.Catcher = panel, catcher
+	Sound.Play("Open", { Pitch = 1.3, Volume = 0.7 })
 	entry = Overlay.Push({ Dismiss = close, Kind = "popup" })
 	local list = Base.New("ScrollingFrame", {
 		Name = "Options",
@@ -628,6 +698,7 @@ function SortSelect.Open(self: any)
 			}, row)
 			Base.Corner(mark, Theme.Radius.Small)
 		end
+		Sound.Attach(row, { Cue = "Toggle" })
 		row.Activated:Connect(function()
 			close()
 			if self.Value == option.Id then

@@ -1,16 +1,24 @@
--- Tween helpers. Every kit animation goes through Motion.Tween so ReducedMotion (the Roblox
--- accessibility setting, or Motion.Override) makes it instant.
+-- Tween helpers. Every kit animation goes through Motion.Tween so reduced motion makes it
+-- instant. Reduced motion is one switch for the whole game: Motion.Override (tests), else the
+-- in-game Settings "Motion" toggle (player attribute ReducedMotion, which the world effects read
+-- too; PawpadRuntime seeds it from the Roblox setting), else Roblox's ReducedMotionEnabled.
 local TweenService = game:GetService("TweenService")
 local GuiService = game:GetService("GuiService")
+local Players = game:GetService("Players")
 
 local Motion = {}
 
--- true / false forces reduced motion on / off (tests, an in-game setting); nil follows Roblox.
+-- true / false forces reduced motion on / off (tests, tools); nil follows the settings.
 Motion.Override = nil :: boolean?
 
 function Motion.Reduced(): boolean
 	if Motion.Override ~= nil then
 		return Motion.Override == true
+	end
+	local player = Players.LocalPlayer
+	local chosen = player and player:GetAttribute("ReducedMotion")
+	if type(chosen) == "boolean" then
+		return chosen
 	end
 	local ok, value = pcall(function()
 		return (GuiService :: any).ReducedMotionEnabled

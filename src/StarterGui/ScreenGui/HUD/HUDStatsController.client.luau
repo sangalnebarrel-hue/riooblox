@@ -333,6 +333,13 @@ end
 local function placeChip()
 	local xp = hud:FindFirstChild("XPWidget")
 	if not xp or not screen then return end
+	-- UITheme.LayoutHUD reserves a slot under the currency bar (the chip's bottom-left corner).
+	local slot = screen:GetAttribute("HUDIncomeSlot")
+	if typeof(slot) == "Vector2" then
+		chipScale.Scale = widgetScale(moneyWidget)
+		chip.Position = UDim2.fromOffset(math.floor(slot.X), math.floor(slot.Y))
+		return
+	end
 	local dig = hud:FindFirstChild("GlobalDigWidget")
 	local f = widgetScale(moneyWidget)
 	chipScale.Scale = f
@@ -377,6 +384,7 @@ moneyWidget:GetPropertyChangedSignal("Position"):Connect(placeChip)
 chip:GetPropertyChangedSignal("AbsoluteSize"):Connect(placeChip)
 if screen then
 	screen:GetAttributeChangedSignal("HUDInnerRight"):Connect(placeChip)
+	screen:GetAttributeChangedSignal("HUDIncomeSlot"):Connect(placeChip)
 	screen:GetPropertyChangedSignal("AbsoluteSize"):Connect(placeChip)
 	local guide = screen:FindFirstChild("DistrictGuide")
 	local clear = guide and guide:FindFirstChild("ClearMarker")
