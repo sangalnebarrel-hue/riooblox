@@ -244,6 +244,31 @@ do
   return openScreen(page,state)
  end
 end
+-- Kit windows of the big overhaul (docs/OVERHAUL.md). Every N.OpenPage / N.OpenScreen route for
+-- these keys opens Modules.<module>.Open(arg) (arg: the page message or the screen state). A module
+-- that is missing or fails to load leaves the legacy route in place.
+local kitScreens={Inventory='InventoryScreen',Trade='TradeScreen',Navigate='NavigatorScreen',Titles='TitlesScreen',
+ Showcase='ShowcaseScreen',Decor='DecorScreen',Mine='MineScreen'}
+N.KitScreens=kitScreens
+local function kitScreen(page,arg)
+ local name=kitScreens[aliases[page]or page];if not name then return false end
+ local module=script.Parent:FindFirstChild(name);if not module then return false end
+ local ok,screen=pcall(require,module)
+ if not ok or type(screen)~='table'or type(screen.Open)~='function'then warn('DOGROTS '..name..': '..tostring(screen));return false end
+ local opened,err=pcall(screen.Open,arg);if not opened then warn('DOGROTS '..name..' open: '..tostring(err))end
+ return true
+end
+do
+ local openPage,openScreen=N.OpenPage,N.OpenScreen
+ function N.OpenPage(page,message)
+  if kitScreen(page,message)then return end
+  return openPage(page,message)
+ end
+ function N.OpenScreen(page,state)
+  if kitScreen(page,state)then return end
+  return openScreen(page,state)
+ end
+end
 Theme.AttachNavigation(gui,N);Theme.BindStandalone(gui,N)
  require(script.Parent.BuffHUD).Start(gui)
 require(script.Parent.OnboardingGuide).Start(gui,N)

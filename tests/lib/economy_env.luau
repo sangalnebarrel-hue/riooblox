@@ -212,7 +212,8 @@ requireNode = function(target)
 		Color3 = roblox.Color3,
 		Vector3 = roblox.Vector3,
 		Vector2 = roblox.Vector2,
-		CFrame = roblox.CFrame,
+		-- L.CFrame: a test may substitute a patched CFrame library (tools/qa/scene.luau fixes Lune's lookAt).
+		CFrame = L.CFrame or roblox.CFrame,
 		UDim2 = roblox.UDim2,
 		UDim = roblox.UDim,
 		Enum = roblox.Enum,
