@@ -586,12 +586,13 @@ function P.Play(result)
    if shown and not shownDog and(calm or t>=t1+.42)then
     shownDog=true
     for _,o in shown.Model:GetDescendants()do if o:IsA('BasePart')then o.LocalTransparencyModifier=0 end end
-    if materialize then materialize.Enabled=true end
+    -- Only one Highlight renders per model: the variant tint waits until the white flash is over.
+    if materialize then materialize.Enabled=true;if dogHighlight then dogHighlight.Enabled=false end end
     f.Anchor.CFrame=CFrame.new(k.W(Vector3.new(x,deck+2.5,0)));f.Sparks.Color=ColorSequence.new(Color3.new(1,1,1),L.Teal);f.Sparks:Emit(low and 8 or 24)
     P.Cue('Select',consoleParent)
    end
    if materialize then materialize.FillTransparency=span(t,(calm and 0 or t1+.42),(calm and .5 or t1+.95));materialize.OutlineTransparency=materialize.FillTransparency
-    if materialize.FillTransparency>=.99 then materialize.Enabled=false end end
+    if materialize.FillTransparency>=.99 and materialize.Enabled then materialize.Enabled=false;if dogHighlight and dogHighlight.Parent then dogHighlight.Enabled=true end end end
    if shown then
     yaw=math.pi/2+(t>t2 and(t-t2)*.45 or 0)
     placeDog(k,x,deck,yaw)

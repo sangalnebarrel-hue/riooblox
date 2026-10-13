@@ -25,9 +25,9 @@ local MAX_ANIMATED = 12
 local HEIGHT_STUDS, HEIGHT_PIXELS = 0.55, 12
 local OFFSET = Vector3.new(0, 3.1, 0)
 
-local holder = Instance.new("Folder")
-holder.Name = "DOGROTS_PlayerTitles"
-holder.Parent = player:WaitForChild("PlayerGui")
+-- Title billboards live directly in PlayerGui with ResetOnSpawn = false: a respawn clears
+-- PlayerGui's resettable children, and a plain Folder holder is not guaranteed to survive it.
+local holder = player:WaitForChild("PlayerGui")
 
 local function lang(): string
 	local ok, locale = pcall(function()
@@ -52,6 +52,7 @@ type Entry = {
 	Connections: { RBXScriptConnection },
 	HeadConnection: RBXScriptConnection?,
 	FirstPerson: boolean,
+	Bound: Model?,
 }
 local entries: { [Player]: Entry } = {}
 
@@ -97,6 +98,7 @@ local function bindHead(e: Entry, character: Model?)
 		e.HeadConnection = nil
 	end
 	e.Head = nil
+	e.Bound = character
 	e.FirstPerson = false
 	if e.Gui then
 		local gui: any = e.Gui
@@ -129,13 +131,21 @@ local function track(p: Player)
 	if entries[p] then
 		return
 	end
-	local e: Entry = { Player = p, Gui = nil, Badge = nil, Head = nil, Def = nil, Connections = {}, HeadConnection = nil, FirstPerson = false }
+	local e: Entry = { Player = p, Gui = nil, Badge = nil, Head = nil, Def = nil, Connections = {}, HeadConnection = nil, FirstPerson = false, Bound = nil }
 	entries[p] = e
 	table.insert(e.Connections, p:GetAttributeChangedSignal("TitleId"):Connect(function()
 		refresh(e)
 	end))
 	table.insert(e.Connections, p.CharacterAdded:Connect(function(character)
 		bindHead(e, character)
+	end))
+	-- A far player's character can reach this client by streaming after CharacterAdded fired;
+	-- the Character property still changes, so bind on that too (once per character).
+	table.insert(e.Connections, p:GetPropertyChangedSignal("Character"):Connect(function()
+		local character = p.Character
+		if character and e.Bound ~= character then
+			bindHead(e, character)
+		end
 	end))
 	table.insert(e.Connections, p.CharacterRemoving:Connect(function()
 		bindHead(e, nil)

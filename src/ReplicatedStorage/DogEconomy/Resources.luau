@@ -71,10 +71,11 @@ function Resources.Normalize(p: any)
 		p.Resources = {}
 		return
 	end
-	for kind in pairs(Resources.Kinds) do
+	for kind, def in pairs(Resources.Kinds) do
 		local v = p.Resources[kind]
-		if v ~= nil and (type(v) ~= "number" or v ~= v or v < 0 or v % 1 ~= 0) then
-			p.Resources[kind] = amount(v)
+		-- Heals everything Validate rejects (NaN, negative, fractions, infinity, above Max).
+		if v ~= nil and (type(v) ~= "number" or v ~= v or v < 0 or v % 1 ~= 0 or v > def.Max) then
+			p.Resources[kind] = math.min(def.Max, amount(v))
 		end
 	end
 end

@@ -89,8 +89,18 @@ local function animate(duration: number, delay: number, ease: (number) -> number
 		driver = RunService.Heartbeat:Connect(step)
 	end
 end
+-- Interrupting (H pressed again mid-animation) FINISHES every running animation first: its last
+-- step and its Done put the real transparencies/positions back (Done callbacks check the token
+-- for side effects), so the opposite animation never mistakes half-faded values for real ones.
 local function stopAll()
+	local running = table.clone(anims)
 	table.clear(anims)
+	for _, a in ipairs(running) do
+		pcall(a.Step, a.Ease(1))
+		if a.Done then
+			pcall(a.Done)
+		end
+	end
 	if driver then
 		driver:Disconnect()
 		driver = nil

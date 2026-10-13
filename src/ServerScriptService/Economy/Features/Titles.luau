@@ -98,6 +98,12 @@ local function countStone(p: any, c: any)
 		c.Stone = num(c.Stone) + (stone - c.StoneSeen)
 	end
 	c.StoneSeen = stone
+	-- Mining keeps an exact lifetime count (MiningRules: p.Mining.StoneMined); the balance deltas
+	-- above miss stone mined between a decor purchase and the next pass, so the larger one wins.
+	local mined = type(p.Mining) == "table" and num(p.Mining.StoneMined) or 0
+	if mined > num(c.Stone) then
+		c.Stone = mined
+	end
 end
 
 -- Discovery feed: Legendary or Secret finds since the last pass.

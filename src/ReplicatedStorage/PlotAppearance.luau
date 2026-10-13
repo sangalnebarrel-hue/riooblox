@@ -323,11 +323,12 @@ function A.Apply(yard,level,id)
     elseif n=='Post'or n=='Rail'or n=='EntryPillar'or n=='LanternPost'or n=='WarmLantern'or n=='LanternCap'then visible=false
     elseif themed and(n:find('Roof')or n=='Canopy'or n=='MascotPlinth')then visible=false end
     show(p,visible)
+    -- ^YardFoundation also matches the lawn pieces around the mine shaft (MineCarve: YardFoundation_MineCut).
     if n:find('Roof')or n:find('Canopy')then p.Color=top
     elseif n:find('Trim')or n:find('Cornice')or n:find('Pier')or n:find('Sill')then p.Color=trim;p.Material=Enum.Material.Metal
-    elseif n:find('Wall')or n:find('Cabinet')or n:find('Panel')or n:find('Foundation')and n~='YardFoundation'then p.Color=body
+    elseif n:find('Wall')or n:find('Cabinet')or n:find('Panel')or n:find('Foundation')and not n:match('^YardFoundation')then p.Color=body
     elseif n=='EntryWalk'or n=='UtilityApron'then p.Color=dark and body:Lerp(trim,.12)or level>=6 and Color3.fromRGB(192,183,160)or Color3.fromRGB(133,114,88);p.Material=level>=6 and Enum.Material.Cobblestone or Enum.Material.Ground
-    elseif n=='WorkArea'or n=='CosmeticGarden'or n=='YardFoundation'then p.Color=dark and Color3.fromRGB(49,63,51)or Color3.fromRGB(77,132,57);p.Material=Enum.Material.Grass
+    elseif n=='WorkArea'or n=='CosmeticGarden'or n:match('^YardFoundation')then p.Color=dark and Color3.fromRGB(49,63,51)or Color3.fromRGB(77,132,57);p.Material=Enum.Material.Grass
     elseif n:find('Lens')or n=='PadTrim'then p.Color=glow end
    end
   end end end

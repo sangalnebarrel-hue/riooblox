@@ -926,6 +926,15 @@ local function incoming(): { any }
 end
 -- Shows the newest incoming invitation (kind "invite") or "your trade started" (kind "started").
 local function showBanner(kind: string, row: any)
+	if kind == "invite" then
+		-- An invite needs an answer: Hide UI (screenshots) gives way, or the card would sit in a
+		-- disabled layer until the invite expires.
+		local pg = Players.LocalPlayer and Players.LocalPlayer:FindFirstChild("PlayerGui")
+		local mainGui = pg and pg:FindFirstChild("ScreenGui")
+		if mainGui and mainGui:GetAttribute("UIHidden") == true then
+			mainGui:SetAttribute("UIHidden", nil)
+		end
+	end
 	local b = buildBanner()
 	b.Kind, b.Row = kind, row
 	b.Avatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(row.Id) .. "&w=150&h=150"

@@ -170,7 +170,7 @@ local function banner(surge)
  phaseLabel:SetAttribute('HideAt',os.clock()+2.6)
 end
 local function setupUI()
- gui=Instance.new('ScreenGui');gui.Name='DOGROTS_EventCinema';gui.ResetOnSpawn=false;gui.DisplayOrder=95;gui.IgnoreGuiInset=true;gui.Parent=player:WaitForChild('PlayerGui')
+ gui=Instance.new('ScreenGui');gui.Name='DOGROTS_EventCinema';gui.ResetOnSpawn=false;gui.DisplayOrder=95;gui.IgnoreGuiInset=true;gui:SetAttribute('HideWithUI',true);gui.Parent=player:WaitForChild('PlayerGui')
  gui.Enabled=false
  local main=player.PlayerGui:FindFirstChild('ScreenGui')
  if main then menuConnection=main:GetAttributeChangedSignal('OpenMenu'):Connect(function()

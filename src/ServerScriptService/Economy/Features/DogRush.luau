@@ -29,8 +29,9 @@ function F.Shape(p: any): any
 	end
 	d.Version = 1
 	d.Generation = type(d.Generation) == "string" and #d.Generation <= 80 and d.Generation or ""
-	d.Caught = count(d.Caught)
-	d.Lifetime = math.max(count(d.Lifetime), d.Caught)
+	-- Clamped to what Validate accepts (Caught resets every event; Lifetime is a title counter).
+	d.Caught = math.min(count(d.Caught), 1000000)
+	d.Lifetime = math.min(math.max(count(d.Lifetime), d.Caught), 1e12)
 	d.Best = math.max(count(d.Best), d.Caught)
 	d.Chests = count(d.Chests)
 	if type(d.Claimed) ~= "table" then

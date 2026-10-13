@@ -27,7 +27,7 @@ local function part(props,parent)
 end
 local function screen()
  local gui=player:WaitForChild('PlayerGui'):FindFirstChild('DOGROTS_EventGameplay')
- if not gui then gui=Instance.new('ScreenGui');gui.Name='DOGROTS_EventGameplay';gui.ResetOnSpawn=false;gui.IgnoreGuiInset=true;gui.DisplayOrder=90;gui.Parent=player.PlayerGui end
+ if not gui then gui=Instance.new('ScreenGui');gui.Name='DOGROTS_EventGameplay';gui.ResetOnSpawn=false;gui.IgnoreGuiInset=true;gui.DisplayOrder=90;gui:SetAttribute('HideWithUI',true);gui.Parent=player.PlayerGui end
  return gui
 end
 local function rootOf(character)return character and character:FindFirstChild('HumanoidRootPart')end
@@ -222,18 +222,18 @@ end
 local rushHud -- built once: {Gui, Chip, Count, Next, Fill, Pop, Card, CardText, CardPop, Banner}
 local function hudLayout()
  if not rushHud then return end
- -- Touch: below the wallet counters (UITheme publishes U.HUD); desktop: top centre of the safe area.
+ -- Below the wallet counters (UITheme publishes U.HUD; the currency pills are top-centre on every device).
  local y=8
  local g=mainGui();local modules=g and g:FindFirstChild('Modules');local theme=modules and modules:FindFirstChild('UITheme')
  local ok,U=pcall(function()return theme and require(theme)end)
- if ok and type(U)=='table'and type(U.HUD)=='table'and U.HUD.Touch and U.HUD.StatsBottom and U.HUD.Top then y=math.max(8,U.HUD.StatsBottom-U.HUD.Top+8)end
+ if ok and type(U)=='table'and type(U.HUD)=='table'and U.HUD.StatsBottom and U.HUD.Top then y=math.max(8,U.HUD.StatsBottom-U.HUD.Top+8)end
  rushHud.Chip.Position=UDim2.new(.5,0,0,y)
  rushHud.Card.Position=UDim2.new(.5,0,0,y+52)
 end
 local function buildHud()
  if rushHud then return rushHud end
  local gui=Instance.new('ScreenGui');gui.Name='DOGROTS_DogRushHUD';gui.ResetOnSpawn=false;gui.IgnoreGuiInset=true;gui.DisplayOrder=41
- gui.ScreenInsets=Enum.ScreenInsets.CoreUISafeInsets;gui.Enabled=false;gui:SetAttribute('NoTranslate',true);gui.Parent=player:WaitForChild('PlayerGui')
+ gui.ScreenInsets=Enum.ScreenInsets.CoreUISafeInsets;gui.Enabled=false;gui:SetAttribute('NoTranslate',true);gui:SetAttribute('HideWithUI',true);gui.Parent=player:WaitForChild('PlayerGui')
  local function text(parent,props)
   local l=Instance.new('TextLabel');l.BackgroundTransparency=1;l.Font=Enum.Font.FredokaOne;l.TextColor3=Color3.new(1,1,1);l.TextScaled=true
   l:SetAttribute('KeepFont',true);l:SetAttribute('NoTranslate',true)

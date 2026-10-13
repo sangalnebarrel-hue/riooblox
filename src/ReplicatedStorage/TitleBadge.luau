@@ -32,6 +32,11 @@ function Badge.Reduced(): boolean
 	if Badge.ReducedOverride ~= nil then
 		return Badge.ReducedOverride == true
 	end
+	-- The in-game Settings "Motion" switch (player attribute ReducedMotion, as Kit.Motion reads it).
+	local player = game:GetService("Players").LocalPlayer
+	if player and player:GetAttribute("ReducedMotion") == true then
+		return true
+	end
 	local ok, value = pcall(function()
 		return (GuiService :: any).ReducedMotionEnabled
 	end)
@@ -277,7 +282,13 @@ end
 
 function Badge._step(self: any, t: number)
 	if not self.Plate.Parent then
+		-- Destroyed from outside (no :Destroy()): forget it and stop the shared animator when idle.
 		animated[self] = nil
+		self.Animated = false
+		if next(animated) == nil and connection then
+			connection:Disconnect()
+			connection = nil
+		end
 		return
 	end
 	-- The light band sweeps across in ~1.7 s, then rests off the text for ~1 s.
