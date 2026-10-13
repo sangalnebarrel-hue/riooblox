@@ -41,7 +41,6 @@ for _,f in ipairs({map:WaitForChild('KennelDogs'),map['03_DogLine']:WaitForChild
 -- Findings are cosmetic projections of committed server instances. No client rolls.
 local V=require(Replicated.DogEconomy.DiscoveryVisuals)
 local Tween=game:GetService('TweenService')
-local Debris=game:GetService('Debris')
 local playerGui=player:WaitForChild('PlayerGui')
 local gui=playerGui:FindFirstChild('ScreenGui')
 while not gui do
@@ -157,13 +156,133 @@ banner.BackgroundTransparency=.12;banner.TextColor3=Color3.fromRGB(255,225,139);
 banner.Font=Enum.Font.GothamBold;banner.TextScaled=true;banner.TextWrapped=true;banner.Visible=false;banner.ZIndex=80;banner.Parent=gui
 local corner=Instance.new('UICorner');corner.CornerRadius=UDim.new(0,12);corner.Parent=banner
 local constraint=Instance.new('UITextSizeConstraint');constraint.MaxTextSize=24;constraint.MinTextSize=12;constraint.Parent=banner
-local token=0;local active={};local recent={}
+local token=0;local recent={}
 local function toast(message,seconds)
  if gui:GetAttribute('OpenMenu')then return end
  token+=1;local version=token;banner.Text=message;banner.Visible=true
  task.delay(seconds or 4,function()if version==token then banner.Visible=false end end)
 end
 gui:GetAttributeChangedSignal('OpenMenu'):Connect(function()if gui:GetAttribute('OpenMenu')then token+=1;banner.Visible=false end end)
+-- Find reveal on the dig pit. The find rises out of the pit with a short pop, then spins slowly; a
+-- rarity-coloured glow ring spreads and fades on the ground; Epic and better add a light beam above
+-- it, Legendary / Secret one short sparkle burst. The name / weight billboard stays. Its parts are
+-- welded to the model root and only the root is tweened (no per-frame Lua). Pooled: at most
+-- REVEALS alive, the oldest is recycled, everything is cleared when a reveal ends.
+-- ReducedMotion (player attribute or Roblox setting): no rise, spin, spread or sparkles.
+-- Low FX (LowFX / WorldEventFX=Low / graphics quality <= 3): no beam, no sparkles, no spin.
+local REVEALS=4
+local revealFolder
+local revealSlots={}
+local function revealReduced()
+ if reduced()then return true end
+ local ok,value=pcall(function()return(game:GetService('GuiService')::any).ReducedMotionEnabled end)
+ return ok and value==true
+end
+local function revealLowFX()
+ if lowFX()then return true end
+ local ok,level=pcall(function()return UserSettings():GetService('UserGameSettings').SavedQualityLevel.Value end)
+ return ok and type(level)=='number'and level>0 and level<=3
+end
+local function effectPart(name,shape)
+ local p=Instance.new('Part');p.Name=name;p.Shape=shape;p.Material=Enum.Material.Neon;p.Anchored=true
+ p.CanCollide=false;p.CanTouch=false;p.CanQuery=false;p.CastShadow=false
+ return p
+end
+local function releaseReveal(slot)
+ slot.Token+=1;slot.Busy=false
+ for _,t in ipairs(slot.Tweens)do t:Cancel()end;table.clear(slot.Tweens)
+ if slot.Spin then slot.Spin:Cancel();slot.Spin=nil end
+ if slot.Model then slot.Model:Destroy();slot.Model=nil end
+ slot.Label.Enabled=false;slot.Label.Adornee=nil
+ slot.Ring.Parent=nil;slot.Beam.Parent=nil;slot.Spark.Parent=nil
+end
+local function revealSlot()
+ if not revealFolder or not revealFolder.Parent then
+  revealFolder=Instance.new('Folder');revealFolder.Name='DOGROTS_FindReveals';revealFolder.Parent=workspace
+  for _,slot in ipairs(revealSlots)do slot.Label.Parent=revealFolder end
+ end
+ local free,oldest
+ for _,slot in ipairs(revealSlots)do
+  if not slot.Busy then free=slot;break end
+  if not oldest or slot.At<oldest.At then oldest=slot end
+ end
+ if not free and #revealSlots<REVEALS then
+  free={Token=0,Tweens={},At=0}
+  free.Ring=effectPart('RevealRing',Enum.PartType.Cylinder)
+  free.Beam=effectPart('RevealBeam',Enum.PartType.Cylinder)
+  free.Spark=effectPart('RevealSparkle',Enum.PartType.Block);free.Spark.Size=Vector3.one*.2;free.Spark.Transparency=1
+  local emitter=Instance.new('ParticleEmitter');emitter.Enabled=false;emitter.Rate=0;emitter.LightEmission=1;emitter.LightInfluence=0
+  emitter.Lifetime=NumberRange.new(.7,1.3);emitter.Speed=NumberRange.new(4,9);emitter.SpreadAngle=Vector2.new(180,180);emitter.Drag=3
+  emitter.Acceleration=Vector3.new(0,-3,0);emitter.RotSpeed=NumberRange.new(-120,120)
+  emitter.Size=NumberSequence.new({NumberSequenceKeypoint.new(0,.38),NumberSequenceKeypoint.new(1,0)})
+  emitter.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(.7,.2),NumberSequenceKeypoint.new(1,1)})
+  emitter.Parent=free.Spark;free.Emitter=emitter
+  local label=Instance.new('BillboardGui');label.Name='RevealLabel';label.Size=UDim2.fromOffset(230,66);label.MaxDistance=90;label.Enabled=false;label.Parent=revealFolder
+  local text=Instance.new('TextLabel');text.Size=UDim2.fromScale(1,1);text.BackgroundTransparency=1;text.TextColor3=Color3.fromRGB(255,234,157);text.Font=Enum.Font.GothamBold;text.TextSize=18;text.TextStrokeTransparency=.2;text.Parent=label
+  free.Label=label;free.Text=text
+  table.insert(revealSlots,free)
+ end
+ if not free then free=oldest;releaseReveal(free)end
+ free.Busy=true;free.At=os.clock()
+ return free
+end
+local function showReveal(model:Model,x,spawn)
+ local slot=revealSlot();local stamp=slot.Token
+ slot.Model=model
+ local rarity=V.Rarity(x.ItemId);local rank=V.RarityRank[rarity]or 1;local color=V.RarityColor(rarity)
+ local still,low=revealReduced(),revealLowFX()
+ local function add(t)table.insert(slot.Tweens,t);t:Play();return t end
+ -- Root = the ground contact point: the recipe model's Root, or a new one under an old model.
+ local box,size=V.Bounds(model)
+ local root=model.PrimaryPart
+ if not root then
+  root=Instance.new('Part');root.Name='RevealRoot';root.Size=Vector3.one*.05;root.Transparency=1;root.Anchored=true
+  root.CanCollide=false;root.CanTouch=false;root.CanQuery=false;root.CFrame=box*CFrame.new(0,-size.Y/2,0);root.Parent=model;model.PrimaryPart=root
+ end
+ local base=spawn.CFrame
+ local final=base*CFrame.new(0,.3,0)
+ model:PivotTo(still and final or base*CFrame.new(0,-math.max(1,size.Y)*1.1,0))
+ model.Parent=revealFolder
+ for _,p in ipairs(model:GetDescendants())do
+  if p:IsA('BasePart')and p~=root then
+   local weld=Instance.new('WeldConstraint');weld.Part0=root;weld.Part1=p;weld.Parent=p
+   p.Massless=true;p.Anchored=false
+  end
+ end
+ local function spin(step)
+  if slot.Token~=stamp or not root.Parent then return end
+  slot.Spin=Tween:Create(root,TweenInfo.new(2.6,Enum.EasingStyle.Linear),{CFrame=final*CFrame.Angles(0,step*2*math.pi/3,0)})
+  slot.Spin.Completed:Connect(function(state)if state==Enum.PlaybackState.Completed then spin(step+1)end end)
+  slot.Spin:Play()
+ end
+ if not still then
+  local rise=add(Tween:Create(root,TweenInfo.new(.6,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{CFrame=final}))
+  if not low then rise.Completed:Connect(function(state)if state==Enum.PlaybackState.Completed then spin(1)end end)end
+ end
+ -- Glow ring on the ground.
+ local ring=slot.Ring;local diameter=math.clamp(math.max(size.X,size.Z)*1.8,3,10)
+ local start=still and 1 or .35
+ ring.Color=color;ring.Transparency=.2;ring.Size=Vector3.new(.06,diameter*start,diameter*start)
+ ring.CFrame=base*CFrame.new(0,.05,0)*CFrame.Angles(0,0,math.pi/2);ring.Parent=revealFolder
+ if not still then add(Tween:Create(ring,TweenInfo.new(.55,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{Size=Vector3.new(.06,diameter,diameter)}))end
+ add(Tween:Create(ring,TweenInfo.new(2.4,Enum.EasingStyle.Quad,Enum.EasingDirection.In,0,false,.8),{Transparency=1}))
+ -- Light beam above Epic+ finds.
+ if rank>=4 and not low then
+  local beam=slot.Beam;local height=rank>=5 and 28 or 18;local width=rank>=5 and 1.6 or 1.1
+  beam.Color=color;beam.Transparency=.45;beam.Size=Vector3.new(height,width,width)
+  beam.CFrame=final*CFrame.new(0,size.Y+.4+height/2,0)*CFrame.Angles(0,0,math.pi/2);beam.Parent=revealFolder
+  add(Tween:Create(beam,TweenInfo.new(2.6,Enum.EasingStyle.Quad,Enum.EasingDirection.In,0,false,1.2),{Transparency=1}))
+ end
+ -- One sparkle burst for Legendary / Secret.
+ if rank>=5 and not low and not still then
+  slot.Spark.CFrame=final*CFrame.new(0,size.Y/2,0);slot.Spark.Parent=revealFolder
+  slot.Emitter.Color=ColorSequence.new(color:Lerp(Color3.new(1,1,1),.35),color)
+  task.delay(.45,function()if slot.Token==stamp then slot.Emitter:Emit(rank>=6 and 34 or 24)end end)
+ end
+ slot.Label.Adornee=root;slot.Label.StudsOffsetWorldSpace=Vector3.new(0,size.Y+1.3,0)
+ slot.Text.Text=x.DisplayName..'\n'..string.format('%.6g kg',x.WeightKg)..' · '..x.WeightTier;slot.Label.Enabled=true
+ task.delay(x.TierIndex>=7 and 14 or 6,function()if slot.Token==stamp then releaseReveal(slot)end end)
+end
 Replicated:WaitForChild('DiscoveryReveal').OnClientEvent:Connect(function(x)
  if recent[x.ItemUid]then return end;recent[x.ItemUid]=true;task.delay(60,function()recent[x.ItemUid]=nil end)
  local model=V.Clone(x);if not model then return end
@@ -176,17 +295,8 @@ Replicated:WaitForChild('DiscoveryReveal').OnClientEvent:Connect(function(x)
   if candidate:GetAttribute('YardId')==spawn.YardId and candidate:GetAttribute('OwnerUserId')==player.UserId then yard=candidate;break end
  end
  if not yard or not yard:FindFirstChild(spawn.Slot)then model:Destroy();return end
- local bbox,size=model:GetBoundingBox();local offset=model:GetPivot():ToObjectSpace(bbox)
- model.Parent=workspace
- model:PivotTo(spawn.CFrame*CFrame.new(0,size.Y/2,0)*offset:Inverse())
- table.insert(active,model);while #active>4 do local old=table.remove(active,1);old:Destroy()end
- Debris:AddItem(model,x.TierIndex>=7 and 14 or 6)
- local glow=Instance.new('Highlight');glow.FillTransparency=.85;glow.OutlineColor=Color3.fromRGB(255,220,90);glow.Parent=model
- local attachment=Instance.new('Attachment');attachment.Position=Vector3.new(0,size.Y/2+1,0)
- local part=model:FindFirstChildWhichIsA('BasePart');if part then attachment.Parent=part end
- local label=Instance.new('BillboardGui');label.Size=UDim2.fromOffset(230,66);label.StudsOffsetWorldSpace=Vector3.new(0,size.Y/2+1,0);label.MaxDistance=90;label.Adornee=part;label.Parent=model
- local text=Instance.new('TextLabel');text.Size=UDim2.fromScale(1,1);text.BackgroundTransparency=1;text.TextColor3=Color3.fromRGB(255,234,157);text.Font=Enum.Font.GothamBold;text.TextSize=18;text.TextStrokeTransparency=.2
- text.Text=x.DisplayName..'\n'..string.format('%.6g kg',x.WeightKg)..' · '..x.WeightTier;text.Parent=label
+ local shown,err=pcall(showReveal,model,x,spawn)
+ if not shown then warn('DOGROTS find reveal: '..tostring(err));model:Destroy()end
  if x.TierIndex>=4 or x.Mutation~='NORMAL' or x.Class=='Secret'then
   toast(x.Mutation..' '..x.DisplayName..'\n'..string.format('%.6g kg',x.WeightKg)..' · '..x.WeightTier..'\nCombined: 1 / '..string.format('%.4g',x.CombinedOdds),x.TierIndex>=7 and 7 or 4)
  end
