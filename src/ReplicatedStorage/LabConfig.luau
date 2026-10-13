@@ -27,4 +27,16 @@ C.HighValueVariants={Golden=true,Corrupted=true,Glitched=true,Void=true}
 -- rerolling a mutated variant) needs a held confirmation.
 C.HighValue={MinRank=3,Mastery=25}
 C.Colors={Normal=Color3.fromRGB(151,231,155),Shiny=Color3.fromRGB(168,220,255),Golden=Color3.fromRGB(255,200,63),Corrupted=Color3.fromRGB(209,64,83),Glitched=Color3.fromRGB(211,92,248),Void=Color3.fromRGB(106,49,184)}
+-- NUCLEAR MUTATION MACHINE (docs/LAB.md).
+-- SimpleMode: the lab only rerolls a dog's variant (Procedure 'Mutation': the costs, odds, first free try,
+-- cooldown and held confirmation above stay exactly as they were) through Modules.MutationLabScreen and the
+-- machine cinematic. Gene targeting, DNA extraction, ascension and recipes are refused by the server.
+-- false = the old five-procedure lab (Modules.LabScreen) as a rollback; saves are valid either way.
+C.SimpleMode=true
+-- The machine in the lab hall (MutationMachineWorld.server). false keeps the old chamber and terminal.
+C.MachineWorld=true
+-- Cinematic phases in seconds (Modules.LabPresentation): button, loading, rise + fill, colour reel,
+-- pause on the landed colour, burst + reveal; Reduced = the whole short version (Reduced Motion);
+-- PublicBurst = when players nearby see the burst after someone's commit.
+C.Machine={Activate=.7,Load=1.5,Rise=1.0,Reel=2.6,Hold=.35,Reveal=1.3,Reduced=2.2,PublicBurst=5.6}
 return C

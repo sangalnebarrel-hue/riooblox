@@ -1,7 +1,9 @@
 --!nocheck
 -- Genetics lab: shared rules (ReplicatedStorage.LabGenetics), server rules (Economy.LabRules) and the commit
--- protocol (Economy.LabService) on the real modules from src/ (tests/lib/economy_env.luau), plus the
--- localization coverage of the lab window. lune run tests/lab.luau
+-- protocol (Economy.LabService) on the real modules from src/ (tests/lib/economy_env.luau), the NUCLEAR
+-- MUTATION MACHINE (LabConfig.SimpleMode: only 'Mutation' is served, odds and costs unchanged; the machine
+-- builder and its layout), old profiles, plus the localization coverage of the lab windows.
+-- lune run tests/lab.luau
 local fs = require("@lune/fs")
 local L = require("./lib/economy_env")
 
@@ -554,6 +556,19 @@ end)
 ------------------------------------------------------------------------------------------------
 -- LabService (commit protocol with the acknowledgement)
 ------------------------------------------------------------------------------------------------
+-- The old five-procedure lab (LabConfig.SimpleMode = false, the rollback) for the duration of fn.
+local function legacy(fn)
+	return function()
+		local was = C.SimpleMode
+		C.SimpleMode = false
+		local ok, err = pcall(fn)
+		C.SimpleMode = was
+		if not ok then
+			error(err, 0)
+		end
+	end
+end
+
 local function service(p)
 	runtime.Engine.Get = function()
 		return p
@@ -575,7 +590,7 @@ local function service(p)
 	return { UserId = 1, DisplayName = "Tester" }
 end
 
-test("commit: valuable plans need the acknowledgement; replays are idempotent", function()
+test("legacy commit: valuable plans need the acknowledgement; replays are idempotent", legacy(function()
 	local p = profile()
 	local player = service(p)
 	local d = dog(p, "MechaShiba")
@@ -615,9 +630,9 @@ test("commit: valuable plans need the acknowledgement; replays are idempotent", 
 	end, "Enter Mutation Lab")
 	access.Reach = true
 	L.Time = NOW
-end)
+end))
 
-test("commit: a dog changed after the preview needs a fresh review", function()
+test("legacy commit: a dog changed after the preview needs a fresh review", legacy(function()
 	local p = profile()
 	local player = service(p)
 	local d = dog(p, "Breadog")
@@ -627,6 +642,464 @@ test("commit: a dog changed after the preview needs a fresh review", function()
 	eq(ok, false)
 	truthy(string.find(err, "Review a fresh preview", 1, true), err)
 	truthy(p.Dogs[d.DogUid])
+end))
+
+test("legacy mode keeps every procedure and the recipe book", legacy(function()
+	local p = profile()
+	local player = service(p)
+	local _, info = LS.Request(player, "LabInfo", {}, "lg1")
+	eq(info.Simple, false)
+	truthy(type(info.Recipes) == "table" and #info.Recipes > 0, "recipe book")
+	local a, b, c = dog(p, "CoffeeDog"), dog(p, "CoffeeDog"), dog(p, "CoffeeDog")
+	local ok, plan = LS.Request(player, "LabPreview", { Procedure = "Fusion", RecipeId = "ASCEND", Uids = { a.DogUid, b.DogUid, c.DogUid }, PrimaryUid = a.DogUid }, "lg2")
+	truthy(ok, tostring(plan))
+	eq(plan.RecipeId, "ASCEND")
+	local cat = item(p, "golden_scarab")
+	p.Lab.DNA.CommonDNA = 4
+	local okT, target = LS.Request(player, "LabPreview", { Procedure = "Targeting", Uids = { dog(p, "Breadog").DogUid }, Items = { cat } }, "lg3")
+	truthy(okT, tostring(target))
+	eq(target.Target, "Golden")
+end))
+
+------------------------------------------------------------------------------------------------
+-- The mutation machine (LabConfig.SimpleMode)
+------------------------------------------------------------------------------------------------
+test("simple mode is the default and only serves Mutation", function()
+	eq(C.SimpleMode, true, "LabConfig.SimpleMode")
+	local p = profile()
+	local player = service(p)
+	local d = dog(p, "Breadog")
+	for _, args in {
+		{ Procedure = "Extraction", Uids = { d.DogUid } },
+		{ Procedure = "Targeting", Uids = { d.DogUid }, Items = { item(p, "golden_scarab") } },
+		{ Procedure = "Fusion", RecipeId = "ASCEND", Uids = { d.DogUid, dog(p, "Breadog").DogUid, dog(p, "Breadog").DogUid }, PrimaryUid = d.DogUid },
+		{ Procedure = "Creation", RecipeId = "DISCOVER", Uids = { d.DogUid, dog(p, "CoffeeDog").DogUid } },
+		{ Uids = { d.DogUid } },
+	} do
+		errors(function()
+			LS.Request(player, "LabPreview", args, "sm")
+		end, "The Mutation Machine only rerolls mutations")
+	end
+	-- Extra items (catalysts, stabilizers, DNA) are gone from the machine.
+	for _, extra in { { Items = { item(p, "golden_scarab") } }, { StabilizerUid = item(p, "quartz_crystal") }, { DNA = { CommonDNA = 1 } }, { RecipeId = "" } } do
+		local args = { Procedure = "Mutation", Uids = { d.DogUid } }
+		for k, v in extra do
+			args[k] = v
+		end
+		errors(function()
+			LS.Request(player, "LabPreview", args, "sm2")
+		end, "The Mutation Machine takes only a dog")
+	end
+	truthy(p.Dogs[d.DogUid], "nothing consumed")
+	-- A quote that is not a mutation (made before a switch) is refused at commit too.
+	LS.Quotes[1] = { Token = string.rep("a", 32), Args = {}, Plan = { Procedure = "Extraction" }, Expires = NOW + 60 }
+	errors(function()
+		LS.Request(player, "LabCommit", { Token = string.rep("a", 32), Confirm = true }, "sm3")
+	end, "The Mutation Machine only rerolls mutations")
+	LS.Quotes[1] = nil
+	-- Away from the console the machine says where to go.
+	access.Reach = false
+	errors(function()
+		LS.Request(player, "LabInfo", {}, "sm4")
+	end, "Walk up to the Mutation Machine console")
+	access.Reach = true
+end)
+
+test("simple mode LabInfo: real odds with income bonus, costs, free first try, no recipe book", function()
+	local p = profile()
+	local player = service(p)
+	local ok, info = LS.Request(player, "LabInfo", {}, "si1")
+	truthy(ok)
+	eq(info.Simple, true)
+	eq(info.Recipes, nil, "no recipe book")
+	eq(info.TutorialComplete, false, "first mutation is free")
+	eq(info.Costs.Cash, 5000)
+	eq(info.Costs.RankCash, 1500)
+	eq(info.Costs.RankBones, 5)
+	truthy(info.Machine and info.Machine.Reel > 0, "cinematic timings")
+	local expected = { Normal = 77, Shiny = 15, Golden = 5, Corrupted = 2, Glitched = 0.8, Void = 0.2 }
+	local bonus = { Normal = 0, Shiny = 0.12, Golden = 0.30, Corrupted = 0.50, Glitched = 0.75, Void = 1.10 }
+	local sum = 0
+	eq(#info.Odds, 6)
+	for i, row in info.Odds do
+		eq(row.Name, Base.Variants[i].Name)
+		near(row.Percent, expected[row.Name], 1e-9, row.Name)
+		near(row.Bonus, bonus[row.Name], 1e-9, row.Name .. " bonus")
+		sum += row.Percent
+	end
+	near(sum, 100, 1e-9)
+end)
+
+test("simple mode mutation: free first try, then the old costs per rank and the old odds", function()
+	local p = profile()
+	local player = service(p)
+	local d = dog(p, "Breadog")
+	local cash, bones = p.Cash, p.Bones
+	local _, plan = LS.Request(player, "LabPreview", { Procedure = "Mutation", Uids = { d.DogUid } }, "mu1")
+	eq(plan.Cash, 0)
+	eq(plan.Bones, 0)
+	eq(plan.StarterReagent, true)
+	eq(plan.HighValue, false)
+	for i, c in plan.Chances do
+		near(c.Percent, Base.Variants[i].Weight / 100, 1e-9, c.Name)
+	end
+	-- roll 0.95 * 100 = 95 -> Golden (77 + 15 <= 95 < 97); strange roll 0.99 -> none
+	runtime.Engine.Random = fixed(0.95, 0.99)
+	local ok, result = LS.Request(player, "LabCommit", { Token = plan.Token, Confirm = true }, "mu2")
+	truthy(ok, tostring(result))
+	eq(result.Dog.Variant, "Golden")
+	eq(result.BeforeDog.Variant, "Normal")
+	eq(p.Dogs[d.DogUid].Variant, "Golden")
+	eq(p.Cash, cash)
+	eq(p.Bones, bones)
+	truthy(p.Lab.TutorialComplete)
+	-- The chamber cools down for 7 s.
+	local _, again = LS.Request(player, "LabPreview", { Procedure = "Mutation", Uids = { d.DogUid } }, "mu3")
+	local okC, cooling = LS.Request(player, "LabCommit", { Token = again.Token, Confirm = true, Acknowledge = again.Token }, "mu4")
+	eq(okC, false)
+	truthy(string.find(cooling, "Chamber cooling down", 1, true), cooling)
+	-- Paid tries: 5000 + 1500 x rank coins and 5 x rank bones, for every rank.
+	L.Time = NOW + 60
+	local ranks = {}
+	for id, def in Defs do
+		if type(def) == "table" and def.Rank and not ranks[def.Rank] and def.Available and def.MutationRules and def.MutationRules.Enabled then
+			ranks[def.Rank] = id
+		end
+	end
+	local checked = 0
+	for rank, id in ranks do
+		local x = dog(p, id)
+		local okR, paid = LS.Request(player, "LabPreview", { Procedure = "Mutation", Uids = { x.DogUid } }, "mu5")
+		truthy(okR, id .. ": " .. tostring(paid))
+		eq(paid.Cash, 5000 + 1500 * rank, id)
+		eq(paid.Bones, 5 * rank, id)
+		checked += 1
+	end
+	truthy(checked >= 5, "ranks checked: " .. checked)
+	local x = dog(p, "Breadog")
+	local _, paid = LS.Request(player, "LabPreview", { Procedure = "Mutation", Uids = { x.DogUid } }, "mu6")
+	eq(paid.Cash, 6500)
+	eq(paid.Bones, 5)
+	local before = p.Cash
+	runtime.Engine.Random = fixed(0.5, 0.99)
+	local okP, normal = LS.Request(player, "LabCommit", { Token = paid.Token, Confirm = true }, "mu7")
+	truthy(okP, tostring(normal))
+	eq(normal.Dog.Variant, "Normal", "roll 50 stays Normal")
+	eq(p.Cash, before - 6500)
+	L.Time = NOW
+end)
+
+test("simple mode: rerolling a mutated dog needs the held acknowledgement; replays never pay twice", function()
+	local p = profile()
+	p.Lab.TutorialComplete = true
+	local player = service(p)
+	local d = dog(p, "Breadog", { Variant = "Golden" })
+	local _, plan = LS.Request(player, "LabPreview", { Procedure = "Mutation", Uids = { d.DogUid } }, "hv1")
+	eq(plan.HighValue, true)
+	eq(plan.Reroll, true)
+	eq(plan.FromVariant, "Golden")
+	local ok, refused = LS.Request(player, "LabCommit", { Token = plan.Token, Confirm = true }, "hv2")
+	eq(ok, false)
+	truthy(string.find(refused, "Confirm these valuable dogs first", 1, true), refused)
+	eq(p.Dogs[d.DogUid].Variant, "Golden", "untouched")
+	local cash = p.Cash
+	runtime.Engine.Random = fixed(0.5, 0.99)
+	local okA, result = LS.Request(player, "LabCommit", { Token = plan.Token, Confirm = true, Acknowledge = plan.Token }, "hv3")
+	truthy(okA, tostring(result))
+	eq(result.Dog.Variant, "Normal", "a reroll can lose Golden")
+	eq(p.Cash, cash - 6500)
+	local okR, replay = LS.Request(player, "LabCommit", { Token = plan.Token, Confirm = true, Acknowledge = true }, "hv4")
+	truthy(okR)
+	eq(replay.Token, plan.Token)
+	eq(p.Cash, cash - 6500, "the replay is answered from the history")
+	-- Trades block the machine.
+	runtime.Engine.TradeByUser[1] = true
+	errors(function()
+		LS.Request(player, "LabInfo", {}, "hv5")
+	end, "Finish or cancel your trade")
+	runtime.Engine.TradeByUser[1] = nil
+end)
+
+test("an old profile with DNA, history, recipes and ascended lab dogs stays valid and can mutate", function()
+	local p = profile()
+	local asc = dog(p, "Breadog", { Ascension = 2, Mastery = 30 })
+	asc.LabRecipe = "GOLDEN_BREAKFAST"
+	asc.Origin = "LAB_FUSION"
+	local history = {}
+	for i = 1, C.MaxHistory do
+		table.insert(history, { Token = string.format("%032d", i), At = NOW - 1000 - i, Procedure = i % 2 == 0 and "Extraction" or "Fusion", RecipeId = i % 2 == 1 and "ASCEND" or nil, Consumed = {}, DNA = { CommonDNA = 2 }, Success = true })
+	end
+	p.Lab = {
+		Version = 1,
+		DNA = { CommonDNA = 12, FOOD = 3, StrangeDNA = 2, MutationShards = 4 },
+		DiscoveredDNA = { CommonDNA = true },
+		Recipes = { GOLDEN_BREAKFAST = NOW - 5000 },
+		History = history,
+		Experiments = 55,
+		TutorialComplete = true,
+		PaidDNA = true,
+		LastAt = NOW - 3600,
+	}
+	R.Normalize(p, 1, NOW)
+	R.Validate(p)
+	eq(p.Lab.DNA.CommonDNA, 12)
+	truthy(p.Lab.DiscoveredDNA.FOOD and p.Lab.DiscoveredDNA.StrangeDNA, "discovered from the bank")
+	truthy(p.Lab.FirstDiscoveries and p.Lab.Tier >= 1, "old profile gets the new fields")
+	local player = service(p)
+	local _, plan = LS.Request(player, "LabPreview", { Procedure = "Mutation", Uids = { asc.DogUid } }, "old1")
+	eq(plan.Cash, 6500)
+	eq(plan.HighValue, false, "an ascended Normal dog can only gain")
+	runtime.Engine.Random = fixed(0.80, 0.99)
+	local ok, result = LS.Request(player, "LabCommit", { Token = plan.Token, Confirm = true }, "old2")
+	truthy(ok, tostring(result))
+	eq(result.Dog.Variant, "Shiny")
+	local d = p.Dogs[asc.DogUid]
+	eq(d.AscensionLevel, 2, "ascension (and its income) kept")
+	eq(d.LabRecipe, "GOLDEN_BREAKFAST")
+	eq(d.Origin, "LAB_FUSION")
+	eq(#p.Lab.History, C.MaxHistory, "history stays capped")
+	eq(p.Lab.History[1].Token, plan.Token)
+	eq(p.Lab.DNA.CommonDNA, 12, "DNA bank untouched")
+	eq(p.Lab.Recipes.GOLDEN_BREAKFAST, NOW - 5000)
+	R.Normalize(p, 1, NOW)
+	R.Validate(p)
+	-- A fresh profile (new player) has a valid lab too.
+	local q = R.Profile(2, NOW)
+	R.Normalize(q, 2, NOW)
+	R.Validate(q)
+	truthy(not q.Lab.TutorialComplete, "new player: first mutation free")
+end)
+
+------------------------------------------------------------------------------------------------
+-- The machine: layout maths and the builder
+------------------------------------------------------------------------------------------------
+-- Lune's CFrame.lookAt is wrong (tools/qa/scene.luau): the builder and the layout get a fixed copy.
+do
+	local roblox = require("@lune/roblox")
+	local Raw = roblox.CFrame
+	local function lookAt(at, target, up)
+		local look = target - at
+		if look.Magnitude < 1e-9 then
+			return Raw.new(at)
+		end
+		look = look.Unit
+		up = up or roblox.Vector3.new(0, 1, 0)
+		local right = look:Cross(up)
+		if right.Magnitude < 1e-6 then
+			right = look:Cross(roblox.Vector3.new(0, 0, -1))
+		end
+		right = right.Unit
+		return Raw.fromMatrix(at, right, right:Cross(look))
+	end
+	L.CFrame = setmetatable({ lookAt = lookAt }, { __index = Raw })
+end
+local Layout = L.Require("ReplicatedStorage.MutationMachineLayout")
+local Build = L.Require("ServerScriptService.MutationMachineBuild")
+local Instance = require("@lune/roblox").Instance
+local V3 = require("@lune/roblox").Vector3
+local CF = L.CFrame
+
+local function aabb(p)
+	local lo, hi
+	for x = -1, 1, 2 do
+		for y = -1, 1, 2 do
+			for z = -1, 1, 2 do
+				local v = p.CFrame:PointToWorldSpace(V3.new(p.Size.X * x / 2, p.Size.Y * y / 2, p.Size.Z * z / 2))
+				lo = lo and V3.new(math.min(lo.X, v.X), math.min(lo.Y, v.Y), math.min(lo.Z, v.Z)) or v
+				hi = hi and V3.new(math.max(hi.X, v.X), math.max(hi.Y, v.Y), math.max(hi.Z, v.Z)) or v
+			end
+		end
+	end
+	return lo, hi
+end
+
+test("arm inverse kinematics reaches its targets with fixed link lengths", function()
+	for _, target in { Layout.Arm.Rest, Layout.Arm.Place } do
+		local pose = Layout.ArmPose(target)
+		local shoulder, elbow, wrist = pose.Upper.Position, pose.Fore.Position, pose.Claw.Position
+		near((elbow - shoulder).Magnitude, Layout.Arm.Upper, 1e-4, "upper link")
+		near((wrist - elbow).Magnitude, Layout.Arm.Fore, 1e-4, "forearm")
+		near((wrist - target).Magnitude, 0, 1e-3, "reaches the target")
+		near(pose.Upper.LookVector:Dot((elbow - shoulder).Unit), 1, 1e-4, "upper frame looks along the link")
+	end
+	-- Out of reach: the arm stretches toward the target instead of breaking.
+	local far = Layout.ArmPose(Layout.Arm.Base + V3.new(-40, 5, 0))
+	truthy(far.Claw.Position.X < Layout.Arm.Base.X, "stretches toward it")
+end)
+
+test("colour reel slows down and lands on the result (near miss before Normal)", function()
+	local names = {}
+	for _, v in Base.Variants do
+		table.insert(names, v.Name)
+	end
+	for _, result in { "Normal", "Shiny", "Golden", "Void" } do
+		local steps = Layout.ReelSteps(result, C.Machine.Reel, names)
+		truthy(#steps >= 8, "enough steps")
+		eq(steps[#steps].Name, result)
+		eq(steps[#steps - 1].Name, result == "Normal" and "Shiny" or "Normal")
+		near(steps[#steps].At, C.Machine.Reel, 1e-6)
+		for i = 3, #steps do
+			truthy(steps[i].At - steps[i - 1].At > steps[i - 1].At - steps[i - 2].At, "decelerates")
+		end
+	end
+	local total = 0
+	for _, k in { "Activate", "Load", "Rise", "Reel", "Hold", "Reveal" } do
+		total += C.Machine[k]
+	end
+	truthy(total >= 6 and total <= 9, "cinematic 6-9 s: " .. total)
+	truthy(C.Machine.Reduced <= 3, "short version")
+end)
+
+test("the machine model: part and light budgets, animated names, clear of the hall structure", function()
+	local m = Build.Build(nil)
+	local parts, lights = 0, 0
+	local names = {}
+	for _, d in m:GetDescendants() do
+		if d:IsA("BasePart") then
+			parts += 1
+			names[d.Name] = true
+		elseif d:IsA("PointLight") or d:IsA("SpotLight") or d:IsA("SurfaceLight") then
+			lights += 1
+		end
+		if d:IsA("Model") or d:IsA("Folder") then
+			names[d.Name] = true
+		end
+	end
+	truthy(parts <= Build.MaxParts and parts <= 450, "parts " .. parts)
+	truthy(parts >= 150, "a big machine: " .. parts)
+	truthy(lights <= 4, "lights " .. lights)
+	for _, name in { "Lift", "Carriage", "Mast", "Platform", "IntakeDoor", "Rotor1", "Rotor2", "RotorHub", "ChamberLiquid", "LiquidSurface", "CoreBeam",
+		"EnergyRail1", "EnergyRail2", "EnergyRail3", "EnergyRail4", "Membrane", "InjectorTip", "ChamberLightPart", "Core", "UpperLiquid", "Beacon",
+		"WarningLight1", "PlacerArm", "Turret", "Upper", "Fore", "Claw", "ButtonGuard", "ButtonDome", "LeverL", "LeverR", "GaugeNeedle1", "GaugeNeedle4",
+		"ScreenL", "ScreenR", "MainSign", "DeskPlate", "ConsoleLamp" } do
+		truthy(names[name], "named part " .. name)
+	end
+	for _, r in Layout.Tube.Rotors do
+		local rotor = m:FindFirstChild(r.Name)
+		truthy(rotor.PrimaryPart and rotor.PrimaryPart.Name == "RotorHub" and rotor.PrimaryPart.Anchored, r.Name .. " hub")
+		for _, d in rotor:GetDescendants() do
+			if d:IsA("BasePart") and d ~= rotor.PrimaryPart then
+				truthy(not d.Anchored and d:FindFirstChildOfClass("WeldConstraint"), "welded " .. d.Name)
+			end
+		end
+	end
+	for _, screen in { "ScreenL", "ScreenR", "MainSign" } do
+		local gui = m:FindFirstChild(screen, true):FindFirstChild("Display")
+		truthy(gui and #gui:GetChildren() >= 2, screen .. " texts")
+	end
+	-- Hall structure the tube passes between (world AABBs): ceiling cross beams, the cross roof, air handlers,
+	-- the archive capsules behind the pedestal.
+	local blocked = {
+		{ V3.new(121.35, 34.2, 447.5), V3.new(122.65, 35.6, 506.5) },
+		{ V3.new(143.35, 34.2, 447.5), V3.new(144.65, 35.6, 506.5) },
+		{ V3.new(142.0, 37.0, 460.0), V3.new(154.0, 38.4, 494.0) },
+		{ V3.new(139.0, 38.3, 449.0), V3.new(149.0, 44.9, 459.0) },
+		{ V3.new(139.0, 38.3, 495.0), V3.new(149.0, 44.9, 505.0) },
+		{ V3.new(146.8, 2.0, 459.8), V3.new(153.2, 16.3, 466.2) },
+		{ V3.new(146.8, 2.0, 487.8), V3.new(153.2, 16.3, 494.2) },
+	}
+	for _, d in m:GetDescendants() do
+		if d:IsA("BasePart") and d.Transparency < 1 then
+			local lo, hi = aabb(d)
+			for i, box in blocked do
+				local clear = hi.X <= box[1].X + 0.05 or lo.X >= box[2].X - 0.05 or hi.Y <= box[1].Y + 0.05 or lo.Y >= box[2].Y - 0.05 or hi.Z <= box[1].Z + 0.05 or lo.Z >= box[2].Z - 0.05
+				truthy(clear, d.Name .. " hits hall structure " .. i)
+			end
+			if hi.Y < 36 then
+				truthy(lo.X >= 84.5 and hi.X <= 153.5 and lo.Z >= 447.5 and hi.Z <= 506.5, d.Name .. " inside the hall")
+			end
+		end
+	end
+	-- The tube rises through the roof as a landmark.
+	local beacon = m:FindFirstChild("Beacon", true)
+	truthy(beacon.CFrame.Position.Y > 95, "beacon high above the roof")
+end)
+
+test("the ACTIVATE anchor is inside the lab zone and within reach of the operator", function()
+	local anchor = Layout.World(Layout.Anchor)
+	-- InteriorZone: centre (119, 17, 477), X 85.5..152.5, Y 1..33, Z 430.5..523.5
+	truthy(anchor.X > 85.5 and anchor.X < 152.5 and anchor.Y > 1 and anchor.Y < 33 and anchor.Z > 430.5 and anchor.Z < 523.5, "inside the zone")
+	local operator = Layout.World(V3.new(-29.2, 3.35, 0)) -- HumanoidRootPart on the dais
+	truthy((operator - anchor).Magnitude < C.Distance - 1.5, "reach " .. (operator - anchor).Magnitude)
+	local side = Layout.World(V3.new(-28.5, 3.0, 5.5))
+	truthy((side - anchor).Magnitude < C.Distance, "reach from the side of the desk")
+end)
+
+test("install hides the old chamber and cuts the roof reversibly, uninstall restores everything", function()
+	local function part(name, parent, cf, size, props)
+		local p = Instance.new("Part")
+		p.Name = name
+		p.CFrame = cf
+		p.Size = size
+		for k, v in props or {} do
+			p[k] = v
+		end
+		p.Parent = parent
+		return p
+	end
+	local lab = Instance.new("Model")
+	lab.Name = "05_MutationLab"
+	local chamber = Instance.new("Model")
+	chamber.Name = "CentralChamber"
+	chamber.Parent = lab
+	local glass = part("ClearContainment", chamber, CF.new(134, 14.2, 477), V3.new(18.5, 14, 14), { Transparency = 0.94, CanCollide = true })
+	local light = Instance.new("PointLight")
+	light.Parent = glass
+	local gui = Instance.new("SurfaceGui")
+	gui.Parent = glass
+	local roof = Instance.new("Model")
+	roof.Name = "TechnicalRoof"
+	roof.Parent = lab
+	local sky = part("CentralSkylight", roof, CF.new(119, 37.9, 477), V3.new(46, 0.2, 32), { Transparency = 0.94 })
+	local beamAxis = part("LanternBeam", roof, CF.new(119, 38.2, 477), V3.new(47, 0.7, 0.6))
+	local beamEdge = part("LanternBeam", roof, CF.new(119, 38.2, 461), V3.new(47, 0.7, 0.6))
+	local bar = part("LanternCrossbar", roof, CF.new(127, 38.2, 477), V3.new(0.5, 0.7, 33))
+	local barOther = part("LanternCrossbar", roof, CF.new(111, 38.2, 477), V3.new(0.5, 0.7, 33))
+	local anchorCF = CF.new(125.3, 5.8, 502)
+	local anchor = part("InteractionAnchor", lab, anchorCF, V3.new(0.2, 0.2, 0.2), { Transparency = 1 })
+	local machine = Build.Install(lab)
+	eq(machine.Parent, lab)
+	eq(glass.Transparency, 1)
+	eq(glass.CanCollide, false)
+	near(glass:GetAttribute("MutationMachine_Transparency"), 0.94, 1e-6)
+	eq(light.Enabled, false)
+	eq(gui.Enabled, false)
+	eq(sky.Transparency, 1)
+	eq(beamAxis.Transparency, 1)
+	eq(beamEdge.Transparency, 0, "other lantern beams stay")
+	eq(bar.Transparency, 1)
+	eq(barOther.Transparency, 0, "other crossbars stay")
+	local cut = machine:FindFirstChild("RoofCut")
+	truthy(cut and cut:FindFirstChild("SkylightWest") and cut:FindFirstChild("SkylightNorth") and cut:FindFirstChild("SkylightSouth") and cut:FindFirstChild("LanternBeamWest"), "trimmed copies")
+	near(cut.SkylightWest.Transparency, 0.94, 1e-6, "copies keep the look")
+	eq(cut.SkylightWest:GetAttribute("MutationMachine_Edited"), nil, "copies carry no restore attributes")
+	near((anchor.CFrame.Position - Layout.World(Layout.Anchor)).Magnitude, 0, 1e-4, "anchor at the console")
+	-- Installing twice keeps a single machine and the true originals.
+	Build.Install(lab)
+	local machines = 0
+	for _, c in lab:GetChildren() do
+		if c.Name == Layout.Name then
+			machines += 1
+		end
+	end
+	eq(machines, 1)
+	near(glass:GetAttribute("MutationMachine_Transparency"), 0.94, 1e-6)
+	local restored = Build.Uninstall(lab)
+	truthy(restored >= 6, "restored " .. restored)
+	eq(lab:FindFirstChild(Layout.Name), nil)
+	near(glass.Transparency, 0.94, 1e-6)
+	eq(glass.CanCollide, true)
+	eq(light.Enabled, true)
+	eq(gui.Enabled, true)
+	near(sky.Transparency, 0.94, 1e-6)
+	eq(beamAxis.Transparency, 0)
+	eq(bar.Transparency, 0)
+	near((anchor.CFrame.Position - anchorCF.Position).Magnitude, 0, 1e-4, "anchor back")
+	for _, o in { glass, light, sky, beamAxis, bar, anchor } do
+		for k in o:GetAttributes() do
+			truthy(not string.find(k, "MutationMachine_", 1, true), "leftover attribute " .. k)
+		end
+	end
 end)
 
 ------------------------------------------------------------------------------------------------
@@ -711,6 +1184,67 @@ test("every string the lab window shows has a Russian entry", function()
 	end
 end)
 
+test("every string of the mutation machine window, cinematic and screens has Russian", function()
+	local missing = {}
+	local function has(en)
+		return Dict.UI[en] ~= nil or Dict.Exact[en] ~= nil
+	end
+	local function specs(s)
+		local out = {}
+		for spec in string.gmatch((s:gsub("%%%%", "")), "%%[%d%.]*[dsf]") do
+			table.insert(out, spec)
+		end
+		return table.concat(out, ",")
+	end
+	local seen = 0
+	for _, path in { "src/StarterGui/ScreenGui/Modules/MutationLabScreen.luau", "src/StarterGui/ScreenGui/Modules/LabPresentation.luau" } do
+		local source = fs.readFile(path)
+		for en in string.gmatch(source, "%f[%w_]T%('([^']*)'%)") do
+			seen += 1
+			if not has(en) then
+				table.insert(missing, path .. " T: " .. en)
+			end
+		end
+		for en in string.gmatch(source, "%f[%w_]F%('([^']*)'") do
+			seen += 1
+			local ru = Dict.Templates[en]
+			if not ru then
+				table.insert(missing, path .. " F: " .. en)
+			elseif specs(en) ~= specs(ru) then
+				table.insert(missing, "format mismatch: " .. en)
+			end
+		end
+	end
+	truthy(seen > 40, "literals found: " .. seen)
+	-- Status words, fixes and server replies the window shows.
+	for _, key in { "LOCKED", "IN KENNEL", "WORKING", "FAVORITE", "ON THE WAY", "ON DISPLAY", "UNAVAILABLE", "UNLOCK", "UNFAVORITE", "REMOVE FROM KENNEL", "RETURN TO STORAGE", "Not enough Coins or Bones", "Chamber cooling down" } do
+		if not has(key) then
+			table.insert(missing, "word: " .. key)
+		end
+	end
+	for _, v in Base.Variants do
+		if not has(v.Name) then
+			table.insert(missing, "variant: " .. v.Name)
+		end
+	end
+	-- Texts the server writes on the machine's screens (self-localized by the cinematic module).
+	local build = fs.readFile("src/ServerScriptService/MutationMachineBuild.luau")
+	local screens = 0
+	for en in string.gmatch(build, 'label%([%w_]+, "[%w_]+", "([^"]*)"') do
+		screens += 1
+		if not (Dict.Machine[en] or Dict.UI[en]) then
+			table.insert(missing, "screen: " .. en)
+		end
+	end
+	truthy(screens >= 6, "screen texts found: " .. screens)
+	-- The prompt words.
+	local prompt = fs.readFile("src/StarterPlayer/StarterPlayerScripts/LabPrompt.client.luau")
+	truthy(string.find(prompt, "АКТИВАЦИЯ", 1, true) and string.find(prompt, "МУТАЦИОННАЯ МАШИНА", 1, true), "prompt in Russian")
+	if #missing > 0 then
+		error(#missing .. " missing:\n  " .. table.concat(missing, "\n  "))
+	end
+end)
+
 test("lab dictionary never overrides the base dictionary with a different text", function()
 	local source = fs.readFile("src/StarterPlayer/StarterPlayerScripts/DOGROTS_AutoTranslateUI.client.luau")
 	local base = {}
@@ -740,7 +1274,7 @@ end)
 -- retry shortly"): those replies have their Russian in other dictionaries, so the lab's toasts of server
 -- replies must stay translatable (no NoTranslate) instead of showing English to Russian players.
 test("server replies in lab toasts stay translatable by DOGROTS_AutoTranslateUI", function()
-	local source = fs.readFile("src/StarterGui/ScreenGui/Modules/LabScreen.luau")
+	local source = fs.readFile("src/StarterGui/ScreenGui/Modules/LabScreen.luau") .. fs.readFile("src/StarterGui/ScreenGui/Modules/MutationLabScreen.luau")
 	local calls, bad = 0, {}
 	for call in string.gmatch(source, "toast%(said%b()[^)]*%)") do
 		calls += 1
@@ -750,7 +1284,7 @@ test("server replies in lab toasts stay translatable by DOGROTS_AutoTranslateUI"
 	end
 	truthy(calls >= 4, "server-reply toasts found: " .. calls)
 	truthy(#bad == 0, "toast without the server flag: " .. table.concat(bad, " | "))
-	truthy(string.find(source, "NoTranslate=server~=true", 1, true), "toast() keeps NoTranslate for the window's own texts only")
+	truthy(select(2, string.gsub(source, "NoTranslate=server~=true", "")) >= 2, "toast() keeps NoTranslate for the windows' own texts only")
 	local known = {}
 	for _, name in ipairs(fs.readDir("src/ReplicatedStorage/Localization")) do
 		local dict = L.Require("ReplicatedStorage.Localization." .. string.gsub(name, "%.luau$", ""))
@@ -764,13 +1298,18 @@ test("server replies in lab toasts stay translatable by DOGROTS_AutoTranslateUI"
 end)
 
 test("every lab sound cue the presentation and the window play exists", function()
-	for _, cue in { "Console", "Lock", "Scan", "Charge", "Pulse", "Reveal", "Rare", "Select", "Step", "Confirm", "Deny", "Extract" } do
+	for _, cue in { "Console", "Lock", "Scan", "Charge", "Pulse", "Reveal", "Rare", "Select", "Step", "Confirm", "Deny", "Extract", "Activate", "Servo", "Fill", "Tick", "Arc" } do
 		truthy(Audio.Has(cue), cue)
 	end
-	local sources = fs.readFile("src/StarterGui/ScreenGui/Modules/LabScreen.luau") .. fs.readFile("src/StarterGui/ScreenGui/Modules/LabPresentation.luau")
+	local sources = fs.readFile("src/StarterGui/ScreenGui/Modules/LabScreen.luau")
+		.. fs.readFile("src/StarterGui/ScreenGui/Modules/LabPresentation.luau")
+		.. fs.readFile("src/StarterGui/ScreenGui/Modules/MutationLabScreen.luau")
+	local n = 0
 	for cue in string.gmatch(sources, "[Cc]ue%('(%w+)'") do
+		n += 1
 		truthy(Audio.Has(cue), "cue " .. cue)
 	end
+	truthy(n >= 15, "cues found: " .. n)
 end)
 
 for _, s in installedSources do
