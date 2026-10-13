@@ -10,7 +10,7 @@ function T.Run()
   for _,level in ipairs({1,5,9})do
    A.Apply(clone,level,id)
    check(clone:GetAttribute('PlotSkin')==id and clone:GetAttribute('PlotStage')==level,id..' stage '..level)
-   check(clone.PlotDevelopment.BestFinds.Slots:FindFirstChild('Relic')~=nil,'Showcase '..id..' '..level)
+   check(clone.PlotDevelopment.BestFinds.Cases:FindFirstChild('Case4')~=nil,'Showcase '..id..' '..level)
    local rev=clone:GetAttribute('AppearanceRevision');A.Apply(clone,level,id);assert(clone:GetAttribute('AppearanceRevision')==rev,'Idempotent appearance')
    for i=1,5 do assert(clone['DigSlot_'..i]:GetAttribute('Unlocked')==(i<=C.Stages[level].Slots),'Kennel progression')end
   end
@@ -53,10 +53,10 @@ function T.Run()
  seed(function(v)v.Upgrades.Plot=8;v.PlotSkins.TheVoid=true;v.EquippedPlotSkin='TheVoid'end)
  check(yard:GetAttribute('PlotSkin')=='TheVoid'and yard.PlotDevelopment:FindFirstChild('VoidRift'),'Equipped Void architecture reconciles')
  best.Reconcile(yard,profile)
- check(yard.PlotDevelopment.BestFinds.Slots.Find:FindFirstChild('Exhibit')~=nil,'Find model displayed')
- check(yard.PlotDevelopment.BestFinds.Slots.Relic:FindFirstChild('Exhibit')~=nil,'Relic model displayed')
+ check(yard.PlotDevelopment.BestFinds.Cases.Case1:FindFirstChild('Exhibit')~=nil,'Find model displayed')
+ check(yard.PlotDevelopment.BestFinds.Cases.Case2:FindFirstChild('Exhibit')~=nil,'Relic model displayed')
  best.Clear(yard)
- check(yard.PlotDevelopment.BestFinds.Slots.Find:FindFirstChild('Exhibit')==nil,'Vacated plot clears previous trophies')
+ check(yard.PlotDevelopment.BestFinds.Cases.Case1:FindFirstChild('Exhibit')==nil,'Vacated plot clears previous trophies')
  -- Restore test economy; the local session is memory-only.
  assert(rt.Tx:Run({key},function(v)v[key]=original;return true end));rt.Refresh(p)
  move(shop.InteractionAnchor.CFrame)

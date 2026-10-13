@@ -154,6 +154,44 @@ local function renderDiscovery(found)
  latest.PreviewArea.EmptyMark.Visible = model == nil
  latest.PreviewArea.EmptyMark.Text = "?"
 end
+-- PLOT DECOR (Modules.DecorScreen): one button over the yard preview opens the decorations window.
+do
+ local panel = page.YardPreviewPanel
+ local button = Instance.new("TextButton")
+ button.Name = "DecorButton"
+ button.AnchorPoint = Vector2.new(1, 0)
+ button.Position = UDim2.new(1, -20, 0, 20)
+ button.Size = UDim2.fromOffset(150, 40)
+ button.BackgroundColor3 = Color3.fromRGB(64, 186, 120)
+ button.AutoButtonColor = true
+ button.Text = "DECORATE"
+ button.TextColor3 = Color3.new(1, 1, 1)
+ button.Font = Enum.Font.FredokaOne
+ button.TextScaled = true
+ button.ZIndex = yardViewport.ZIndex + 5
+ local limit = Instance.new("UITextSizeConstraint")
+ limit.MaxTextSize = 20
+ limit.Parent = button
+ local padding = Instance.new("UIPadding")
+ padding.PaddingLeft = UDim.new(0, 10)
+ padding.PaddingRight = UDim.new(0, 10)
+ padding.PaddingTop = UDim.new(0, 6)
+ padding.PaddingBottom = UDim.new(0, 6)
+ padding.Parent = button
+ local corner = Instance.new("UICorner")
+ corner.CornerRadius = UDim.new(0, 12)
+ corner.Parent = button
+ local stroke = Instance.new("UIStroke")
+ stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+ stroke.Color = Color3.fromRGB(23, 43, 76)
+ stroke.Thickness = 2
+ stroke.Parent = button
+ button.Parent = panel
+ listen(button.Activated, function()
+  local ok, N = pcall(require, main.Parent.Modules.GUIIntegration)
+  if ok and type(N) == "table" and N.OpenPage then N.OpenPage("Decor") end
+ end)
+end
 listen(yardViewport:GetPropertyChangedSignal("AbsoluteSize"), function() fit(yardViewport) end)
 listen(itemViewport:GetPropertyChangedSignal("AbsoluteSize"), function() fit(itemViewport) end)
 
