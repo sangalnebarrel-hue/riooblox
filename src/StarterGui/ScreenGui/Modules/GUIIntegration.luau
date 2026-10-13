@@ -94,8 +94,9 @@ function N.Back()
  if N.DismissDialog()then return end
  N.Close()
 end
--- The genetics lab is a kit window (Modules.LabScreen), not a Menus page (it needs no registered screens).
-local function openLab()local ok,err=pcall(function()require(script.Parent.LabScreen).Open()end);if not ok then warn('Lab window: '..tostring(err))end end
+-- The genetics lab is a kit window, not a Menus page (it needs no registered screens): the mutation machine
+-- (Modules.MutationLabScreen) while LabConfig.SimpleMode is on, else the old five-procedure Modules.LabScreen.
+local function openLab()local ok,err=pcall(function()local simple=require(game:GetService('ReplicatedStorage'):WaitForChild('LabConfig')).SimpleMode==true;require(script.Parent:WaitForChild(simple and'MutationLabScreen'or'LabScreen')).Open()end);if not ok then warn('Lab window: '..tostring(err))end end
 function N.OpenPage(page,message)
  if page=='Roulette'then page='RewardMachine'end -- Pre-refactor navigation alias.
  page=aliases[page]or page

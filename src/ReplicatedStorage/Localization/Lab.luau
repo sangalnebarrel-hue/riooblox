@@ -91,6 +91,10 @@ local Exact={
 	['Please wait a moment']='Подожди секунду',
 	['Your saved profile is still loading']='Твой профиль ещё загружается',
 	['USE GENETICS LAB']='ИСПОЛЬЗОВАТЬ ЛАБОРАТОРИЮ',
+	-- The mutation machine (LabConfig.SimpleMode: LabService refuses every other procedure)
+	['Walk up to the Mutation Machine console']='Подойди к пульту мутационной машины',
+	['The Mutation Machine only rerolls mutations']='Мутационная машина только перебрасывает мутации',
+	['The Mutation Machine takes only a dog']='Мутационной машине нужна только собака',
 }
 for key,name in pairs(DNA)do
 	local en=C.DNA[key]
@@ -169,7 +173,7 @@ local UI={
 	['collectible edition']='коллекционный выпуск',
 	['lab-made']='создана в лаборатории',
 	['wears artifacts']='носит артефакты',
-	['MUTATE']='МУТАЦИЯ',
+	['MUTATE']='МУТИРОВАТЬ',
 	['GENE TARGETING']='ГЕННОЕ НАВЕДЕНИЕ',
 	['EXTRACT DNA']='ИЗВЛЕЧЬ ДНК',
 	['ASCEND']='ВОЗВЫШЕНИЕ',
@@ -260,9 +264,64 @@ local UI={
 	['Golden Bone']='Золотая кость',['Golden Scarab']='Золотой скарабей',['Glitched Coin']='Глючная монета',['Void Fragment']='Осколок пустоты',
 	['Cursed Idol']='Проклятый идол',['Cursed Bone']='Проклятая кость',['Shiny Marble']='Блестящий шарик',['Red Crystal']='Красный кристалл',
 	['Quartz Crystal']='Кристалл кварца',['Living Crystal']='Живой кристалл',['Crystal of Time']='Кристалл времени',
+	-- Mutation machine window (Modules.MutationLabScreen)
+	['MUTATION MACHINE']='МУТАЦИОННАЯ МАШИНА',
+	['Choose a dog · press MUTATE']='Выбери собаку · нажми МУТИРОВАТЬ',
+	['1 · CHOOSE A DOG']='1 · ВЫБЕРИ СОБАКУ',
+	['2 · PRESS MUTATE']='2 · НАЖМИ МУТИРОВАТЬ',
+	['RESULT']='РЕЗУЛЬТАТ',
+	['You have no dogs yet']='У тебя пока нет собак',
+	['Adopt dogs on the dog line or open lucky blocks.']='Бери собак на собачьей ленте или открывай счастливые блоки.',
+	['CHOOSE ANOTHER DOG']='ДРУГАЯ СОБАКА',
+	['POSSIBLE RESULTS']='ВОЗМОЖНЫЕ РЕЗУЛЬТАТЫ',
+	['HOLD TO MUTATE']='УДЕРЖИВАЙ: МУТАЦИЯ',
+	['Machine ready in ']='Машина готова через ',
+	['MUTATE AGAIN']='МУТИРОВАТЬ СНОВА',
+	['HOLD: MUTATE AGAIN']='УДЕРЖИВАЙ: ЕЩЁ РАЗ',
+	['CLOSE']='ЗАКРЫТЬ',
+	['THE MUTATION MACHINE']='МУТАЦИОННАЯ МАШИНА',
+	['Walk up to the console in the Mutation Lab and press ACTIVATE.']='Подойди к пульту в Лаборатории мутаций и нажми «АКТИВАЦИЯ».',
+	['Connecting to the machine…']='Подключаемся к машине…',
+	['FIRST TRY FREE']='ПЕРВАЯ ПОПЫТКА БЕСПЛАТНО',
+	['Cost']='Цена',
+	['no bonus']='без бонуса',
+	['NOW']='СЕЙЧАС',
+	['The machine is cooling down']='Машина остывает',
+	['MUTATE THIS DOG?']='МУТИРОВАТЬ ЭТУ СОБАКУ?',
+	['STABLE — NO MUTATION']='СТАБИЛЬНО — БЕЗ МУТАЦИИ',
+	['So close!']='Совсем рядом!',
+	-- Mutation machine cinematic (Modules.LabPresentation)
+	['TAP TO SKIP']='НАЖМИ, ЧТОБЫ ПРОПУСТИТЬ',
+	['ACTIVATED']='АКТИВИРОВАНО',
+	['LOADING']='ЗАГРУЗКА',
+	['CHARGING']='ЗАРЯДКА',
+	['STABLE']='СТАБИЛЬНО',
+	['ENERGY']='ЭНЕРГИЯ',
+	['CORE CHARGING']='ЯДРО ЗАРЯЖАЕТСЯ',
+	['CORE STABLE']='ЯДРО СТАБИЛЬНО',
+}
+
+-- Screens of the machine in the lab hall (server texts in English; Modules.LabPresentation writes these,
+-- upper-cased, for Russian players). Variant names come from UI above.
+local Machine={
+	['REACTOR']='Реактор',
+	['CORE STABLE']='Ядро стабильно',
+	['ENERGY 100%']='Энергия 100%',
+	['PRESS ACTIVATE']='Нажми «Активация»',
+	['BASE ODDS']='Базовые шансы',
+	['☢ MUTATION MACHINE ☢']='☢ Мутационная машина ☢',
+	['READY · PRESS ACTIVATE']='Готово · нажми «Активация»',
+	['☢ NUCLEAR MUTATION MACHINE ☢']='☢ Ядерная мутационная машина ☢',
 }
 
 local Templates={
+	-- Mutation machine
+	['+%d%% income']='+%d%% дохода',
+	['Can lose %s']='Можно потерять: %s',
+	['Next try: %s chance of a mutation']='Следующая попытка: шанс мутации %s',
+	['STILL %s!']='СНОВА %s!',
+	['Income +%d%%']='Доход +%d%%',
+	['Mutating again can lose %s']='Новая мутация может забрать: %s',
 	['%d %s']='%d × %s',
 	['%d READY']='ГОТОВО: %d',
 	['%d artifacts return to your inventory.']='Артефакты вернутся в инвентарь: %d.',
@@ -320,5 +379,6 @@ return {
 	Phrases={},
 	UI=UI,
 	Templates=Templates,
+	Machine=Machine,
 	DNA=DNA,
 }

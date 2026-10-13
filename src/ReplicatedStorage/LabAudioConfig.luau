@@ -1,14 +1,16 @@
 -- Genetics lab sound cues (client). The place ships no uploaded lab SFX, so every cue is built from
 -- sounds bundled with every Roblox client, re-pitched and filtered the same way Lucky.LuckyAudio and
 -- Mining.MiningAudio do. Upload real SFX later by setting AssetIds (0 = built-in recipe).
---   Audio.Play(cue, parent?, volumeScale?)   parent: a part (3D) or nil (UI, SoundService)
+--   Audio.Play(cue, parent?, volumeScale?, pitch?)   parent: a part (3D) or nil (UI, SoundService)
 -- Chamber cues: Console, Lock, Scan, Charge, Pulse, Reveal, Rare. Window cues: Select, Step, Confirm, Deny, Extract.
+-- Mutation machine cues (Modules.LabPresentation): Activate (button + alarm), Servo (arm and lift), Fill
+-- (liquid rising), Tick (one colour-reel step; pitch rises as the reel slows), Arc (electric zap).
 local SoundService=game:GetService('SoundService')
 local TweenService=game:GetService('TweenService')
 local Debris=game:GetService('Debris')
 local Audio={}
 
-Audio.AssetIds={Console=0,Lock=0,Scan=0,Charge=0,Pulse=0,Reveal=0,Rare=0,Select=0,Step=0,Confirm=0,Deny=0,Extract=0}
+Audio.AssetIds={Console=0,Lock=0,Scan=0,Charge=0,Pulse=0,Reveal=0,Rare=0,Select=0,Step=0,Confirm=0,Deny=0,Extract=0,Activate=0,Servo=0,Fill=0,Tick=0,Arc=0}
 
 local TICK='rbxasset://sounds/volume_slider.ogg'
 local COLLIDE='rbxasset://sounds/collide.wav'
@@ -102,10 +104,33 @@ CUES.Extract=function(parent,k)
  later(.35,function()shot(PING,(.12)*k,.6,parent,GLASS)end)
 end
 
-local throttle={Select=.05,Step=.08,Deny=.15,Scan=.3}
+-- The machine: a heavy clunk of the big button, then a two-tone alarm.
+CUES.Activate=function(parent,k)
+ shot(LAND,(.5)*k,.5,parent,THUNK)
+ shot(COLLIDE,(.25)*k,.45,parent,THUNK)
+ for i=0,2 do later(.15+i*.28,function()shot(PING,(.13)*k,i%2==0 and .62 or .5,parent,{DistortionSoundEffect={Level=.35},ReverbSoundEffect={DecayTime=1.2,WetLevel=-6}})end)end
+end
+-- Hydraulics: a filtered rising whir.
+CUES.Servo=function(parent,k)
+ shot(TICK,(.22)*k,.35,parent,{EqualizerSoundEffect={LowGain=6,MidGain=-4,HighGain=-24},FlangeSoundEffect={Depth=.6,Mix=.8,Rate=6}},.7,.9)
+end
+-- Liquid floods the chamber: low bubbling ticks.
+CUES.Fill=function(parent,k)
+ for i=0,9 do later(i*.09,function()shot(TICK,(.07)*k,.25+math.random()*.2,parent,{EqualizerSoundEffect={LowGain=8,MidGain=-6,HighGain=-30},ReverbSoundEffect={DecayTime=1.4,WetLevel=-4}})end)end
+end
+-- One step of the colour reel (pitch from the caller).
+CUES.Tick=function(parent,k,pitch)
+ shot(TICK,(.16)*k,(pitch or 1)*1.3,parent,CHIME)
+end
+-- Electric arc: a short distorted crackle.
+CUES.Arc=function(parent,k)
+ shot(COLLIDE,(.12)*k,1.6+math.random()*.6,parent,{DistortionSoundEffect={Level=.8},EqualizerSoundEffect={LowGain=-12,MidGain=0,HighGain=4}})
+end
+
+local throttle={Select=.05,Step=.08,Deny=.15,Scan=.3,Tick=.04,Arc=.12}
 local lastPlayed={}
--- volume: optional multiplier (the presentation lowers the lab during world events).
-function Audio.Play(cue,parent,volume)
+-- volume: optional multiplier (the presentation lowers the lab during world events); pitch: Tick only.
+function Audio.Play(cue,parent,volume,pitch)
  local now=os.clock()
  if throttle[cue]and now-(lastPlayed[cue]or 0)<throttle[cue]then return end
  lastPlayed[cue]=now
@@ -114,7 +139,7 @@ function Audio.Play(cue,parent,volume)
  if type(asset)=='number'and asset>0 then shot('rbxassetid://'..string.format('%.0f',asset),.5*k,1,parent);return end
  local fn=CUES[cue]
  if fn then
-  local ok,err=pcall(fn,parent,k)
+  local ok,err=pcall(fn,parent,k,tonumber(pitch))
   if not ok then warn('Lab audio '..tostring(cue)..': '..tostring(err))end
  end
 end
