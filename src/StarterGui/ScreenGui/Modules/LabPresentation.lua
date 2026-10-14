@@ -529,7 +529,8 @@ local function burst(k,color,big,low)
  f.Burst:Emit(low and 22 or(big and 90 or 40));f.Sparks:Emit(low and 10 or 36)
 end
 local function publicPulse(m,variant)
- if publicBusy or P.Playing or not m.Parent then return end
+ -- Not over the local player's own result (the dog in the tube): its colours wait for P.Release().
+ if publicBusy or P.Playing or shown or not m.Parent then return end
  local camera=workspace.CurrentCamera
  local k=rig(m)
  local dist=camera and(camera.CFrame.Position-k.Center).Magnitude or math.huge
@@ -542,30 +543,40 @@ local function publicPulse(m,variant)
  local color=colorOf(variant);local low=lowFX();local calm=reduced()
  local total=C.Machine.PublicBurst;local start=os.clock();local fired=false;local crowned=false;local angle=0
  local surge=calm and 1.2 or 2.2
+ -- Throttled by distance like the idle show (only the rotor spin and the burst run every frame).
+ local step=(dist<140 and 1/30 or dist<400 and 1/15 or 1/8)*(low and 2 or 1)
+ local last=-math.huge
  local conn
  conn=Run.Heartbeat:Connect(function(dt)
   if conn~=publicConn then return end
-  local t=os.clock()-start
+  local now=os.clock()
+  local t=now-start
   if not m.Parent or P.Playing then t=total+surge+2 end
   if t<total then
    local x=t/total
+   if hall and not calm then angle+=dt*(0.6+x*12);setRotors(k,angle)end
+   if now-last<step then return end
+   last=now
    setGlow(k,L.Teal:Lerp(Color3.new(1,1,1),x*.35),.15-.15*x)
    towerCharge(k,x)
    if k.Light then set(k.Light,'Brightness',1.4+x*3)end
-   if hall and not calm then angle+=dt*(0.6+x*12);setRotors(k,angle)end
   elseif not fired then
-   fired=true;setGlow(k,color,0)
+   fired=true;last=-math.huge;setGlow(k,color,0)
    if k.Light then set(k.Light,'Brightness',7)end
    if hall then
     burst(k,color,false,low or calm)
     P.Cue('Pulse',k.M:FindFirstChild('ChamberLightPart',true))
    end
   elseif t<total+surge then
+   if now-last<step then return end
+   last=now
    local x=(t-total)/surge
    towerSurge(k,x,color,t)
    if not crowned and x>.85 then crowned=true;crownBurst(k,color)end
    if k.Light then set(k.Light,'Brightness',lerp(7,1.4,math.min(1,x*1.6)))end
   elseif t<total+surge+.6 then
+   if now-last<step then return end
+   last=now
    towerSurge(k,1,color,t)
   else
    conn:Disconnect();publicConn=nil;restoreAll();publicBusy=false
@@ -616,6 +627,7 @@ function P.StartWorld()
     if near and not idle.Running and not P.Playing and not publicBusy and not shown then startIdle(m)
     elseif(not near or idle.Machine~=m)and idle.Running then stopIdle()end
    elseif idle.Running then
+    if idle.Show then idle.Show:Disconnect();idle.Show=nil end
     idle.Running=false;table.clear(idle.Tweens);table.clear(saved)
    end
    task.wait(2)
@@ -964,6 +976,8 @@ end
 
 -- The result card closed: the dog dissolves and the machine goes back to idle.
 function P.Release(instant)
+ stopPublic()
+ stopIdle() -- the show first (restores what it changed); the deferred startIdle below records the originals again
  if shown and shown.Model.Parent and not instant then
   local f=pool()
   local cf,size=shown.Model:GetBoundingBox()

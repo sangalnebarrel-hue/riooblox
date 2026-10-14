@@ -1016,14 +1016,14 @@ local function dressing(b: any, ctx: any)
 		b:Prism(CF(x + 0.4, F + 2.2 + (i % 2) * 1.2, z - 0.2) * ANG(0, rad(i * 25), rad(-12)), 0.25, 0.9, 0.22, glow, "Neon", { Name = "NicheCrystal", CastShadow = false })
 	end
 	-- TIMBER SETS along the side walls and a sagging crossbeam; planks on the floor.
-	for _, z in { -12.5, 6.5 } do
-		for _, side in { -1, 1 } do
-			local x = side < 0 and c.X0 + 2.6 or c.X1 - 2.6
-			if clearOfSites(x, z, 3.5) then
-				b:Box(V(0.7, H - 2, 0.7), CF(x, F + (H - 2) / 2, z) * ANG(0, 0, rad(side * 3)), TIMBER, "WoodPlanks", { Name = "Prop" })
-				b:Box(V(0.9, 0.9, 4.2), CF(x, F + H - 1.6, z), TIMBER_DARK, "WoodPlanks", { Name = "PropCap" })
-				b:Box(V(0.5, 3.2, 0.5), CF(x - side * 1.1, F + H - 3.2, z) * ANG(0, 0, rad(side * 40)), TIMBER_DARK, "WoodPlanks", { Name = "PropBrace" })
-			end
+	-- (side, z): wall spots clear of the worksites (west z -16/-2/11, east -13/2) and the landing, between the relief bulges.
+	for _, spot in { { -1, -27 }, { -1, -21.5 }, { 1, -18.5 }, { 1, 11.5 } } do
+		local side, z = spot[1], spot[2]
+		local x = side < 0 and c.X0 + 2.6 or c.X1 - 2.6
+		if clearOfSites(x, z, 3.5) then
+			b:Box(V(0.7, H - 2, 0.7), CF(x, F + (H - 2) / 2, z) * ANG(0, 0, rad(side * 3)), TIMBER, "WoodPlanks", { Name = "Prop" })
+			b:Box(V(0.9, 0.9, 4.2), CF(x, F + H - 1.6, z), TIMBER_DARK, "WoodPlanks", { Name = "PropCap" })
+			b:Box(V(0.5, 3.2, 0.5), CF(x - side * 1.1, F + H - 3.2, z) * ANG(0, 0, rad(side * 40)), TIMBER_DARK, "WoodPlanks", { Name = "PropBrace" })
 		end
 	end
 	for i = 1, 4 do
@@ -1074,13 +1074,17 @@ local function dressing(b: any, ctx: any)
 		end
 	end
 	-- GLOWING SPOTS: mushrooms (or embers) in two corners, one coloured accent light.
-	local spots = { { c.X0 + 3.5, c.Z1 - 3.5 }, { c.X1 - 4, c.Z1 - 3 } }
+	-- (south-west and north-east, clear of the worksites; every R() is drawn before the site check, so the random sequence never depends on it)
+	local spots = { { c.X0 + 9, c.Z0 + 4.5 }, { c.X1 - 4, c.Z1 - 3 } }
 	for i, sp in spots do
 		for k = 1, 5 do
 			local x, zz = sp[1] + R(-2, 2), sp[2] + R(-1.5, 1.5)
 			local hgt = R(0.5, 1.4)
-			b:Box(V(0.18, hgt, 0.18), CF(x, F + hgt / 2, zz), C(220, 220, 210), "SmoothPlastic", { Name = "MushStem" })
-			b:Ellipsoid(V(R(0.6, 1.2), 0.35, R(0.6, 1.2)), CF(x, F + hgt, zz), k % 2 == 0 and d.Mush or d.Glow2, "Neon", { Name = "MushCap", CastShadow = false })
+			local capX, capZ = R(0.6, 1.2), R(0.6, 1.2)
+			if clearOfSites(x, zz, 3.5) then
+				b:Box(V(0.18, hgt, 0.18), CF(x, F + hgt / 2, zz), C(220, 220, 210), "SmoothPlastic", { Name = "MushStem" })
+				b:Ellipsoid(V(capX, 0.35, capZ), CF(x, F + hgt, zz), k % 2 == 0 and d.Mush or d.Glow2, "Neon", { Name = "MushCap", CastShadow = false })
+			end
 		end
 		if i == 1 then
 			local holder = b:Box(V(0.3, 0.3, 0.3), CF(sp[1], F + 1.5, sp[2]), d.Mush, "SmoothPlastic", { Name = "GlowSpot", Transparency = 1, CastShadow = false })
@@ -1153,17 +1157,18 @@ local function dressing(b: any, ctx: any)
 				b:Box(V(R(2.5, 5), 0.06, 0.25), CF(x, F + 0.1, zz) * ANG(0, rad(R(0, 180)), 0), t.Lava, "Neon", { Name = "LavaCrack", CastShadow = false })
 			end
 		end
-		for i = 1, 3 do
-			skull(b, CF(c.X0 + 4 + i * 0.9, F + 0.35 + (i == 2 and 0.5 or 0), c.Z1 - 7 + (i % 2) * 0.7) * ANG(0, rad(i * 40), 0), 0.8, t.Bone)
+		for i = 1, 3 do -- (clear of worksite 5's find spot)
+			skull(b, CF(c.X0 + 14 + i * 0.9, F + 0.35 + (i == 2 and 0.5 or 0), c.Z1 - 7 + (i % 2) * 0.7) * ANG(0, rad(i * 40), 0), 0.8, t.Bone)
 		end
 	elseif ctx.Layer == 5 then
 		-- Void: floating shards that bob, and violet rift lines on the walls.
 		for i = 1, 6 do
 			local x, zz = R(c.X0 + 6, c.X1 - 8), R(c.Z0 + 6, c.Z1 - 4)
 			local shard = b:Prism(CF(x, F + R(6, 12), zz) * ANG(rad(R(-30, 30)), rad(R(0, 180)), rad(R(-30, 30))), R(0.4, 0.8), R(1.4, 2.6), 0.4, i % 2 == 0 and t.Glow or t.Cyan, "Neon", { Name = "FloatingShard", CastShadow = false })
+			local amp, period = R(0.4, 0.9), R(2.5, 4.5) -- one bob for the whole shard (column + tips)
 			for _, p in shard do
-				p:SetAttribute("MineBob", R(0.4, 0.9))
-				p:SetAttribute("MineBobPeriod", R(2.5, 4.5))
+				p:SetAttribute("MineBob", amp)
+				p:SetAttribute("MineBobPeriod", period)
 			end
 		end
 		for i = 1, 4 do

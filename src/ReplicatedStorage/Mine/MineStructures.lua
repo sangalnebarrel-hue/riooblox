@@ -645,7 +645,8 @@ end
 
 ------------------------------------------------------------------------------------------------
 -- Ore depot (server, the mirrored yards): fills the old Workshop lot when the Workshop stood on
--- the far side of the yard from the shaft. origin: the lot centre on the ground, -Z = towards the
+-- the far side of the yard from the shaft. origin: the lot centre at design y = 0 (heights below are
+-- design heights; the deck rests on the yard paving), -Z = towards the
 -- back fence (the depot faces the yard). Ore carts on a siding, a hopper, crates, a lamp and a
 -- sign pointing at the mine elevator (which is on the other side: design +x').
 ------------------------------------------------------------------------------------------------

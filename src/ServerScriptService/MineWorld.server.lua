@@ -158,7 +158,9 @@ local function build(yard: Model, layout: any)
 	local lot = yard:GetAttribute("MineWorkshopLot")
 	if side < 0 and typeof(lot) == "CFrame" then
 		local p = (lot :: CFrame).Position
-		local origin = layout:CF(layout:ToDesign(p).X, Layout.GroundY, layout:ToDesign(p).Z, 0, -1)
+		local d = layout:ToDesign(p)
+		-- S.Depot uses design heights (design y = world y), so the origin sits at y = 0, not on GroundY.
+		local origin = layout:CF(d.X, 0, d.Z, 0, -1)
 		local ok, depot = pcall(Structures.Depot, origin, layout.Sx < 0 and "◄" or "►")
 		if ok and depot then
 			depot.Name = "Depot"

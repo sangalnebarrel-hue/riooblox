@@ -159,10 +159,11 @@ function Menus.new(gui,options)
   -- Kit dialog over the window: its own fading shade (Kit.Modal), secondary CANCEL, green CONFIRM.
   local shield=U.New('Frame',{Name='Confirmation',Size=UDim2.fromScale(1,1),BackgroundColor3=U.Backdrop,BackgroundTransparency=1,Active=true,ZIndex=80},gui);self.dialog=shield
   Motion.Tween(shield,.18,{BackgroundTransparency=.4});Sound.Play('Open',{Pitch=1.1})
-  -- Like the kit shade, a tap outside the dialog cancels it (the dialog sits above this catcher).
+  -- Like the kit shade, a tap outside the dialog cancels it (the dialog sits above this catcher and,
+  -- Active like Kit.Modal's card, sinks taps on itself so they never reach the shade).
   local outside=U.New('TextButton',{Name='Shade',Text='',AutoButtonColor=false,BackgroundTransparency=1,Selectable=false,Size=UDim2.fromScale(1,1),ZIndex=1},shield)
   outside.Activated:Connect(function()if self.dialog==shield then self:Dismiss()end end)
-  local box=U.Modal(shield,'ConfirmPanel',title,600,350)
+  local box=U.Modal(shield,'ConfirmPanel',title,600,350);box.Active=true
   U.Text(box,message,24,76,552,175,19,U.Colors.muted).TextYAlignment=Enum.TextYAlignment.Top
   U.Button(box,'Cancel','CANCEL',24,278,270,48,function()self:Dismiss()end,U.Colors.panel)
   U.Button(box,'Confirm','CONFIRM',306,278,270,48,function()self:Dismiss();self:Send(action,args)end,U.Colors.green)

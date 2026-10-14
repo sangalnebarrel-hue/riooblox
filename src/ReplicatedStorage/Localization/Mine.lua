@@ -6,6 +6,9 @@ local exact = {
 	-- Headframe depth sign and kennel winch signs.
 	["DOGS DIG AT"] = "СОБАКИ КОПАЮТ",
 	["DIGGING AT"] = "КОПАЕТ НА",
+	-- Elevator station / walkway arrow / depot signs (MineStructures.Headframe, MineStructures.Depot).
+	["MINE ELEVATOR"] = "ЛИФТ ШАХТЫ",
+	["DOWN TO THE MINE"] = "ВНИЗ, В ШАХТУ",
 	-- Depth names (MineThemes titles) and depths.
 	["BACKYARD"] = "ЗАДНИЙ ДВОР",
 	["CAVERNS"] = "ПЕЩЕРЫ",
