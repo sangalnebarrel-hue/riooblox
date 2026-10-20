@@ -1213,7 +1213,16 @@ local function requestSell(isRetry: boolean?)
 	local args = { Token = q.Token, Confirm = q.NeedsHold == true }
 	task.spawn(function()
 		local transport, ok, result = invoke("Sell", args, REQUEST_TIMEOUT)
-		if token ~= st.ActionToken or not isOpen() then
+		if token ~= st.ActionToken then
+			return
+		end
+		if not isOpen() then
+			-- The window closed (respawn, another menu) while the sale was on its way: still say what happened.
+			st.Phase = "review"
+			if transport and ok and type(result) == "table" then
+				Kit.Sound.Play("Coin")
+				Kit.Toast(serverText(result.Message or ""), { Kind = "success", NoTranslate = true, Duration = 3.2 })
+			end
 			return
 		end
 		if transport and ok and type(result) == "table" then
