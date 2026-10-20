@@ -321,6 +321,11 @@ function M.Start(H: any, env: any)
 		if not spec then
 			return
 		end
+		-- the Black Coffin's Hollow King is presented by the Secret arrival (its Mega layer names the raiser server-wide)
+		-- or, without one, by CoffinFX for everyone: a second big banner here would double it
+		if data.Kind == "HollowKing" and (data.Source == nil or data.Source == "Coffin") then
+			return
+		end
 		local who = tostring(data.Name or "")
 		local mine = tonumber(data.UserId) == player.UserId
 		if who == "" then

@@ -1162,20 +1162,25 @@ test("HUD: objective line, Coffin Key pill, C2Announce banners, fly-ins, UNDERYA
 	load("mid")
 	P:SetAttribute("UyInZone", true)
 	CE.Advance(0.6)
-	-- announcements: someone else's Hollow King -> a banner at once; with a menu open -> a toast
-	Bus.Fire("C2Signal", { Kind = "C2Announce", Data = { Kind = "HollowKing", Name = "Mira", UserId = 99 } })
+	-- announcements: the Black Coffin's Hollow King belongs to the Secret arrival / CoffinFX (no second HUD banner);
+	-- someone else's finale Hollow King -> a banner at once; with a menu open -> a toast
+	Bus.Fire("C2Signal", { Kind = "C2Announce", Data = { Kind = "HollowKing", Name = "Mira", UserId = 99, Arrival = true } })
+	CE.Advance(0.2)
+	eq(#banners, 0, "coffin Hollow King: the arrival presents it")
+	Bus.Fire("C2Signal", { Kind = "C2Announce", Data = { Kind = "HollowKing", Source = "Finale", Name = "Mira", UserId = 99 } })
 	CE.Advance(0.2)
 	eq(#banners, 1, "Hollow King banner")
 	eq(banners[1].Style, "Underyard")
 	truthy(string.find(banners[1].Subtitle, "Mira", 1, true), "who found it")
+	truthy(string.find(banners[1].Subtitle, "Gravekeeper", 1, true), "says where it came from")
 	gui:SetAttribute("OpenMenu", "Underyard")
 	Bus.Fire("C2Signal", { Kind = "C2Announce", Data = { Kind = "Assault", Name = "", UserId = 0 } })
 	CE.Advance(0.2)
 	eq(#banners, 1, "no banner over a menu")
 	truthy(#toasts >= 1, "toast instead")
 	gui:SetAttribute("OpenMenu", nil)
-	-- my own Hollow King waits for the coffin's secret show
-	Bus.Fire("C2Signal", { Kind = "C2Announce", Data = { Kind = "HollowKing", Name = P.DisplayName, UserId = P.UserId } })
+	-- my own Hollow King waits for its show
+	Bus.Fire("C2Signal", { Kind = "C2Announce", Data = { Kind = "HollowKing", Source = "Doors", Name = P.DisplayName, UserId = P.UserId } })
 	CE.Advance(2)
 	eq(#banners, 1, "own Hollow King held back")
 	CE.Advance(8)

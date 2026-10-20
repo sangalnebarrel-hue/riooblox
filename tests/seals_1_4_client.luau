@@ -370,7 +370,18 @@ test("presenters load with the §24.1 contract; ctx.Trials helpers", function()
 		end
 		eq(type(p.Ids), "table")
 	end
-	eq(#Trials.Loaded, 4, "every child module of Trials")
+	-- every presenter module under HalloweenClient/Trials loads (seals I-IV here, V-VII + resonance + assault from
+	-- WP-J, the Toll / Mourner practice trials from WP-H2)
+	local presenterFiles = 0
+	for _, name in ipairs(require("@lune/fs").readDir("src/StarterPlayer/StarterPlayerScripts/HalloweenClient/Trials")) do
+		if string.match(name, "%.luau$") then
+			presenterFiles += 1
+		end
+	end
+	eq(#Trials.Loaded, presenterFiles, "every child module of Trials")
+	for _, id in ipairs({ "DoorChallenge", "Doorkeeper", "ChoirHunt", "LastBell", "Assault", "Toll", "Mourner" }) do
+		yes(Trials.Presenters[id], "presenter for " .. id)
+	end
 	local T = ctx.Trials
 	yes(T, "ctx.Trials")
 	for _, fn in ipairs({ "Request", "Run", "Banner", "Toast", "Mark" }) do
