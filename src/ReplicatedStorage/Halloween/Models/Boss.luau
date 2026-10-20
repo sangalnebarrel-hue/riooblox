@@ -19,6 +19,8 @@
 --   Boss.Joints : ordered bone list {Name, Parent, Pivot}
 --   Boss.Rig(model) -> {Root, Motors = {[bone] = Motor6D}, Bones = {[bone] = BasePart}}
 --   Boss.Pose(model, transforms) : anchored forward kinematics, transforms = {[bone] = CFrame}
+--   Boss.NewRig(name, rootSize, rootCF) -> the rig builder (B:Bone / B:Part / B:Box / B:Ball / B:Ell / B:Cyl / B:Bar /
+--       B:Attach / B:Light / B:Fang ...), shared with Models.Finale
 --   Boss.Surface(Layout, x, z) -> y, kind : the pit's walkable surface (Floor | Ramp | Terrace | Stairs | Rim)
 local Boss = {}
 
@@ -109,6 +111,11 @@ local function newRig(name: string, rootSize: Vector3, rootCF: CFrame)
 	model.PrimaryPart = root
 	self.Root = root
 	return self
+end
+-- the rig builder is shared with the finale models (Models.Finale: the Black Bell, the ghost dogs, THE LAST BARK, the
+-- Gravekeeper's spirit): Boss.NewRig(name, rootSize, rootCF) -> builder with the B:* methods below
+Boss.NewRig = function(name: string, rootSize: Vector3, rootCF: CFrame)
+	return newRig(name, rootSize, rootCF)
 end
 
 -- a bone: sub-model + invisible pivot part, Motor6D from the parent bone (or the root)
