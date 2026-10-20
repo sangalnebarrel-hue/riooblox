@@ -43,6 +43,20 @@ if Halloween then
 		Icons = okI and type(m) == "table" and m.New and m or nil
 	end
 end
+-- CHAPTER II (WP-L): the shared Underyard rules / names (RS.Halloween.UnderyardView) and its icons (registered into Icons)
+local UV, UIcons = nil, nil
+if Halloween then
+	local modV = Halloween:FindFirstChild("UnderyardView")
+	if modV then
+		local okV, m = pcall(require, modV)
+		UV = okV and type(m) == "table" and m or nil
+	end
+	local modI = Halloween:FindFirstChild("UnderyardIcons")
+	if modI then
+		local okI, m = pcall(require, modI)
+		UIcons = okI and type(m) == "table" and m or nil
+	end
+end
 Config = Config or { HalloweenEventEnabled = false }
 local Dict = { UI = {}, Templates = {}, Exact = {}, Patterns = {} }
 do
@@ -64,9 +78,26 @@ local function ru(): boolean
 end
 local function T(en: string): string
 	if ru() then
-		return (Dict.UI and Dict.UI[en]) or (Dict.Exact and Dict.Exact[en]) or en
+		return (Dict.UI and Dict.UI[en]) or (Dict.Exact and Dict.Exact[en]) or (UV and UV.T(en, "ru")) or en
 	end
 	return en
+end
+-- CHAPTER II labels (Localization.UnderyardUI, then .Underyard) and config pairs {en, ru}
+local function UT(en: string): string
+	return UV and UV.T(en, Kit.Lang()) or en
+end
+local function UF(en: string, ...): string
+	if UV then
+		return UV.F(en, Kit.Lang(), ...)
+	end
+	local ok, out = pcall(string.format, en, ...)
+	return ok and out or en
+end
+local function UL(pair: any): string
+	if UV then
+		return UV.L(pair, Kit.Lang())
+	end
+	return type(pair) == "table" and tostring(pair[1]) or tostring(pair or "")
 end
 -- string.format with a localized template; a Russian template may be {one, few, many} (picked by the first number)
 local function F(en: string, ...): string
@@ -377,9 +408,24 @@ end
 local DECOR = { hw_jack_o_lantern = "JACK-O'-LANTERN", hw_grave_stone = "GRAVE STONE", hw_candle_cluster = "CANDLE CLUSTER", hw_bone_arch = "BONE ARCH" }
 local MUTATION_GLYPH = { HAUNTED = "👻", PUMPKINIZED = "🎃", ["BLOOD MOON"] = "🩸", ECLIPSED = "🌑" }
 
+-- a CHAPTER II reward row (Bell Shards, Coffin Keys, Lucky Dust, fragments, showcase finds, uy_ decor, UY_ skins, H09-H16)
+local function uyRow(row: any): boolean
+	return UV ~= nil and UV.IsChapter2Row(row)
+end
+local UY_GLYPH = { Shards = "🔔", Key = "🗝️", Dust = "✨", Fragments = "🧩", Find = "💎", Decor = "🪦", Skin = "⛏️", Dog = "🐶", Title = "👑" }
+
 -- {glyph, text, color} of a reward row (Config.Rewards / quests / dex / Core reply rows)
 local function rewardChip(row: any): (string, string, Color3)
 	local kind = row.Kind
+	if uyRow(row) then
+		local rarity = UV.RowRarity(row)
+		local amount = math.floor(tonumber(row.Amount) or 0)
+		local text = (kind == "Shards" or kind == "Key" or kind == "Dust" or kind == "Fragments") and (num(amount) .. " " .. upper(UL(UV.KindName[kind])))
+			or upper(UV.RowName(row, Kit.Lang()))
+		local color = kind == "Shards" and C(150, 80, 230) or kind == "Key" and C(110, 150, 220) or kind == "Dust" and C(170, 140, 60)
+			or RARITY[rarity] or PURPLE
+		return UY_GLYPH[kind] or "🎁", text, color
+	end
 	if kind == "Candy" then
 		return "🍬", num(row.Amount), PUMPKIN
 	elseif kind == "Bones" then
@@ -560,6 +606,9 @@ local function rowRarity(row: any): string
 	if type(row.Rarity) == "string" and REVEAL_RANK[row.Rarity] then
 		return row.Rarity
 	end
+	if uyRow(row) then
+		return UV.RowRarity(row)
+	end
 	local function byRank(rank: any, default: string): string
 		if Shared and type(rank) == "number" then
 			return (select(1, Shared.Rarity(rank)))
@@ -588,6 +637,9 @@ local REWARD_TITLE = { BuriedMoon2026 = "BURIED MOON SURVIVOR" }
 local function rowText(row: any): (string, string)
 	local kind = row.Kind
 	local n = tonumber(row.Amount) or 1
+	if uyRow(row) then
+		return upper(UV.RowName(row, Kit.Lang())), UV.RowSub(row, Kit.Lang())
+	end
 	if kind == "Candy" then
 		return T("MOON CANDY"), "+" .. num(row.Amount)
 	elseif kind == "Bones" then
@@ -615,7 +667,17 @@ end
 local function rewardModel(row: any): Instance?
 	local kind = row.Kind
 	local ok, model = false, nil
-	if kind == "Skin" then
+	if uyRow(row) and (kind == "Decor" or kind == "Find") then
+		-- the Underyard window builds plot cosmetics / showcase finds (DecorModels / DiscoveryVisuals)
+		local mod = script.Parent:FindFirstChild("UnderyardScreen")
+		local okU, U = false, nil
+		if mod then
+			okU, U = pcall(require, mod)
+		end
+		if okU and type(U) == "table" and U.ItemModel then
+			ok, model = pcall(U.ItemModel, { Kind = kind, Id = row.Id })
+		end
+	elseif kind == "Skin" then
 		local mod = Halloween and Halloween:FindFirstChild("PickaxeSkins")
 		local okM, Skins = false, nil
 		if mod then
@@ -851,7 +913,7 @@ local function rewardReveal(title: string, rows: { any }?, opts: { [string]: any
 	if not step and best.Row.Kind ~= "Dog" then
 		local kind, o = "Star", {}
 		if Icons then
-			kind, o = Icons.ForReward(best.Row)
+			kind, o = (UIcons and UIcons.ForReward or Icons.ForReward)(best.Row)
 		end
 		local ic = table.clone(o)
 		ic.Size, ic.ZIndex = heroS, 7
@@ -905,7 +967,7 @@ local function rewardReveal(title: string, rows: { any }?, opts: { [string]: any
 			Position = UDim2.new(0.5, 0, 0, math.floor(cardH * 0.06)), Size = UDim2.fromOffset(math.floor(cardW * 0.62), math.floor(cardW * 0.62)), ZIndex = 11 }, card)
 		local glyphTxt = nil
 		if Icons then
-			local kind, o = Icons.ForReward(e.Row)
+			local kind, o = (UIcons and UIcons.ForReward or Icons.ForReward)(e.Row)
 			local ic = table.clone(o)
 			ic.Size, ic.ZIndex = cardW * 0.62, 12
 			art(iconBox, kind, ic)
@@ -1227,6 +1289,179 @@ pages.event = function(page: Frame)
 		end
 	end })
 
+	-- CHAPTER II · THE UNDERYARD (WP-L): the Chapter I checklist while it is sealed, then the way down + the Underyard window
+	local c2Card = panel(scroll, "Chapter2", C(78, 48, 150), C(22, 14, 50))
+	c2Card.ClipsDescendants = true
+	local c2Stroke = c2Card:FindFirstChildWhichIsA("UIStroke")
+	if c2Stroke then
+		c2Stroke.Color = C(150, 200, 255)
+	end
+	local c2Badge = badge(c2Card, "Icon", "🔔", C(110, 70, 200))
+	local c2Art = badgeArt(c2Badge, "Seal", { Size = 48, Glow = C(150, 200, 255) })
+	local c2Kicker = txt(c2Card, { Name = "Kicker", Text = UT("CHAPTER II"), TextSize = 14, Scaled = true, MinTextSize = 8, Color = C(150, 200, 255) })
+	local c2Title = txt(c2Card, { Name = "Title", Text = UT("THE UNDERYARD"), TextSize = 26, Scaled = true, MinTextSize = 12, Stroke = 0.25 })
+	local c2Count = txt(c2Card, { Name = "Count", Text = "", TextSize = 22, Scaled = true, MinTextSize = 10, AlignX = "Right", Color = NEON,
+		Font = "numeric", Stroke = 0.3 })
+	local c2Lock = pill(c2Card, "Locked", "🔒 " .. UT("LOCKED"), C(90, 60, 130))
+	local c2Head = txt(c2Card, { Name = "Line", Text = "", TextSize = 16, Wrap = true, Color = C(196, 226, 255), AlignY = "Top" })
+	local c2Body = txt(c2Card, { Name = "Body", Text = "", TextSize = 14, Wrap = true, Color = SOFT, AlignY = "Top" })
+	local c2Bar = bar(c2Card, "Progress", C(150, 200, 255), 14)
+	local c2Rows = {}
+	local checklist = UV and UV.Config and UV.Config.Chapter1 and UV.Config.Chapter1.Checklist or {}
+	for i, row in ipairs(checklist) do
+		local r = Kit.New("Frame", { Name = "Check" .. i, BorderSizePixel = 0, BackgroundColor3 = C(16, 8, 30), BackgroundTransparency = 0.4, ZIndex = Z + 1 }, c2Card)
+		Kit.Corner(r, 10)
+		local mark = txt(r, { Name = "Mark", Text = "🔒", TextSize = 16, Scaled = true, MinTextSize = 8, AlignX = "Center", ZIndex = Z + 2 })
+		local label = txt(r, { Name = "Text", Text = UL(row.Text), TextSize = 14, Wrap = true, Color = SOFT, ZIndex = Z + 2 })
+		local value = txt(r, { Name = "Value", Text = "", TextSize = 14, Scaled = true, MinTextSize = 8, AlignX = "Right", Color = GOLD, Font = "numeric",
+			ZIndex = Z + 2 })
+		c2Rows[i] = { Frame = r, Mark = mark, Text = label, Value = value, Key = row.Key }
+	end
+	local function underyardModule(): any
+		local mod = script.Parent:FindFirstChild("UnderyardScreen")
+		if not mod then
+			return nil
+		end
+		local ok, m = pcall(require, mod)
+		return ok and type(m) == "table" and m or nil
+	end
+	local c2Descend = button(c2Card, { Name = "Descend", Text = UT("DESCEND"), Color = C(150, 80, 230), TextSize = 17, OnClick = function()
+		local U = underyardModule()
+		if win then
+			win:Close("way")
+		end
+		if U and U.Descend then
+			U.Descend()
+		else
+			local n = nav()
+			if n and n.Navigate then
+				n.Navigate("DeadYard")
+			end
+		end
+	end })
+	local c2Open = button(c2Card, { Name = "OpenUnderyard", Text = UT("OPEN UNDERYARD"), Style = "secondary", TextSize = 16, OnClick = function()
+		local n = nav()
+		if n and n.OpenPage then
+			n.OpenPage("Underyard")
+		end
+	end })
+	local c2State: any = { Key = "" }
+	local function c2Data(): (boolean, any, boolean, boolean)
+		local enabled = UV ~= nil and Shared ~= nil and Shared.Chapter2Enabled ~= nil and Shared.Chapter2Enabled()
+		local cv = view().Chapter2 or {}
+		local eligible = player:GetAttribute("HalloweenChapter1Complete") == true or (cv.Chapter1 ~= nil and cv.Chapter1.Complete == true)
+		local below = player:GetAttribute("UyInZone") == true
+		return enabled, cv, eligible, below
+	end
+	c2Card.Visible = (select(1, c2Data()))
+	table.insert(P.Cards, { Frame = c2Card, Column = 1, Layout = function(w, compact)
+		local enabled, _, eligible, below = c2Data()
+		c2Card.Visible = enabled
+		place(c2Badge, 16, 16, 52, 52)
+		local cw = compact and 90 or 120
+		place(c2Kicker, 80, 14, w - 80 - cw - 24, 18)
+		place(c2Title, 80, 32, w - 80 - cw - 24, compact and 28 or 32)
+		place(c2Count, w - cw - 16, 18, cw, 28)
+		c2Lock.Instance.AnchorPoint = Vector2.new(1, 0)
+		c2Lock.Instance.Position = UDim2.new(1, -16, 0, 50)
+		local y = 78
+		local headH = c2Head.Text ~= "" and textH(c2Head.Text, 16, w - 32) or 0
+		c2Head.Visible = headH > 0
+		place(c2Head, 16, y, w - 32, headH)
+		y += headH > 0 and headH + 2 or 0
+		local bodyH = c2Body.Text ~= "" and textH(c2Body.Text, 14, w - 32) or 0
+		c2Body.Visible = bodyH > 0
+		place(c2Body, 16, y, w - 32, bodyH)
+		y += bodyH > 0 and bodyH + 8 or 0
+		place(c2Bar.Instance, 16, y, w - 32, 14)
+		y += 24
+		for _, r in ipairs(c2Rows) do
+			r.Frame.Visible = not eligible
+			if not eligible then
+				local vw = compact and 64 or 80
+				local tw = w - 32 - 36 - vw - 12
+				local rh = math.max(30, textH(r.Text.Text, 14, tw) + 8)
+				place(r.Frame, 16, y, w - 32, rh)
+				place(r.Mark, 6, math.floor((rh - 22) / 2), 24, 22)
+				place(r.Text, 36, 4, tw, rh - 8)
+				place(r.Value, w - 32 - vw - 8, math.floor((rh - 22) / 2), vw, 22)
+				y += rh + 6
+			end
+		end
+		local showDescend = eligible and not below
+		c2Descend.Instance.Visible = showDescend
+		local bw = math.min(230, math.floor((w - 32 - 12) / 2))
+		if showDescend then
+			place(c2Descend.Instance, 16, y + 4, bw, 44)
+			place(c2Open.Instance, 16 + bw + 12, y + 4, bw, 44)
+		else
+			place(c2Open.Instance, 16, y + 4, math.min(260, w - 32), 44)
+		end
+		c2State.Layout = (eligible and "E" or "L") .. (showDescend and "D" or "")
+		return y + 4 + 44 + 14
+	end, Refresh = function()
+		local enabled, cv, eligible, below = c2Data()
+		local layoutKey = tostring(enabled) .. (eligible and "E" or "L") .. ((eligible and not below) and "D" or "")
+		if not enabled then
+			if c2Card.Visible then
+				P.Relayout()
+			end
+			return
+		end
+		c2Lock.Instance.Visible = not eligible
+		local head, body
+		if not eligible then
+			local c1 = cv.Chapter1 or {}
+			local values = {}
+			for _, row in ipairs(c1.Checklist or {}) do
+				values[row.Key] = row
+			end
+			local done = 0
+			for _, r in ipairs(c2Rows) do
+				local row = values[r.Key] or {}
+				local ok = row.Done == true
+				if ok then
+					done += 1
+				end
+				r.Mark.Text = ok and "✅" or "🔒"
+				r.Value.Text = F("%d / %d", math.min(tonumber(row.Value) or 0, tonumber(row.Goal) or 0), tonumber(row.Goal) or 0)
+				r.Value.TextColor3 = ok and NEON or GOLD
+				r.Text.TextColor3 = ok and NEON or SOFT
+			end
+			local total = math.max(1, #c2Rows)
+			c2Count.Text = F("%d / %d", done, #c2Rows)
+			c2Count.TextColor3 = GOLD
+			c2Bar:SetColor(GOLD)
+			c2Bar:SetValue(done / total)
+			head = UT("CHAPTER II IS SEALED")
+			body = UT("Finish Chapter I in the Dead Yard to break the seals below the church.")
+			if c2Art and c2Art.Set then
+				c2Art:Set("Seal", { Size = 48, Dim = 0.45 })
+			end
+		else
+			local o = UV.Objective(cv, now(), { Eligible = true, InZone = below, InTrial = false, Shards = tonumber(player:GetAttribute("BellShards")) or tonumber(cv.Shards) or 0,
+				Keys = tonumber(player:GetAttribute("CoffinKeys")) or 0, Near = function()
+					return false
+				end })
+			head, body = UV.ObjectiveText(o, Kit.Lang(), now())
+			local cleared = tonumber(cv.Cleared) or 0
+			local seals = (UV.Config.Seals and #UV.Config.Seals) or 7
+			c2Count.Text = F("%d / %d", cleared, seals)
+			c2Count.TextColor3 = NEON
+			c2Bar:SetColor(C(150, 200, 255))
+			c2Bar:SetValue(cleared / math.max(1, seals))
+			if c2Art and c2Art.Set then
+				c2Art:Set("Seal", { Size = 48, Glow = C(150, 200, 255) })
+			end
+		end
+		local changed = c2Head.Text ~= (head or "") or c2Body.Text ~= (body or "") or c2State.Key ~= layoutKey or not c2Card.Visible
+		c2Head.Text, c2Body.Text = head or "", body or ""
+		c2State.Key = layoutKey
+		if changed then
+			P.Relayout()
+		end
+	end })
+
 	-- BLOOD MOON
 	local moonCard = panel(scroll, "BloodMoon")
 	local moonBadge = badge(moonCard, "Icon", "🌕", C(150, 60, 70))
@@ -1318,7 +1553,7 @@ pages.event = function(page: Frame)
 	local ticks, stones = {}, {}
 	local milestones = (Config.Exorcism and Config.Exorcism.Milestones) or {}
 	local MILESTONE_GLYPH = { CandyRush = "🍬", Block = "🎃", Mutation = "🧬", Boss = "💀" }
-	local MILESTONE_SHORT = { CandyRush = "SERVER CANDY RUSH", Block = "PUMPKIN BLOCK FOR ALL", Mutation = "MUTATIONS x2", Boss = "THE GRAVEKEEPER" }
+	local MILESTONE_SHORT = { CandyRush = "SERVER CANDY RUSH", Block = "PUMPKIN BLOCK FOR EXORCISTS", Mutation = "MUTATIONS x2", Boss = "THE GRAVEKEEPER" }
 	for i, m in ipairs(milestones) do
 		local tick = Kit.New("Frame", { Name = "Tick" .. i, BorderSizePixel = 0, BackgroundColor3 = WHITE, BackgroundTransparency = 0.25, ZIndex = Z + 4 },
 			exoBar.Instance)
@@ -1603,9 +1838,11 @@ pages.event = function(page: Frame)
 			local col = two and card.Column or 1
 			local cw = colW[col]
 			local h = card.Layout(cw, compact or not two)
-			local x = pad + (col == 2 and (colW[1] + gap) or 0)
-			place(card.Frame, x, y[col], cw, h)
-			y[col] += h + gap
+			if card.Frame.Visible then -- a card can hide itself (CHAPTER II while Chapter II is switched off)
+				local x = pad + (col == 2 and (colW[1] + gap) or 0)
+				place(card.Frame, x, y[col], cw, h)
+				y[col] += h + gap
+			end
 		end
 		scroll.CanvasSize = UDim2.fromOffset(0, math.max(y[1], y[2] or 0) + 4)
 	end
@@ -1848,15 +2085,20 @@ local function registerDogPreview()
 				end
 			end
 		end
-		-- 2. the shared event-dog builder (RS.Halloween.Models.EventDogs.Build)
+		-- 2. the shared event-dog builders (RS.Halloween.Models.EventDogs.Build; the Underyard dogs H09-H16: EventDogs2)
 		local folder = Halloween and Halloween:FindFirstChild("Models")
-		local mod = folder and folder:FindFirstChild("EventDogs")
-		if mod then
-			local okM, Dogs = pcall(require, mod)
-			local okB, model = false, nil
-			if okM and type(Dogs) == "table" and Dogs.Build then
-				okB, model = pcall(Dogs.Build, id)
+		local chapter2 = UV ~= nil and UV.Config.Dogs and UV.Config.Dogs.Defs[id] ~= nil
+		local okB, model = false, nil
+		for _, name in ipairs(chapter2 and { "EventDogs2", "EventDogs" } or { "EventDogs" }) do
+			local mod = folder and folder:FindFirstChild(name)
+			if mod and not (okB and typeof(model) == "Instance") then
+				local okM, Dogs = pcall(require, mod)
+				if okM and type(Dogs) == "table" and Dogs.Build then
+					okB, model = pcall(Dogs.Build, id)
+				end
 			end
+		end
+		do
 			if okB and typeof(model) == "Instance" then
 				local vp = Kit.New("ViewportFrame", { Name = "Preview", BackgroundTransparency = 1, Ambient = C(170, 150, 210), LightColor = C(255, 230, 200),
 					LightDirection = Vector3.new(-1, -1, -0.6), Size = UDim2.fromScale(1, 1) })
@@ -1882,7 +2124,8 @@ local function registerDogPreview()
 			end
 		end
 		-- 3. a glyph
-		local code = Config.Dogs and Config.Dogs.Defs and Config.Dogs.Defs[id] and Config.Dogs.Defs[id].Code or "?"
+		local code = Config.Dogs and Config.Dogs.Defs and Config.Dogs.Defs[id] and Config.Dogs.Defs[id].Code
+			or (UV and UV.Config.Dogs and UV.Config.Dogs.Defs[id] and UV.Config.Dogs.Defs[id].Code) or "?"
 		local l = txt(parent, { Name = "Preview", Text = spec.Silhouette and "❔" or "🐶", TextSize = 64, Scaled = true, MinTextSize = 10, AlignX = "Center" })
 		l:SetAttribute("HwCode", code)
 		return l
@@ -1892,43 +2135,13 @@ local function registerDogPreview()
 	return S.PreviewKind
 end
 
-pages.dex = function(page: Frame)
-	local P = {}
-	local scroll = scrollPage(page)
-	local order = (Config.Dogs and Config.Dogs.Order) or {}
-	local defs = (Config.Dogs and Config.Dogs.Defs) or {}
-	local kind = registerDogPreview()
-
-	local head = panel(scroll, "Progress", C(86, 40, 120), C(54, 22, 84))
-	local headTitle = sectionTitle(head, "📖", T("BURIED MOON 2026"))
-	local headCount = txt(head, { Name = "Count", Text = "", TextSize = 22, Scaled = true, MinTextSize = 10, AlignX = "Right", Color = NEON, Font = "numeric",
-		Stroke = 0.3 })
-	local headBar = bar(head, "Bar", NEON, 18)
-	local headInfo = txt(head, { Name = "Info", Text = T("Event dogs come from Pumpkin Lucky Blocks, the Gravekeeper and the cauldron brew. They stay yours after the event."),
-		TextSize = 14, Wrap = true, Color = MUTED, AlignY = "Top" })
-	local openDex = button(head, { Name = "OpenDex", Text = "📖 " .. T("OPEN DOGDEX"), Style = "secondary", TextSize = 15, OnClick = function()
-		S.OpenDogDex()
-	end })
-
-	local track = panel(scroll, "Rewards")
-	local trackTitle = sectionTitle(track, "🏆", T("COLLECTION REWARDS"))
-	local nodes = {}
-	for i, row in ipairs(Config.DexRewards or {}) do
-		local node = Kit.New("Frame", { Name = "Reward" .. i, BorderSizePixel = 0, BackgroundColor3 = C(30, 12, 46), BackgroundTransparency = 0.35,
-			ZIndex = Z + 1 }, track)
-		Kit.Corner(node, 12)
-		local circle, glyph = badge(node, "Count", tostring(row.Count), C(80, 50, 120))
-		local chips = Kit.New("Frame", { Name = "Chips", BackgroundTransparency = 1, ZIndex = Z + 1 }, node)
-		local claim
-		claim = button(node, { Name = "Claim", Text = T("CLAIM"), Style = "success", TextSize = 12, OnClick = function()
-			act(claim, "DexClaim", { Count = row.Count }, function(res)
-				local got = table.clone((res and type(res.Rewards) == "table") and res.Rewards or {})
-				if row.Title then
-					table.insert(got, { Kind = "Title", Id = row.Title }) -- granted with the 8/8 reward (not a reply row)
-				end
-				rewardsDialog(F("%d EVENT DOGS FOUND", row.Count), got, { Kicker = T("COLLECTION REWARD") })
-			end, "")
-		end })
+-- the two event collections of the dex tab (CHAPTER I / CHAPTER II switch, WP-L):
+--   BURIED MOON 2026            Config.Dogs + Config.DexRewards, the Halloween view's Dex / DexCount / DexClaims, request DexClaim
+--   THE UNDERYARD COLLECTION    Chapter2Config.Dogs + .Dex2Rewards, view.Chapter2.Dex2, request C2DexClaim
+local function dexSets(): { any }
+	local sets = {}
+	local rewards1 = {}
+	for _, row in ipairs(Config.DexRewards or {}) do
 		local rows = {}
 		if row.Candy then
 			table.insert(rows, { Kind = "Candy", Amount = row.Candy })
@@ -1942,55 +2155,337 @@ pages.dex = function(page: Frame)
 		if row.Skin then
 			table.insert(rows, { Kind = "Skin", Id = row.Skin })
 		end
-		nodes[i] = { Frame = node, Circle = circle, Glyph = glyph, Chips = chips, Claim = claim, Row = row, Rewards = rows, Title = row.Title ~= nil }
+		-- the 8/8 title is granted with the reward but is not a reply row: shown as its own pill, added to the card
+		table.insert(rewards1, { Count = row.Count, Rows = rows, TitlePill = row.Title and ("👑 " .. T("BURIED MOON SURVIVOR")) or nil,
+			Extra = row.Title and { Kind = "Title", Id = row.Title } or nil })
 	end
-
-	local cards = {}
-	for i, id in ipairs(order) do
-		local def = defs[id] or {}
-		local card = panel(scroll, "Dog_" .. id)
-		local holder = Kit.New("Frame", { Name = "PreviewHolder", BorderSizePixel = 0, BackgroundColor3 = WHITE, ZIndex = Z + 1, ClipsDescendants = true }, card)
-		Kit.Corner(holder, 12)
-		gradient(holder, C(112, 70, 160), C(44, 20, 72)) -- moonlit: the black silhouette of an undiscovered dog reads on it
-		local slot = Kit.Preview.Slot(holder)
-		local code = pill(card, "Code", def.Code or ("H0" .. i), C(30, 14, 46))
-		local rarityName = Shared and select(1, Shared.Rarity(def.Rank or 2)) or "Rare"
-		local rarity = Kit.Pill(card, { Name = "Rarity", Text = T(string.upper(rarityName)), Color = RARITY[rarityName] or PURPLE, Height = 22, TextSize = 12,
-			NoTranslate = true, ZIndex = Z + 2 })
-		local grad = Theme.RarityGradient[rarityName]
-		if grad then
-			rarity:SetGradient(grad[1], grad[2])
+	sets[1] = {
+		Id = "BuriedMoon", Switch = "CHAPTER I", Order = (Config.Dogs and Config.Dogs.Order) or {}, Defs = (Config.Dogs and Config.Dogs.Defs) or {},
+		Rewards = rewards1, Accent = NEON, Title = T("BURIED MOON 2026"),
+		Info = T("Event dogs come from Pumpkin Lucky Blocks, the Gravekeeper and the cauldron brew. They stay yours after the event."),
+		Secret = T("A secret dog of the Buried Moon. Only the luckiest ever see it."), Action = "DexClaim", Kicker = T("COLLECTION REWARD"),
+		Name = function(id: string, _def: any): string
+			return dogName(id)
+		end,
+		Ability = function(_id: string, def: any): string
+			return T(def.Signature or "")
+		end,
+		Data = function(v: any): (any, number?, any)
+			return v.Dex or {}, tonumber(v.DexCount), v.DexClaims or {}
+		end,
+		RevealTitle = function(n: number): string
+			return F("%d EVENT DOGS FOUND", n)
+		end,
+		OpenDex = function()
+			S.OpenDogDex()
+		end,
+	}
+	local c2 = UV and UV.Config
+	if c2 and c2.Dogs and Shared and Shared.Chapter2Enabled and Shared.Chapter2Enabled() then
+		local own = UV.Dicts().Own
+		local rewards2 = {}
+		for _, tier in ipairs(c2.Dex2Rewards or {}) do
+			table.insert(rewards2, { Count = tier.Count, Rows = table.clone(tier.Rows or {}) })
 		end
-		local name = txt(card, { Name = "Name", Text = "", TextSize = 17, Scaled = true, MinTextSize = 10, AlignX = "Center", Stroke = 0.4 })
-		local ability = txt(card, { Name = "Ability", Text = "", TextSize = 12, Wrap = true, AlignX = "Center", AlignY = "Top", Color = SOFT })
-		local status = txt(card, { Name = "Status", Text = "", TextSize = 12, Scaled = true, MinTextSize = 8, AlignX = "Center", Color = MUTED })
-		cards[i] = { Id = id, Def = def, Frame = card, Holder = holder, Slot = slot, Code = code, Rarity = rarity, Name = name, Ability = ability, Status = status,
-			Secret = (def.Rank or 0) >= 6 }
+		sets[2] = {
+			Id = "Underyard", Switch = "CHAPTER II", Order = c2.Dogs.Order or {}, Defs = c2.Dogs.Defs or {}, Rewards = rewards2,
+			Accent = C(150, 200, 255), Title = UT("THE UNDERYARD COLLECTION"),
+			Info = UT("Eight dogs live below the last bell: seals, the Black Coffin, the Gravekeeper's last stand and one hidden room hold them."),
+			Secret = UT("A secret of the Underyard. Only a crowned few ever see it."), Action = "C2DexClaim", Kicker = UT("DEX II REWARD"),
+			Name = function(_id: string, def: any): string
+				return UL(def.Name)
+			end,
+			Ability = function(id: string, _def: any): string
+				local info = own and own.Dogs and own.Dogs[id]
+				return info and (upper(UL(info.Ability)) .. ": " .. UL(info.Text)) or ""
+			end,
+			Data = function(v: any): (any, number?, any)
+				local d = (v.Chapter2 and v.Chapter2.Dex2) or {}
+				return d.Dex or {}, tonumber(d.Count), d.Claims or {}
+			end,
+			RevealTitle = function(n: number): string
+				return UF("%d UNDERYARD DOGS FOUND", n)
+			end,
+			OpenDex = function()
+				local mod = script.Parent:FindFirstChild("UnderyardScreen")
+				local ok, U = false, nil
+				if mod then
+					ok, U = pcall(require, mod)
+				end
+				if ok and type(U) == "table" and U.OpenDogDex then
+					U.OpenDogDex()
+				else
+					S.OpenDogDex()
+				end
+			end,
+		}
 	end
+	return sets
+end
 
-	-- the reward list (circle, reward chips, CLAIM) at width w; returns its height
-	local function layoutTrack(x: number, y: number, w: number): number
-		place(trackTitle, 16, 12, w - 32, 26)
-		local ny = 46
-		for _, n in ipairs(nodes) do
-			local chipW = w - 24 - 62 - 118
-			local rows = table.clone(n.Rewards)
-			local h = chipRow(n.Chips, rows, chipW, 24)
-			if n.Title then
-				local tp = Kit.Pill(n.Chips, { Name = "Title", Text = "👑 " .. T("BURIED MOON SURVIVOR"), Color = GOLD, Height = 24, TextSize = 12, PadX = 9,
-					NoTranslate = true, ZIndex = Z + 3 })
-				tp.Instance.Position = UDim2.fromOffset(0, h + 6)
-				h += 30
+pages.dex = function(page: Frame)
+	local P = { Chapter = 1 }
+	local scroll = scrollPage(page)
+	local kind = registerDogPreview()
+	local defsList = dexSets()
+
+	-- one collection inside its own container (the switch shows one at a time)
+	local function buildSet(set: any): any
+		local box = Kit.New("Frame", { Name = "Dex_" .. set.Id, BackgroundTransparency = 1, ZIndex = Z }, scroll)
+		local head = panel(box, "Progress", C(86, 40, 120), C(54, 22, 84))
+		local headTitle = sectionTitle(head, "📖", set.Title)
+		local headCount = txt(head, { Name = "Count", Text = "", TextSize = 22, Scaled = true, MinTextSize = 10, AlignX = "Right", Color = set.Accent,
+			Font = "numeric", Stroke = 0.3 })
+		local headBar = bar(head, "Bar", set.Accent, 18)
+		local headInfo = txt(head, { Name = "Info", Text = set.Info, TextSize = 14, Wrap = true, Color = MUTED, AlignY = "Top" })
+		local openDex = button(head, { Name = "OpenDex", Text = "📖 " .. T("OPEN DOGDEX"), Style = "secondary", TextSize = 15, OnClick = function()
+			set.OpenDex()
+		end })
+
+		local track = panel(box, "Rewards")
+		local trackTitle = sectionTitle(track, "🏆", T("COLLECTION REWARDS"))
+		local nodes = {}
+		for i, tier in ipairs(set.Rewards) do
+			local node = Kit.New("Frame", { Name = "Reward" .. i, BorderSizePixel = 0, BackgroundColor3 = C(30, 12, 46), BackgroundTransparency = 0.35,
+				ZIndex = Z + 1 }, track)
+			Kit.Corner(node, 12)
+			local circle, glyph = badge(node, "Count", tostring(tier.Count), C(80, 50, 120))
+			local chips = Kit.New("Frame", { Name = "Chips", BackgroundTransparency = 1, ZIndex = Z + 1 }, node)
+			local claim
+			claim = button(node, { Name = "Claim", Text = T("CLAIM"), Style = "success", TextSize = 12, OnClick = function()
+				act(claim, set.Action, { Count = tier.Count }, function(res)
+					local got = table.clone((res and type(res.Rewards) == "table") and res.Rewards or {})
+					local extra = tier.Extra
+					if not extra then
+						for _, row in ipairs(tier.Rows) do
+							if row.Kind == "Title" then
+								extra = row
+							end
+						end
+					end
+					if extra then
+						local has = false
+						for _, row in ipairs(got) do
+							if row.Kind == "Title" then
+								has = true
+							end
+						end
+						if not has then
+							table.insert(got, table.clone(extra))
+						end
+					end
+					rewardsDialog(set.RevealTitle(tier.Count), got, { Kicker = set.Kicker })
+				end, "")
+			end })
+			local rows = {}
+			for _, row in ipairs(tier.Rows) do
+				if not (tier.TitlePill and row.Kind == "Title") then
+					table.insert(rows, row)
+				end
 			end
-			local nh = math.max(60, h + 16)
-			place(n.Frame, 12, ny, w - 24, nh)
-			place(n.Circle, 8, nh / 2 - 22, 44, 44)
-			place(n.Chips, 62, 8, chipW, nh - 16)
-			place(n.Claim.Instance, w - 24 - 112, nh / 2 - 19, 104, 38)
-			ny += nh + 8
+			nodes[i] = { Frame = node, Circle = circle, Glyph = glyph, Chips = chips, Claim = claim, Row = tier, Rewards = rows, TitlePill = tier.TitlePill }
 		end
-		place(track, x, y, w, ny + 6)
-		return ny + 6
+
+		local cards = {}
+		for i, id in ipairs(set.Order) do
+			local def = set.Defs[id] or {}
+			local card = panel(box, "Dog_" .. id)
+			local holder = Kit.New("Frame", { Name = "PreviewHolder", BorderSizePixel = 0, BackgroundColor3 = WHITE, ZIndex = Z + 1, ClipsDescendants = true }, card)
+			Kit.Corner(holder, 12)
+			gradient(holder, C(112, 70, 160), C(44, 20, 72)) -- moonlit: the black silhouette of an undiscovered dog reads on it
+			local slot = Kit.Preview.Slot(holder)
+			local code = pill(card, "Code", def.Code or ("H0" .. i), C(30, 14, 46))
+			local rarityName = Shared and select(1, Shared.Rarity(def.Rank or 2)) or "Rare"
+			local rarity = Kit.Pill(card, { Name = "Rarity", Text = T(string.upper(rarityName)), Color = RARITY[rarityName] or PURPLE, Height = 22, TextSize = 12,
+				NoTranslate = true, ZIndex = Z + 2 })
+			local grad = Theme.RarityGradient[rarityName]
+			if grad then
+				rarity:SetGradient(grad[1], grad[2])
+			end
+			local name = txt(card, { Name = "Name", Text = "", TextSize = 17, Scaled = true, MinTextSize = 10, AlignX = "Center", Stroke = 0.4 })
+			local ability = txt(card, { Name = "Ability", Text = "", TextSize = 12, Wrap = true, AlignX = "Center", AlignY = "Top", Color = SOFT })
+			local status = txt(card, { Name = "Status", Text = "", TextSize = 12, Scaled = true, MinTextSize = 8, AlignX = "Center", Color = MUTED })
+			cards[i] = { Id = id, Def = def, Frame = card, Holder = holder, Slot = slot, Code = code, Rarity = rarity, Name = name, Ability = ability, Status = status,
+				Secret = (def.Rank or 0) >= 6 or def.Secret == true }
+		end
+
+		-- the reward list (circle, reward chips, CLAIM) at width w; returns its height
+		local function layoutTrack(x: number, y: number, w: number): number
+			place(trackTitle, 16, 12, w - 32, 26)
+			local ny = 46
+			for _, n in ipairs(nodes) do
+				local chipW = w - 24 - 62 - 118
+				local h = chipRow(n.Chips, table.clone(n.Rewards), chipW, 24)
+				if n.TitlePill then
+					local tp = Kit.Pill(n.Chips, { Name = "Title", Text = n.TitlePill, Color = GOLD, Height = 24, TextSize = 12, PadX = 9,
+						NoTranslate = true, ZIndex = Z + 3 })
+					tp.Instance.Position = UDim2.fromOffset(0, h + 6)
+					h += 30
+				end
+				local nh = math.max(60, h + 16)
+				place(n.Frame, 12, ny, w - 24, nh)
+				place(n.Circle, 8, nh / 2 - 22, 44, 44)
+				place(n.Chips, 62, 8, chipW, nh - 16)
+				place(n.Claim.Instance, w - 24 - 112, nh / 2 - 19, 104, 38)
+				ny += nh + 8
+			end
+			place(track, x, y, w, ny + 6)
+			return ny + 6
+		end
+
+		local S2 = { Box = box, Set = set, Ready = 0 }
+		-- lays the collection out at width L.Width - 12; returns its height
+		function S2.Layout(L: any): number
+			local w = L.Width - 12
+			if w < 60 then
+				return 0
+			end
+			local wide = w >= 900
+			local gridX, gridW, gridY = 2, w, 0
+			local rw = wide and 360 or w
+			local infoH = math.max(36, textH(headInfo.Text, 14, rw - 32))
+			local headH = math.max(wide and 176 or 166, 74 + infoH + 62)
+			local sideBottom
+			if wide then
+				gridW = w - rw - 12
+				gridX = 2
+				local rx = 2 + gridW + 12
+				place(head, rx, 2, rw, headH)
+				local th = layoutTrack(rx, 2 + headH + 12, rw)
+				gridY = 2
+				sideBottom = 2 + headH + 12 + th
+			else
+				place(head, 2, 2, w, headH)
+				local th = layoutTrack(2, 2 + headH + 12, w)
+				gridY = 2 + headH + 12 + th + 12
+				sideBottom = gridY
+			end
+			local hw = head.Size.X.Offset
+			place(headTitle, 16, 12, hw - 136, 26)
+			place(headCount, hw - 110, 12, 94, 28)
+			place(headBar.Instance, 16, 48, hw - 32, 18)
+			place(headInfo, 16, 74, hw - 32, infoH)
+			place(openDex.Instance, 16, head.Size.Y.Offset - 50, math.min(220, hw - 32), 38)
+			local cols = gridW >= 700 and 4 or gridW >= 520 and 3 or 2
+			local gap = 12
+			local cw = math.floor((gridW - gap * (cols - 1)) / cols)
+			local ph = math.floor(cw * (cols == 2 and 0.62 or 0.6))
+			local abilityH = 66
+			for _, c in ipairs(cards) do
+				abilityH = math.max(abilityH, textH(set.Ability(c.Id, c.Def), 12, cw - 16))
+				if c.Secret then
+					abilityH = math.max(abilityH, textH(set.Secret, 12, cw - 16))
+				end
+			end
+			local ch = ph + 62 + abilityH
+			for i, c in ipairs(cards) do
+				local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
+				place(c.Frame, gridX + col * (cw + gap), gridY + row * (ch + gap), cw, ch)
+				place(c.Holder, 8, 8, cw - 16, ph)
+				c.Code.Instance.Position = UDim2.fromOffset(14, 14)
+				c.Rarity.Instance.AnchorPoint = Vector2.new(1, 0)
+				c.Rarity.Instance.Position = UDim2.new(1, -14, 0, 14)
+				place(c.Name, 8, ph + 12, cw - 16, 22)
+				place(c.Ability, 8, ph + 36, cw - 16, abilityH)
+				place(c.Status, 8, ch - 22, cw - 16, 16)
+			end
+			local rows = math.ceil(#cards / cols)
+			local bottom = gridY + rows * (ch + gap)
+			return math.max(bottom, sideBottom or 0)
+		end
+		function S2.Refresh()
+			local dex, count, claims = set.Data(view())
+			local found = 0
+			for _, c in ipairs(cards) do
+				local has = dex[c.Id] == true
+				if has then
+					found += 1
+				end
+				c.Slot:Show({ Kind = kind, DogId = c.Id, Silhouette = not has })
+				local hidden = c.Secret and not has
+				c.Name.Text = hidden and "???" or set.Name(c.Id, c.Def)
+				c.Name.TextColor3 = has and WHITE or MUTED
+				c.Ability.Text = hidden and set.Secret or set.Ability(c.Id, c.Def)
+				c.Status.Text = has and ("✅ " .. T("DISCOVERED")) or ("🔒 " .. T("NOT FOUND YET"))
+				c.Status.TextColor3 = has and set.Accent or MUTED
+				local stroke = c.Frame:FindFirstChildWhichIsA("UIStroke")
+				if stroke then
+					stroke.Color = has and set.Accent or PANEL_EDGE
+					stroke.Transparency = has and 0.2 or 0.15
+				end
+			end
+			local total = #cards
+			count = count or found
+			headCount.Text = F("%d / %d", count, total)
+			headBar:SetValue(total > 0 and count / total or 0)
+			local ready = 0
+			for _, n in ipairs(nodes) do
+				local tier = n.Row
+				local claimed = claims[tostring(tier.Count)] == true
+				local can = count >= tier.Count and not claimed
+				if can then
+					ready += 1
+				end
+				gradient(n.Circle, (claimed and NEON or can and PUMPKIN or C(90, 60, 130)):Lerp(WHITE, 0.2), claimed and C(40, 140, 60) or can and C(190, 80, 10) or C(50, 26, 80))
+				n.Glyph.Text = claimed and "✓" or tostring(tier.Count)
+				if claimed then
+					n.Claim:SetText(T("CLAIMED")) -- the circle already shows ✓
+					n.Claim:SetStyle("secondary")
+					n.Claim:SetDisabled(true)
+				elseif can then
+					n.Claim:SetText(T("CLAIM"))
+					n.Claim:SetStyle("success")
+					n.Claim:SetDisabled(false)
+				else
+					n.Claim:SetText("🔒 " .. F("%d / %d", math.min(count, tier.Count), tier.Count))
+					n.Claim:SetStyle("secondary")
+					n.Claim:SetDisabled(true)
+				end
+			end
+			S2.Ready = ready
+		end
+		return S2
+	end
+
+	local sets = {}
+	for i, def in ipairs(defsList) do
+		sets[i] = buildSet(def)
+	end
+	P.Sets = sets
+
+	-- CHAPTER I / CHAPTER II (only while Chapter II is on)
+	local switch = Kit.New("Frame", { Name = "ChapterSwitch", BorderSizePixel = 0, BackgroundColor3 = C(30, 12, 46), BackgroundTransparency = 0.3, ZIndex = Z },
+		scroll)
+	Kit.Corner(switch, "pill")
+	local switchBtns = {}
+	for i, set in ipairs(sets) do
+		switchBtns[i] = button(switch, { Name = "Chapter" .. i, Text = UT(set.Set.Switch), Style = i == 1 and "primary" or "secondary", TextSize = 15,
+			OnClick = function()
+				P.Select(i)
+			end })
+	end
+	switch.Visible = #sets > 1
+
+	function P.Select(i: number)
+		i = math.clamp(math.floor(tonumber(i) or 1), 1, #sets)
+		if P.Chapter == i then
+			return
+		end
+		P.Chapter = i
+		audio("UiTab")
+		scroll.CanvasPosition = Vector2.new(0, 0)
+		P.Paint()
+		if win then
+			P.Layout(win:GetLayout())
+		end
+	end
+	function P.Paint()
+		for i, b in ipairs(switchBtns) do
+			local on = i == P.Chapter
+			local n = sets[i].Ready or 0
+			b:SetText(UT(sets[i].Set.Switch) .. ((not on and n > 0) and ("  ● " .. n) or ""))
+			b:SetStyle(on and "primary" or "secondary", on and (i == 2 and C(150, 80, 230) or PUMPKIN) or nil)
+		end
 	end
 
 	function P.Layout(L)
@@ -1998,112 +2493,36 @@ pages.dex = function(page: Frame)
 		if w < 60 then
 			return
 		end
-		local wide = w >= 900
-		local y = 2
-		local gridX, gridW, gridY = 2, w, 0
-		local rw = wide and 360 or w
-		local infoH = math.max(36, textH(headInfo.Text, 14, rw - 32))
-		local headH = math.max(wide and 176 or 166, 74 + infoH + 62)
-		if wide then
-			gridW = w - rw - 12
-			gridX = 2
-			local rx = 2 + gridW + 12
-			place(head, rx, 2, rw, headH)
-			local th = layoutTrack(rx, 2 + headH + 12, rw)
-			gridY = 2
-			P.SideBottom = 2 + headH + 12 + th
-		else
-			place(head, 2, 2, w, headH)
-			local th = layoutTrack(2, 2 + headH + 12, w)
-			gridY = 2 + headH + 12 + th + 12
-			P.SideBottom = gridY
+		local top = 0
+		if #sets > 1 then
+			local sw = math.min(w - 4, 420)
+			place(switch, 2, 2, sw, 46)
+			local bw = math.floor((sw - 18) / 2)
+			for i, b in ipairs(switchBtns) do
+				place(b.Instance, 6 + (i - 1) * (bw + 6), 5, bw, 36)
+			end
+			top = 58
 		end
-		local hw = head.Size.X.Offset
-		place(headTitle, 16, 12, hw - 136, 26)
-		place(headCount, hw - 110, 12, 94, 28)
-		place(headBar.Instance, 16, 48, hw - 32, 18)
-		place(headInfo, 16, 74, hw - 32, infoH)
-		place(openDex.Instance, 16, head.Size.Y.Offset - 50, math.min(220, hw - 32), 38)
-		local cols = gridW >= 700 and 4 or gridW >= 520 and 3 or 2
-		local gap = 12
-		local cw = math.floor((gridW - gap * (cols - 1)) / cols)
-		local ph = math.floor(cw * (cols == 2 and 0.62 or 0.6))
-		local abilityH = 66
-		for _, c in ipairs(cards) do
-			abilityH = math.max(abilityH, textH(T(c.Def.Signature or ""), 12, cw - 16))
-			if c.Secret then
-				abilityH = math.max(abilityH, textH(T("A secret dog of the Buried Moon. Only the luckiest ever see it."), 12, cw - 16))
+		local bottom = top
+		for i, set in ipairs(sets) do
+			local on = i == P.Chapter
+			set.Box.Visible = on
+			if on then
+				local h = set.Layout(L)
+				place(set.Box, 0, top, L.Width, h)
+				bottom = top + h
 			end
 		end
-		local ch = ph + 62 + abilityH
-		for i, c in ipairs(cards) do
-			local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
-			place(c.Frame, gridX + col * (cw + gap), gridY + row * (ch + gap), cw, ch)
-			place(c.Holder, 8, 8, cw - 16, ph)
-			c.Code.Instance.Position = UDim2.fromOffset(14, 14)
-			c.Rarity.Instance.AnchorPoint = Vector2.new(1, 0)
-			c.Rarity.Instance.Position = UDim2.new(1, -14, 0, 14)
-			place(c.Name, 8, ph + 12, cw - 16, 22)
-			place(c.Ability, 8, ph + 36, cw - 16, abilityH)
-			place(c.Status, 8, ch - 22, cw - 16, 16)
-		end
-		local rows = math.ceil(#cards / cols)
-		local bottom = gridY + rows * (ch + gap)
-		scroll.CanvasSize = UDim2.fromOffset(0, math.max(bottom, P.SideBottom or 0) + 4)
-		local _ = y
+		scroll.CanvasSize = UDim2.fromOffset(0, bottom + 4)
 	end
 	function P.Refresh()
-		local v = view()
-		local dex = v.Dex or {}
-		local found = 0
-		for _, c in ipairs(cards) do
-			local has = dex[c.Id] == true
-			if has then
-				found += 1
-			end
-			c.Slot:Show({ Kind = kind, DogId = c.Id, Silhouette = not has })
-			local hidden = c.Secret and not has
-			c.Name.Text = hidden and "???" or dogName(c.Id)
-			c.Name.TextColor3 = has and WHITE or MUTED
-			c.Ability.Text = hidden and T("A secret dog of the Buried Moon. Only the luckiest ever see it.") or T(c.Def.Signature or "")
-			c.Status.Text = has and ("✅ " .. T("DISCOVERED")) or ("🔒 " .. T("NOT FOUND YET"))
-			c.Status.TextColor3 = has and NEON or MUTED
-			local stroke = c.Frame:FindFirstChildWhichIsA("UIStroke")
-			if stroke then
-				stroke.Color = has and NEON or PANEL_EDGE
-				stroke.Transparency = has and 0.2 or 0.15
-			end
-		end
-		local total = #cards
-		local count = tonumber(v.DexCount) or found
-		headCount.Text = F("%d / %d", count, total)
-		headBar:SetValue(total > 0 and count / total or 0)
-		local claims = v.DexClaims or {}
 		local ready = 0
-		for _, n in ipairs(nodes) do
-			local row = n.Row
-			local claimed = claims[tostring(row.Count)] == true
-			local can = count >= row.Count and not claimed
-			if can then
-				ready += 1
-			end
-			gradient(n.Circle, (claimed and NEON or can and PUMPKIN or C(90, 60, 130)):Lerp(WHITE, 0.2), claimed and C(40, 140, 60) or can and C(190, 80, 10) or C(50, 26, 80))
-			n.Glyph.Text = claimed and "✓" or tostring(row.Count)
-			if claimed then
-				n.Claim:SetText(T("CLAIMED")) -- the circle already shows ✓
-				n.Claim:SetStyle("secondary")
-				n.Claim:SetDisabled(true)
-			elseif can then
-				n.Claim:SetText(T("CLAIM"))
-				n.Claim:SetStyle("success")
-				n.Claim:SetDisabled(false)
-			else
-				n.Claim:SetText("🔒 " .. F("%d / %d", math.min(count, row.Count), row.Count))
-				n.Claim:SetStyle("secondary")
-				n.Claim:SetDisabled(true)
-			end
+		for _, set in ipairs(sets) do
+			set.Refresh()
+			ready += set.Ready or 0
 		end
 		P.Ready = ready
+		P.Paint()
 	end
 	return P
 end
@@ -3680,6 +4099,11 @@ function S.Open(arg: any?, _page: any?)
 	if tab and ui.Pages[tab] then
 		win:SetTab(tab, false)
 		st.Tab = tab
+	end
+	-- {Tab = "dex", Chapter = 2}: the dex tab on THE UNDERYARD COLLECTION (WP-L)
+	local chapter = type(arg) == "table" and tonumber(arg.Chapter) or nil
+	if chapter and ui.Pages.dex and ui.Pages.dex.Select then
+		ui.Pages.dex.Select(chapter)
 	end
 	if not win.IsOpen then
 		win:Open()

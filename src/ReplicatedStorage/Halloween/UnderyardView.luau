@@ -502,6 +502,48 @@ function UV.RowRarity(row: any): string
 	return "Common"
 end
 
+-- a Chapter II reward row (ctx.C2Reward kinds, Chapter II ids): the HALLOWEEN reward card names / colours it from here
+local C2_KINDS = { Shards = true, Key = true, Dust = true, Fragments = true, Find = true }
+function UV.IsChapter2Row(row: any): boolean
+	if type(row) ~= "table" then
+		return false
+	end
+	local kind, id = row.Kind, row.Id
+	if C2_KINDS[kind] then
+		return true
+	end
+	if type(id) ~= "string" then
+		return false
+	end
+	return (kind == "Decor" and Cfg.Decor.Defs[id] ~= nil) or (kind == "Skin" and Cfg.Skins.Defs[id] ~= nil)
+		or (kind == "Dog" and Cfg.Dogs.Defs[id] ~= nil) or (kind == "Title" and Cfg.Titles[id] ~= nil)
+end
+
+local SUB = {
+	Find = { "SHOWCASE FIND", "НАХОДКА ДЛЯ ВИТРИНЫ" }, Decor = { "PLOT COSMETIC", "КОСМЕТИКА УЧАСТКА" },
+	Skin = { "PICKAXE SKIN", "СКИН КИРКИ" }, Dog = { "UNDERYARD DOG", "СОБАКА ПОДДВОРЬЯ" }, Title = { "NEW TITLE", "НОВЫЙ ТИТУЛ" },
+}
+-- the line under a reward card's name: "+300" for amounts, the kind for items, what a converted duplicate became
+function UV.RowSub(row: any, lang: string?): string
+	row = tbl(row)
+	if row.Converted and type(row.Conversion) == "table" and #row.Conversion > 0 then
+		local parts = {}
+		for _, c in ipairs(row.Conversion) do
+			if type(c) == "table" then
+				table.insert(parts, "+" .. tostring(math.floor(num(c.Amount))) .. " " .. UV.Upper(UV.L(KIND_NAME[c.Kind] or { tostring(c.Kind) }, lang)))
+			end
+		end
+		return UV.T("CONVERTED", lang) .. ": " .. table.concat(parts, " · ")
+	elseif row.Converted then
+		return UV.T("DUPLICATE", lang)
+	end
+	if SUB[row.Kind] then
+		local amount = math.floor(num(row.Amount))
+		return UV.L(SUB[row.Kind], lang) .. (amount > 1 and (" ×" .. amount) or "")
+	end
+	return "+" .. tostring(math.floor(num(row.Amount)))
+end
+
 -- exact percentage text of a probability (0..1): the table sums to 100 000, so three decimals are exact
 function UV.Percent(p: number): string
 	local v = num(p) * 100

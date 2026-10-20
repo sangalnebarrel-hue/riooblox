@@ -198,6 +198,8 @@ do
 		if className == "ScrollingFrame" then
 			o.CanvasPosition = roblox.Vector2.zero
 			o.CanvasSize = roblox.UDim2.new()
+		elseif className == "UIScale" then
+			o.Scale = 1
 		end
 		return o
 	end
@@ -533,6 +535,113 @@ test("the window opens on every tab, every screen, both languages", function()
 			end
 		end
 	end
+	Lang.Override = "en"
+end)
+
+local HS = CE.Require(gui.Modules.HalloweenScreen)
+test("HALLOWEEN window: the CHAPTER II card and the dex CHAPTER I / CHAPTER II switch", function()
+	Screen.Close()
+	CE.Advance(0.5)
+	for _, kind in ipairs({ "locked", "mid" }) do
+		for _, lang in ipairs({ "en", "ru" }) do
+			Lang.Override = lang
+			for _, sc in ipairs(SCREENS) do
+				screen(sc)
+				if HS.IsOpen() then
+					HS.Close()
+					CE.Advance(0.5)
+				end
+				load(kind)
+				HS.Open("event")
+				CE.Advance(0.8)
+				truthy(HS.IsOpen(), "HALLOWEEN open")
+				dump("hs_" .. kind .. "_" .. lang .. "_" .. sc.Id .. "_event")
+				HS.Open({ Tab = "dex", Chapter = 2 })
+				CE.Advance(0.8)
+				dump("hs_" .. kind .. "_" .. lang .. "_" .. sc.Id .. "_dex2")
+				HS.Open({ Tab = "dex", Chapter = 1 })
+				CE.Advance(0.5)
+			end
+		end
+	end
+	HS.Close()
+	CE.Advance(0.5)
+	Lang.Override = "en"
+end)
+
+-- the DogDex window reads the economy snapshot through Modules.Net
+local snapshot = nil
+local netChanged = CE.Signal.new()
+CE.Overrides["Modules/Net"] = {
+	Cached = function()
+		return snapshot
+	end,
+	Snapshot = function()
+		return snapshot
+	end,
+	Changed = netChanged,
+	Request = function()
+		return true, {}
+	end,
+	OnPush = function()
+		return { Disconnect = function() end }
+	end,
+	Publish = function() end,
+}
+local function setSnapshot(kind)
+	local hv, cv, p = views(kind)
+	snapshot = { Profile = { DogDex = p.DogDex, Dogs = {}, DexFavorites = {} }, Features = { Dogdex = { DexStats = {} }, Halloween = hv, Underyard = cv } }
+	return hv, cv, p
+end
+local Dex = CE.Require(gui.Modules.DogdexScreen)
+test("DogDex: THE UNDERYARD COLLECTION tab (Dex II milestones through C2DexClaim, reply View on the Bus)", function()
+	Lang.Override = "en"
+	screen(SCREENS[3])
+	local hv, cv = setSnapshot("mid")
+	current.HView = hv
+	setAttributes(cv, hv)
+	Dex.OpenEvent(UV.Config.EventId)
+	CE.Advance(0.8)
+	truthy(Dex.IsOpen(), "DogDex open")
+	eq(Dex.Window.Tab, "underyard", "opened on the Underyard tab")
+	local ev = Dex.UI.Events[UV.Config.EventId]
+	truthy(ev, "Underyard event page")
+	local first = UV.Config.Dex2Rewards[1]
+	local tier = ev.Tiers[first.Count]
+	eq(tier.Button.Instance.Active ~= false, true, "3 dogs found: CLAIM")
+	local fired = nil
+	local off = Bus.On("StateChanged", function(d)
+		fired = d
+	end)
+	local after = views("mid")
+	replies.C2DexClaim = function(args)
+		return true, { Count = args.Count, Rewards = { { Kind = "Shards", Amount = 300 }, { Kind = "Key", Amount = 1 } }, View = after }
+	end
+	CE.Click(tier.Button.Instance)
+	CE.Advance(0.5)
+	local call = lastCall("C2DexClaim")
+	truthy(call, "C2DexClaim sent")
+	eq(call.Args.Count, first.Count, "milestone count")
+	truthy(fired and fired.View == after, "reply View fired as StateChanged")
+	if type(off) == "function" then
+		off()
+	elseif type(off) == "table" and off.Disconnect then
+		off:Disconnect()
+	end
+	replies.C2DexClaim = nil
+	for _, lang in ipairs({ "en", "ru" }) do
+		Lang.Override = lang
+		for _, sc in ipairs(SCREENS) do
+			Dex.Close()
+			CE.Advance(0.5)
+			screen(sc)
+			Dex.OpenEvent(UV.Config.EventId)
+			CE.Advance(0.8)
+			dump("dex_mid_" .. lang .. "_" .. sc.Id .. "_underyard")
+		end
+	end
+	Dex.Close()
+	CE.Advance(0.5)
 	Lang.Override = "en"
 end)
 

@@ -589,6 +589,7 @@ local function descend()
 	end
 	toast(T("Descend through the church in the Dead Yard"))
 end
+S.Descend = descend
 local function showWay(anchor: string, label: string)
 	if not inZone() then
 		descend()

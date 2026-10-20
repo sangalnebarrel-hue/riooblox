@@ -58,6 +58,43 @@ table.sort(Info.Species, function(a, b)
 	return (a.Index or 0) < (b.Index or 0)
 end)
 
+-- CHAPTER II (WP-L): THE UNDERYARD COLLECTION (Chapter2Config.EventId "Underyard2026"). Its dogs H09-H16 are DogDefinitions
+-- rows (EventDex, WP-K1); a place without those rows still lists them from Chapter2Config.Dogs (name, rank, code; Stub =
+-- true: no entry window) so the dex tab is never empty.
+local chapter2 = nil
+function Info.Chapter2Config(): any
+	if chapter2 then
+		return chapter2
+	end
+	local ok, res = pcall(function()
+		local folder = RS:FindFirstChild("Halloween")
+		local module = folder and folder:FindFirstChild("Chapter2Config")
+		return module and require(module) or nil
+	end)
+	chapter2 = ok and type(res) == "table" and res or nil
+	return chapter2
+end
+do
+	local c2 = Info.Chapter2Config()
+	if c2 and type(c2.Dogs) == "table" and type(c2.EventId) == "string" then
+		local list = Info.EventSpecies[c2.EventId] or {}
+		local have = {}
+		for _, def in ipairs(list) do
+			have[def.Id] = true
+		end
+		for _, id in ipairs(c2.Dogs.Order or {}) do
+			local d = c2.Dogs.Defs and c2.Dogs.Defs[id]
+			if type(d) == "table" and not have[id] then
+				table.insert(list, { Id = id, DisplayName = d.Name and d.Name[1] or id, Rank = d.Rank, Rarity = C.Rarities[d.Rank], Index = d.Index,
+					EventDex = c2.EventId, EventIndex = d.EventIndex, EventCode = d.Code, Acquisition = "Event", MuseumExcluded = true, Stub = true })
+			end
+		end
+		if #list > 0 then
+			Info.EventSpecies[c2.EventId] = list
+		end
+	end
+end
+
 for _, list in pairs(Info.EventSpecies) do
 	table.sort(list, function(a, b)
 		return (a.EventIndex or a.Index or 0) < (b.EventIndex or b.Index or 0)
@@ -330,7 +367,7 @@ function Info.Sources(def: any): { any }
 		end
 	end
 	if def.Acquisition == "Event" then
-		table.insert(out, { Key = "Event", Event = def.EventDex, Places = Info.EventSources(def) })
+		table.insert(out, { Key = "Event", Event = def.EventDex, DogId = def.Id, Places = Info.EventSources(def) })
 	end
 	if def.Jackpot or (def.Acquisition == "RouletteOnly") then
 		table.insert(out, { Key = "Jackpot" })
@@ -526,8 +563,9 @@ function Info.HalloweenConfig(): any
 	return halloween
 end
 
--- Is the event running (config flag confirmed by RS.Halloween.State.Enabled)?
-function Info.EventLive(): boolean
+-- Is the event running (config flag confirmed by RS.Halloween.State.Enabled)? eventId "Underyard2026" (Chapter II) also
+-- needs the HalloweenChapter2Enabled flag (and its State attribute, written by the server at boot).
+function Info.EventLive(eventId: string?): boolean
 	local cfg = Info.HalloweenConfig()
 	if not cfg or not cfg.HalloweenEventEnabled then
 		return false
@@ -535,7 +573,43 @@ function Info.EventLive(): boolean
 	local folder = RS:FindFirstChild("Halloween")
 	local state = folder and folder:FindFirstChild("State")
 	local v = state and state:GetAttribute("Enabled")
-	return v == nil or v == true
+	if not (v == nil or v == true) then
+		return false
+	end
+	if Info.IsChapter2(eventId) then
+		if cfg.HalloweenChapter2Enabled ~= true then
+			return false
+		end
+		local c2 = state and state:GetAttribute("HalloweenChapter2Enabled")
+		return c2 == nil or c2 == true
+	end
+	return true
+end
+
+-- Is eventId the Chapter II collection?
+function Info.IsChapter2(eventId: string?): boolean
+	local c2 = Info.Chapter2Config()
+	return eventId ~= nil and c2 ~= nil and eventId == c2.EventId
+end
+
+-- Is the dex tab of eventId part of this game (Chapter II: only while its config flag is on)?
+function Info.EventEnabled(eventId: string): boolean
+	if Info.IsChapter2(eventId) then
+		local cfg = Info.HalloweenConfig()
+		return cfg ~= nil and cfg.HalloweenEventEnabled == true and cfg.HalloweenChapter2Enabled == true and #(Info.EventSpecies[eventId] or {}) > 0
+	end
+	return #(Info.EventSpecies[eventId] or {}) > 0
+end
+
+-- The reward tiers of an event dex: {Count, ...} (Chapter I: Halloween.Config.DexRewards {Candy, Bones, Block, Skin, Title};
+-- Chapter II: Chapter2Config.Dex2Rewards {Rows = reward rows})
+function Info.EventTiers(eventId: string?): { any }
+	if Info.IsChapter2(eventId) then
+		local c2 = Info.Chapter2Config()
+		return c2 and c2.Dex2Rewards or {}
+	end
+	local cfg = Info.HalloweenConfig()
+	return cfg and cfg.DexRewards or {}
 end
 
 -- Discovered species of an event dex.
@@ -557,6 +631,36 @@ end
 -- Where an event dog drops during the event: "Pumpkin" / "CursedPumpkin" (Lucky Blocks), "Cauldron" (TREAT brew), "Boss".
 function Info.EventSources(def: any): { string }
 	local out = {}
+	if type(def) == "table" and Info.IsChapter2(def.EventDex) then
+		-- Chapter II: "Seal1".."Seal7" (first clears), "Coffin" (the Black Coffin), "Boss" (the finale), "Doors" (the hidden room)
+		local c2 = Info.Chapter2Config()
+		for i, seal in ipairs(c2.Seals or {}) do
+			for _, row in ipairs(seal.Rewards and seal.Rewards.Rows or {}) do
+				if row.Kind == "Dog" and row.Id == def.Id then
+					table.insert(out, "Seal" .. i)
+				end
+			end
+		end
+		if c2.Dogs and c2.Dogs.CoffinWeight and (tonumber(c2.Dogs.CoffinWeight[def.Id]) or 0) > 0 then
+			table.insert(out, "Coffin")
+		end
+		local finale = c2.Finale and c2.Finale.Rewards or {}
+		for _, part in ipairs({ finale.First, finale.Repeat }) do
+			local hit = false
+			for _, d in ipairs(part and part.Dogs or {}) do
+				if d.Id == def.Id then
+					hit = true
+				end
+			end
+			if hit and not table.find(out, "Boss") then
+				table.insert(out, "Boss")
+			end
+		end
+		if def.Id == "HW_HollowKing" and c2.Doors and c2.Doors.Rare and (tonumber(c2.Doors.Rare.HollowKingChance) or 0) > 0 then
+			table.insert(out, "Doors")
+		end
+		return out
+	end
 	local cfg = Info.HalloweenConfig()
 	if not cfg or type(def) ~= "table" then
 		return out
@@ -589,14 +693,14 @@ function Info.EventSources(def: any): { string }
 end
 
 -- Event reward track: {Tier, Count, State = "claimed" | "ready" | "locked" | "over", Missing}.
--- view: snapshot.Features.Halloween (DexClaims); claims made while the event ran stay claimed afterwards.
+-- view: {DexClaims} (Chapter I: snapshot.Features.Halloween.DexClaims; Chapter II: snapshot.Features.Underyard.Dex2.Claims);
+-- claims made while the event ran stay claimed afterwards.
 function Info.EventRewardRows(view: any, profile: any, eventId: string): ({ any }, number)
-	local cfg = Info.HalloweenConfig()
 	local count = Info.EventCount(profile, eventId)
 	local claims = type(view) == "table" and type(view.DexClaims) == "table" and view.DexClaims or {}
-	local live = Info.EventLive()
+	local live = Info.EventLive(eventId)
 	local rows = {}
-	for _, tier in ipairs(cfg and cfg.DexRewards or {}) do
+	for _, tier in ipairs(Info.EventTiers(eventId)) do
 		local state
 		if claims[tostring(tier.Count)] == true then
 			state = "claimed"

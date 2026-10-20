@@ -141,11 +141,16 @@ L.UI = {
 	["MISSING"] = "НЕТ",
 	["DEX II 8 / 8"] = "ДОГДЕКС II 8 / 8",
 	["DEX II ONLY"] = "ТОЛЬКО ДОГДЕКС II",
+	-- DogDex: THE UNDERYARD COLLECTION tab
+	["Bell Seals, the Black Coffin, the Gravekeeper and a hidden room"] = "Печати колокола, Чёрный гроб, Смотритель кладбища и тайная комната",
 	-- JOURNAL
 	["EVENT JOURNAL"] = "ЖУРНАЛ СОБЫТИЯ",
 	["Every story beat of both chapters. Replays never change your progress."] =
 		"Все сюжетные моменты обеих глав. Повторы никогда не меняют твой прогресс.",
 	["Go to the Haunted Cauldron in the Dead Yard to replay the brew"] = "Подойди к котлу с привидениями на Мёртвом дворе, чтобы повторить варево",
+	-- HALLOWEEN window / HUD (Chapter I labels this package relabels)
+	["PUMPKIN BLOCK FOR EXORCISTS"] = "ТЫКВЕННЫЙ БЛОК ЭКЗОРЦИСТАМ",
+	["A PUMPKIN BLOCK FOR THE EXORCISTS"] = "ТЫКВЕННЫЙ БЛОК ДЛЯ ЭКЗОРЦИСТОВ",
 }
 
 L.Templates = {
@@ -210,6 +215,8 @@ L.Templates = {
 		"ПОРТНОЙ МЁРТВЫХ сошьёт: %s за %d фрагмента. Это останется у тебя навсегда.",
 		"ПОРТНОЙ МЁРТВЫХ сошьёт: %s за %d фрагментов. Это останется у тебя навсегда." },
 	["CRAFT · %d FRAGMENTS"] = { "СОЗДАТЬ · %d ФРАГМЕНТ", "СОЗДАТЬ · %d ФРАГМЕНТА", "СОЗДАТЬ · %d ФРАГМЕНТОВ" },
+	["DEX II reward for %d dogs: %s"] = { "Награда Догдекса II за %d собаку: %s", "Награда Догдекса II за %d собаки: %s",
+		"Награда Догдекса II за %d собак: %s" },
 }
 
 -- labels other scripts show through DOGROTS_AutoTranslateUI (global keys)
