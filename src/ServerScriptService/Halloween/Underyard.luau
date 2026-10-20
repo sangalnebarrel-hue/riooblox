@@ -251,10 +251,11 @@ function UY.Unlocked(player: Player, districtName: string): boolean
 	if Rules.DistrictUnlocked(cleared, districtName, Layout.Unlock) then
 		return true
 	end
-	-- a running trial that lives in this district (Seals) and the Black Bell Assault open it
+	-- a running trial that lives in this district (Seals) and the Black Bell Assault open it. A "*" trial (Choir Hunt)
+	-- roams only the districts the player has already unlocked, so it opens nothing.
 	local Seals = modules and modules.Seals
 	local run = Seals and Seals.RunOf and Seals.RunOf(player)
-	if run and run.State == "Running" and run.Def and (run.Def.District == districtName or run.Def.District == "*") then
+	if run and run.State == "Running" and run.Def and run.Def.District == districtName then
 		return true
 	end
 	if districtName == "BlackBellArena" then

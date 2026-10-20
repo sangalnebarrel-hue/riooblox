@@ -2349,8 +2349,8 @@ pages.cauldron = function(page: Frame)
 	local treat = panel(scroll, "Treat", C(60, 30, 96), C(34, 14, 56))
 	local treatTitle = txt(treat, { Name = "Title", Text = T("TREAT"), TextSize = 30, Scaled = true, MinTextSize = 12, Color = NEON, Stroke = 0.2 })
 	-- [WP-E] late starters: every brew is ready by the claim deadline (Shared.BrewSeconds), at least one day after the start
-	local treatBody = txt(treat, { Name = "Body", Text = Kit.T("Feed candy to the cauldron. The more you invest, the better the brew. One brew per season, ready 7 days after you start, and always by Oct 31 (at least 1 day).",
-		"Корми котёл конфетами. Чем больше вложишь, тем лучше зелье. Одно зелье за сезон: готово через 7 дней после начала и всегда к 31 октября (не раньше чем через 1 день)."),
+	local treatBody = txt(treat, { Name = "Body", Text = Kit.T("Feed candy to the cauldron. The more you invest, the better the brew. One brew per season, ready 7 days after you start, and always by Oct 31.",
+		"Корми котёл конфетами. Чем больше вложишь, тем лучше зелье. Одно зелье за сезон: готово через 7 дней после начала и всегда к 31 октября."),
 		TextSize = 14, Wrap = true, AlignY = "Top", Color = SOFT })
 	local line = Kit.New("Frame", { Name = "Line", BorderSizePixel = 0, BackgroundColor3 = TRACK, ZIndex = Z + 1 }, treat)
 	Kit.Corner(line, "pill")

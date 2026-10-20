@@ -7,7 +7,7 @@
 --   Shards {N}, Keys {N}, Fragments {N}, Dust {N}, Seal {N} (seals 1..N offered + cleared, 0 = reset), Offer {N},
 --   Phase {N} (open seals 1..N early; no N = back to the dates), Complete1 (latch Chapter I), Reveal (show the
 --   "IS THAT ALL?" reveal again), Tutorial {Step} (0 = restart, -1 = done), Contracts (finish today's contracts),
---   Daily (new UTC day state), Rested {N}, Calendar {N} (Calendar.ForceStage / SetStage), Finale (BossFinale.Debug /
+--   Daily (new UTC day state), Rested {N}, Calendar {N} (Calendar.Force; N < 0 follows the date), Finale (BossFinale.Debug /
 --   Force), HP {N} (EventHP: enter the practice zone, N = damage), Descend / Ascend (portal without the prompt).
 local RunService = game:GetService("RunService")
 
@@ -240,11 +240,12 @@ function D.StartChapter2(core, modules)
 		end)
 	end
 	cmd.Calendar = function(_player, a)
-		local fn = hook(modules.Calendar, { "ForceStage", "SetStage", "Debug" })
+		local fn = hook(modules.Calendar, { "Force", "ForceStage", "SetStage", "Debug" })
 		R.Check(fn ~= nil, "Calendar module missing")
 		local v = tonumber(a.N)
-		fn(v and math.clamp(math.floor(v), 0, 8) or nil)
-		return true, { Message = "Calendar stage " .. tostring(v or "auto") }
+		-- a negative N (or none) returns to following the date
+		local ok, msg = fn(v and v >= 0 and math.clamp(math.floor(v), 0, 8) or nil)
+		return ok ~= false, { Message = type(msg) == "string" and msg or ("Calendar stage " .. tostring(v or "auto")) }
 	end
 	cmd.Finale = function(player, a)
 		local fn = hook(modules.BossFinale, { "Debug", "Force", "ForceStart" })

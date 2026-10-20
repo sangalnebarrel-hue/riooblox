@@ -503,7 +503,9 @@ local function teleport(player: Player, cf: CFrame)
 			okL, L = pcall(require, layout)
 		end
 		if okL and type(L) == "table" and type(L.InZone) == "function" and L.InZone(cf.Position) then
-			local ok, res = pcall(UY.Teleport, player, cf)
+			-- NoStream: this runs inside the combat tick (Heartbeat) and the player is already in this zone, so the move must
+			-- never wait for RequestStreamAroundAsync (Underyard's own in-zone recoveries do the same)
+			local ok, res = pcall(UY.Teleport, player, cf, { NoStream = true })
 			done = ok and res ~= false
 		end
 	end

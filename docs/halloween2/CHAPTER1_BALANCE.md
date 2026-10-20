@@ -37,7 +37,7 @@ contracts against the real Luau modules.
 | Exorcism 2500-soul RARE pumpkin | every player on the server (AFK included) | only players **active in the Dead Yard in the last 180 s** (others get a toast telling them why) | `Exorcism.Milestones[2].ActiveWindow`; `Core.ActiveInYard`; `Exorcism.Recipients` |
 | Passive yard event mutations | YardChance .004 / .0015 / .0012 | ×0.2 (.0008 / .0003 / .00024) | `Rebalance.PassiveScale`; `HalloweenHooks.Rows` |
 | Pumpkin / Cursed Pumpkin tables | §3 "was" columns | rescaled by `DropRates.Rescale` (§3) at load, Lucky Dust filler | `Config.Rewards` (originals kept in the file), `Rebalance.RarityScale/Filler`, `Rebalance.Was/Odds` |
-| Cauldron brew time | StartedAt + 7 days flat (a brew started after Oct 24 could never be claimed) | ready at `min(StartedAt + 7 d, 2026-10-31 18:00 UTC)`, **never sooner than StartedAt + 1 day**; Studio fast timers unchanged | `Rebalance.BrewDeadline`; `Chapter1Rules.BrewReadyAt`; `Shared.BrewSeconds(startedAt)` (marked `[WP-E]`); `Actions` CauldronClaim; view `Cauldron.ReadyAt` |
+| Cauldron brew time | StartedAt + 7 days flat (a brew started after Oct 24 could never be claimed) | ready at `min(StartedAt + 7 d, 2026-10-31 18:00 UTC)` for every brew started before the deadline (none is stranded); a brew started after it takes 1 day; Studio fast timers unchanged | `Rebalance.BrewDeadline`; `Chapter1Rules.BrewReadyAt`; `Shared.BrewSeconds(startedAt)` (marked `[WP-E]`); `Actions` CauldronClaim; view `Cauldron.ReadyAt` |
 
 Brew catch-up examples (UTC): started Oct 20 09:00 → ready Oct 27 09:00 (7 days, as before) · Oct 24 18:00 → Oct 31
 18:00 · Oct 27 → Oct 31 18:00 · Oct 30 23:00 → Oct 31 23:00 (the 1-day minimum) · Nov 2 → Nov 3. A brew started

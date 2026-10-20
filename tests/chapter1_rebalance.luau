@@ -543,7 +543,7 @@ end)
 ---------------------------------------------------------------------------------------------------------------------
 -- brew catch-up
 ---------------------------------------------------------------------------------------------------------------------
-test("brew catch-up: min(StartedAt + 7 d, Oct 31 18:00 UTC), never sooner than StartedAt + 1 d", function()
+test("brew catch-up: min(StartedAt + 7 d, Oct 31 18:00 UTC); after the deadline one day", function()
 	local function ready(start)
 		return start + Shared.BrewSeconds(start)
 	end
@@ -553,11 +553,17 @@ test("brew catch-up: min(StartedAt + 7 d, Oct 31 18:00 UTC), never sooner than S
 	eq(ready(DEADLINE - 7 * DAY), DEADLINE, "exactly 7 days before")
 	eq(ready(OCT20 + 6 * DAY), DEADLINE, "late starter: by the deadline")
 	eq(ready(DEADLINE - 30 * 3600), DEADLINE, "30 h before: the deadline")
-	eq(ready(DEADLINE - 6 * 3600), DEADLINE - 6 * 3600 + DAY, "6 h before: one full day")
+	eq(ready(DEADLINE - 6 * 3600), DEADLINE, "6 h before: still ready by the deadline (never stranded)")
+	eq(ready(DEADLINE - 60), DEADLINE, "a minute before: the deadline")
+	eq(ready(DEADLINE), DEADLINE + DAY, "at the deadline: one day")
 	eq(ready(DEADLINE + 5 * DAY), DEADLINE + 6 * DAY, "after the deadline: one day")
 	for start = OCT20 - 10 * DAY, DEADLINE + 3 * DAY, 3517 do
 		local r = ready(start)
-		truthy(r >= start + DAY, "never earlier than StartedAt + 1 day")
+		if start < DEADLINE then
+			truthy(r <= DEADLINE, "a brew started before the deadline is ready by it")
+		else
+			eq(r, start + DAY, "a brew started after the deadline takes one day")
+		end
 		truthy(r <= start + 7 * DAY, "never later than 7 days")
 		eq(r, Rules1.BrewReadyAt(start, C), "Shared and Chapter1Rules agree")
 	end

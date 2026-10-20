@@ -12,7 +12,7 @@
 --   R.TrickPrices(cfg, count) -> {price}  the day's price ladder (UI / docs)
 --   R.NoteTrick(c, now) -> n              records one TRICK in c.TricksToday (heals a bad / old value); today's count
 --   R.BrewReadyAt(startedAt, cfg) -> unix late-starter catch-up: min(StartedAt + Cauldron.BrewSeconds,
---                                         Rebalance.BrewDeadline.At), never sooner than StartedAt + MinSeconds (1 day);
+--                                         Rebalance.BrewDeadline.At); a brew started after the deadline takes MinSeconds;
 --                                         0 when the brew has not started
 --   R.BrewSeconds(startedAt?, cfg) -> s   length of that brew (nil / 0 startedAt: the full Cauldron.BrewSeconds)
 --   R.MinuteCap(used, n, cap) -> allowed, used     the per-minute candy cap, applied to the BASE amount (before the
@@ -99,8 +99,14 @@ function R.BrewReadyAt(startedAt: number, cfg: any): number
 	local d = type(rb) == "table" and rb.BrewDeadline
 	local ready = startedAt + full
 	if type(d) == "table" and n0(d.At) > 0 then
-		local minSeconds = math.min(full, math.max(0, n0(d.MinSeconds)))
-		ready = math.max(math.min(ready, math.floor(n0(d.At))), startedAt + minSeconds)
+		local at = math.floor(n0(d.At))
+		if startedAt < at then
+			-- every brew started before the deadline is ready by it, so none is stranded when the event closes
+			ready = math.min(ready, at)
+		else
+			-- a brew started after the deadline (while the event still runs) takes MinSeconds, never 0
+			ready = startedAt + math.min(full, math.max(0, n0(d.MinSeconds)))
+		end
 	end
 	return ready
 end

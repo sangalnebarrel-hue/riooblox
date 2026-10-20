@@ -246,9 +246,10 @@ local function watchMenus()
 	local function changed()
 		pcall(syncControls)
 	end
-	-- a single combined watcher: OpenMenu / ModalOwnerCount both mean "a menu owns the controls"
+	-- a single combined watcher: OpenMenu / ModalOwnerCount mean "a menu owns the controls", MiningActive "a mining session
+	-- does"; ControlLocks changes when another GUIIntegration lock owner re-enables the PlayerModule controls under us
 	menuWatch = g.AttributeChanged:Connect(function(name)
-		if name == "OpenMenu" or name == "ModalOwnerCount" then
+		if name == "OpenMenu" or name == "ModalOwnerCount" or name == "MiningActive" or name == "ControlLocks" then
 			task.defer(changed)
 		end
 	end)
@@ -277,8 +278,8 @@ syncControls = function()
 			sinkBound = false
 			ContextActionService:UnbindAction(SINK)
 		end
-		-- give back only what we took, and never while a menu holds them (its close re-runs this)
-		if ownDisable and c and not menuOpen() then
+		-- give back only what we took, and never while a menu or a mining session holds them (their end re-runs this)
+		if ownDisable and c and not menuOpen() and not miningActive() then
 			ownDisable = false
 			c:Enable()
 		end
@@ -1230,7 +1231,8 @@ function Cinema.Play(opts: { [string]: any }): (any, string?)
 			cam.CameraType = Enum.CameraType.Scriptable
 			table.insert(run.Undo, function()
 				local c = workspace.CurrentCamera
-				if not c then
+				-- a mining session that somehow began under the shot owns the Scriptable camera now: leave it alone
+				if not c or miningActive() then
 					return
 				end
 				if c.CameraType == Enum.CameraType.Scriptable then

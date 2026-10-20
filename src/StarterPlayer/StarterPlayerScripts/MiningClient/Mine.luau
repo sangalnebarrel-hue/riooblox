@@ -835,6 +835,10 @@ local function makeCircle(t)
  function self.Enter(corner)
   if self.Active then return end
   if ctx.MenuOpen()then Hud.Toast(Text.L('Close the menu first','Сначала закрой меню'),U.Colors.gold);return end
+  -- a cinematic owns the camera and the controls (HalloweenClient Cinema refuses to start while MiningActive, and a session
+  -- that started under it would be undone by its teardown)
+  local function cinema()return ctx.Main and ctx.Main:GetAttribute('CinemaActive')==true end
+  if cinema()then return end
   local s=Net.State()
   if (s.PickaxeLevel or 0)<1 then
    Hud.Toast(Text.Get('NEED_PICKAXE'),U.Colors.gold)
@@ -851,7 +855,7 @@ local function makeCircle(t)
   -- Anything may have happened during the round-trip (a menu opened, the yard changed hands,
   -- Exit ran): only a still-current, still-valid entry may continue.
   local current=self.Token==token and self.Active
-  if not ok or not current or ctx.MenuOpen()or not corner:IsDescendantOf(workspace)
+  if not ok or not current or ctx.MenuOpen()or cinema()or not corner:IsDescendantOf(workspace)
    or corner:GetAttribute('OwnerUserId')~=player.UserId then
    if current then
     self.Active=false;self.Corner=nil;self.Token=nil;view=nil;World.RefreshPrompts()

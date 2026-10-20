@@ -414,7 +414,7 @@ function S.CauldronLevel(level: number)
 end
 
 -- [WP-E] late-starter catch-up: pass the brew's StartedAt for its real length (Chapter1Rules.BrewSeconds: ready at
--- min(StartedAt + 7 days, Config.Rebalance.BrewDeadline), never sooner than StartedAt + 1 day); no StartedAt = the full
+-- min(StartedAt + 7 days, Config.Rebalance.BrewDeadline); started after the deadline: 1 day); no StartedAt = the full
 -- brew. Studio fast timers unchanged.
 function S.BrewSeconds(startedAt: number?): number
 	if S.FastTimers() then

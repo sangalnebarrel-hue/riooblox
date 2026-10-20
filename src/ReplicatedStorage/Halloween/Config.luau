@@ -52,8 +52,8 @@ C.Rebalance = {
 	-- TRICK, "the cauldron grows hungry": Cauldron.TrickCost x (1 + Step)^(tricks this UTC day), rounded to Round, at
 	-- most Max (3x the old flat price of 80); back to the base price at UTC midnight -> 140, 170, 200, 240, 240, ...
 	TrickEscalation = { Step = .20, Compound = true, Round = 5, Max = 240 }, -- was: 80 flat
-	-- TREAT late-starter catch-up: a brew is ready at min(StartedAt + Cauldron.BrewSeconds, At), never sooner than
-	-- StartedAt + MinSeconds (Studio FastTimers keep Cauldron.StudioBrewSeconds). Fixes brews stranded by the event end.
+	-- TREAT late-starter catch-up: a brew started before At is ready at min(StartedAt + Cauldron.BrewSeconds, At); one
+	-- started after At takes MinSeconds (Studio FastTimers keep Cauldron.StudioBrewSeconds). Fixes brews stranded by the event end.
 	BrewDeadline = { At = 1793469600, MinSeconds = 86400 }, -- 2026-10-31 18:00 UTC; was: always StartedAt + 7 days
 	-- natural event mutations on ordinary yard digs (Mutations.YardChance x this; HalloweenHooks.Rows)
 	PassiveScale = .2, -- was 1
