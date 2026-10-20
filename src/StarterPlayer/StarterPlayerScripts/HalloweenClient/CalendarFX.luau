@@ -294,7 +294,7 @@ local S = {
 	Roosts = {} :: { Attachment }, GhostMarks = {} :: { Attachment }, GhostDogs = {} :: { [Instance]: any }, FaceTrees = {} :: { [Instance]: boolean },
 	Bats = {} :: { any }, Ghosts = {} :: { any }, Wisps = nil :: any, Leaves = nil :: any, Mist = nil :: any, Moon = nil :: any,
 	NextGhost = 0, NextWhisper = 0, NextSound = 0, BatRoostKey = "", Settled = true, Player = nil :: Player?, RestoreToken = 0,
-	GrassInstant = true, SwayAcc = 0,
+	GrassInstant = true, SwayAcc = 0, Indoors = false,
 }
 M._State = S
 
@@ -485,7 +485,8 @@ local function updateLayer(on: boolean)
 	if not (L and L.Layer) then
 		return
 	end
-	local w = on and math.clamp(S.Cur.Atmos or 0, 0, 1) or 0
+	-- the island's look only: off the main map (the Underyard, the Void) the layer glides out
+	local w = (on and S.OnIsland) and math.clamp(S.Cur.Atmos or 0, 0, 1) or 0
 	if w <= 0 then
 		if S.Layer then
 			S.Layer:Remove(Cfg.Lighting.Fade)
@@ -1118,6 +1119,26 @@ local function ground(): Vector3
 	return V3(p.X, math.max(p.Y - 3, -4), p.Z)
 end
 
+-- a roof over the player (the museum, the shelter, a shop)? then no leaves / mist / wisps fall through it
+local roofParams: RaycastParams? = nil
+local function indoors(): boolean
+	local ok, hit = pcall(function()
+		local params = roofParams
+		if not params then
+			params = RaycastParams.new()
+			params.FilterType = Enum.RaycastFilterType.Exclude
+			roofParams = params
+		end
+		local ignore: { Instance } = { fxFolder() }
+		if S.Player and S.Player.Character then
+			table.insert(ignore, S.Player.Character)
+		end
+		params.FilterDescendantsInstances = ignore
+		return workspace:Raycast(ground() + V3(0, 4, 0), V3(0, 40, 0), params)
+	end)
+	return ok and hit ~= nil
+end
+
 local function clearWisps()
 	if S.Wisps then
 		S.Wisps.Model:Destroy()
@@ -1126,7 +1147,7 @@ local function clearWisps()
 end
 
 local function planWisps()
-	local n = (S.OnIsland and S.YardW < .3) and (S.Plan and S.Plan.Wisps or 0) or 0
+	local n = (S.OnIsland and S.YardW < .3 and not S.Indoors) and (S.Plan and S.Plan.Wisps or 0) or 0
 	if S.Wisps and S.Wisps.N == n then
 		return
 	end
@@ -1183,7 +1204,7 @@ local function clearLeaves()
 end
 
 local function planLeaves()
-	local n = (S.OnIsland and S.YardW < .3 and not shared().ReducedMotion()) and (S.Plan and S.Plan.Leaves or 0) or 0
+	local n = (S.OnIsland and S.YardW < .3 and not S.Indoors and not shared().ReducedMotion()) and (S.Plan and S.Plan.Leaves or 0) or 0
 	if S.Leaves and S.Leaves.N == n then
 		return
 	end
@@ -1242,7 +1263,7 @@ end
 
 local function planMist()
 	local plan = S.Plan
-	local n = (S.OnIsland and S.YardW < .2 and plan) and plan.Mist or 0
+	local n = (S.OnIsland and S.YardW < .2 and not S.Indoors and plan) and plan.Mist or 0
 	if n <= 0 then
 		stopMist()
 		return
@@ -1628,6 +1649,7 @@ local function slowTick(now: number)
 	S.Blood = W and W.Blood or 0
 	S.YardW = (S.Ctx.Layout and S.Ctx.Layout.Weight) and S.Ctx.Layout.Weight(S.CamPos, 40) or 0
 	S.OnIsland = Pure.OnIsland(S.CamPos)
+	S.Indoors = S.OnIsland and indoors()
 	local busy = worldEventBusy()
 	if S.WorldEvent and not busy then
 		S.GrassAfterEvent = now + Cfg.Grass.AfterEvent -- its 3 s colour restore first, then ours

@@ -156,7 +156,7 @@ C.Wisps = { Radius = { 8, 34 }, Height = { 1.2, 4.5 }, Colors = { { 150, 255, 14
 C.Leaves = { Rate = 10, Radius = 40, Colors = { { 196, 110, 40 }, { 170, 70, 30 }, { 210, 160, 60 } } }
 
 -- the moon (around BloodMoonFX's Buried Moon): halo rings and the eclipse disc, at Halo / Eclipse
-C.Moon = { HaloScale = { 1.35, 1.9 }, HaloColor = { 255, 176, 96 }, RingColor = { 186, 120, 255 }, EclipseColor = { 10, 6, 16 } }
+C.Moon = { HaloScale = { 1.6, 2.4 }, HaloColor = { 255, 176, 96 }, RingColor = { 186, 120, 255 }, EclipseColor = { 10, 6, 16 } }
 
 ---------------------------------------------------------------------------------------------------------------------
 -- Offline builders (ServerStorage.HalloweenCalendarBuild): placement rules and budgets
