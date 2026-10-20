@@ -441,15 +441,37 @@ C.Finale = {
 		Repeat = { Shards = 120, ShardSource = "Boss", Keys = 1, SkinChance = .06,
 			Dogs = { { Id = "HW_BellkeeperWolf", Chance = .015, Rank = 5 }, { Id = "HW_HollowKing", Chance = .0005, Rank = 6 } } },
 	},
-	-- phase numbers (§11; BossFinale WP-C / FinaleFX WP-N)
+	-- phase numbers (§11; BossFinale WP-C / FinaleFX WP-N). Discrete damages are x the difficulty V multiplier (1.5,
+	-- BossMath.EventDamage, capped at 45% Event HP); DPS numbers are as written.
 	FakeDeath = { Seconds = 6, Silence = 2.5 },
 	Bell = { Height = 28, ShockwaveEvery = { 6, 8 }, ShockwaveDamage = 14, Chains = 4, PulsePeriod = 1.2, ChainHits = 6,
-		ChainHitsPerFighter = 3, ShockwaveGap = 50 },
+		ChainHitsPerFighter = 3, ShockwaveGap = 50,
+		-- [WP-C] Bright = share of each pulse whose Perfect hits count; Descend = the bell's descent before the first chain;
+		-- FirstToll = seconds after that to the first shockwave; ChainAlong = where on the chain (anchor -> bell) its
+		-- hittable link hangs; ChainRange = Strike range; PingGrace = latency the bright-window check forgives (s);
+		-- BreakPause = seconds between a broken chain and the next one; ChainScore = reward credit per counted hit
+		-- (share of MaxArmor)
+		Bright = .55, Descend = 2.5, FirstToll = 3, ShockwaveTelegraph = 1.5, DoubleChance = .45, ChainAlong = .25, ChainRange = 20,
+		PingGrace = .25, EdgeGrace = .04, BreakPause = 1.5, ChainScore = .004 },
 	Choir = { Candles = 6, Rounds = 3, WeakPoints = 3, WeakHP = 10, WeakHPPerFighter = 5, GhostBite = 8, GhostWaveEvery = 14,
-		VolleyDamage = 14, VolleyEvery = { 5, 8 } },
+		VolleyDamage = 14, VolleyEvery = { 5, 8 },
+		-- [WP-C] WeakSeconds = how long the buried weak points stay open after a matched pattern; CandleCooldown = a candle
+		-- ignores hits this long after it flipped; ghost dogs: GhostCount + GhostPerFighter x (fighters - 1) per wave (at
+		-- most GhostMax alive), HP in tier-normalised hits, studs/s, bite (a telegraphed EventHP circle) within GhostLunge
+		-- studs every GhostBiteCooldown s; StartDelay = seconds after the last chain breaks; scores = reward credit
+		StartDelay = 1.5, WeakSeconds = 20, CandleCooldown = .45, CandleRange = 14, GhostCount = 2, GhostPerFighter = 1, GhostMax = 8, GhostHP = 3,
+		GhostSpeed = 9, GhostLunge = 6, GhostBiteCooldown = 2.6, GhostBiteRadius = 3.5, FirstGhosts = 4, FirstVolley = 6, VolleyTelegraph = 1.4,
+		VolleyWidth = 5, CandleScore = .002, WeakScore = .02, GhostScore = .006, HoundDelay = 2.5 },
 	Hound = { BPM = 100, CounterWindow = 3, CounterCapPerPlayer = 6, BarkPoints = 24, BarkPointsPerFighter = 10,
-		BurstDamage = 12, LineDamage = 16, RingDamage = 14, SafeDPS = 7 },
+		BurstDamage = 12, LineDamage = 16, RingDamage = 14, SafeDPS = 7,
+		-- [WP-C] Rise = seconds from the hound's appearance to beat 0 (StartAt); LeadBeats = beats before the first pattern;
+		-- GapBeats = beats between a counter window and the next pattern; offsets from the pit floor centre (studs):
+		-- HoundOffset = the hound behind the south rim, JawOffset = where its jaw comes down when it barks; MoonDir = from
+		-- the pit towards the Black Moon; CounterScore = reward credit per counted jaw hit
+		Rise = 3, LeadBeats = 2, GapBeats = 1, SafeRadius = 8, SafeSpeed = 9, JawRange = 22, HoundOffset = { 0, 0, 50 }, JawOffset = { 0, 10, 18 },
+		MoonDir = { 0, .35, 1 }, CounterScore = .006 },
 	TimeLimit = 420, -- 7 min total after the false victory: "THE BELL SILENCES YOU"
+	VictoryHold = 8, -- [WP-C] seconds the Victory / Fail state stays published (cinematic) before the fight is released
 }
 
 ---------------------------------------------------------------------------------------------------------------------
@@ -487,7 +509,15 @@ C.Boss = {
 	ArmorK = 5,
 	ArmorExp = .42, -- was .55 (compresses the pickaxe range harder: mechanics and Perfects dominate)
 	SoftCap = { Window = 3, PerSecond = .0045, Beyond = .2, MechanicBypass = .6 }, -- x MaxArmorBase(d) per second
-	PerfectExtra = 1.0, -- Perfect x1.0 extra on top of the pickaxe PerfectMult (already in raw)
+	-- [WP-C] tuned (was 1.0): the timing factor on the armor a body hit LANDS after the soft cap (the cap flattens
+	-- the gear, the timing survives it): a Perfect x PerfectExtra, a Good hit x GoodMult. This puts a max-gear player
+	-- spamming Good hits at ~23% of the same player playing Perfects + mechanics in the same fight (target <= 35%;
+	-- tests/boss_finale.luau simulation, docs/halloween2/BOSS.md §2.1)
+	PerfectExtra = 2, -- Perfect x2 on top of the pickaxe PerfectMult (already in raw)
+	GoodMult = .75, -- [WP-C]
+	ScaleFrom = 3, -- [WP-C] this curve, the soft cap and the timing factor apply from difficulty III (the endgame);
+	-- I / II keep the Chapter I curve (Config.Boss ArmorK 5 / ArmorExp .55, no cap): the Chapter I gate (UNEASY) does not
+	-- get harder for players who do not hit Perfects
 	WeakMult = 3,
 	Sync = { Window = .5, Bonus = .5, MinPlayers = 2 }, -- SYNC STRIKE
 	WeakenedDealt = .7,
@@ -497,13 +527,21 @@ C.Boss = {
 	TelegraphScale = { 1, 1, .95, .9, .85 }, -- never below C.Combat.Hazards minimums
 	Endgame = {
 		Difficulties = { [3] = true, [4] = true, [5] = true },
-		GraveLines = { Count = { 3, 5 }, Damage = 18, Width = 6, Stagger = .45 },
+		GraveLines = { Count = { 3, 5 }, Damage = 18, Width = 6, Stagger = .45,
+			Telegraph = 1.5, Knock = 30 }, -- [WP-C] base telegraph (x TelegraphScale), knock-back
 		LanternWalk = { Radius = 9, Seconds = 8, DPS = 7, Grace = 1.2, Speed = 6 },
-		BoneRain = { Count = { 12, 18 }, Radius = 4, Damage = 12, Stagger = .18 },
+		BoneRain = { Count = { 12, 18 }, Radius = 4, Damage = 12, Stagger = .18,
+			Telegraph = 1.4, Aimed = .4, Knock = 20 }, -- [WP-C] base telegraph, share of bones aimed at fighters, knock-back
 		CursedRocks = { WavesPerPhase = { [3] = 3, [4] = 3 }, Unlimited = { [5] = true } },
 		WeakPointPerfectOnly = { [5] = true },
+		-- [WP-C] pattern rhythm: the first one this many seconds after the rise, then Every (s, / sqrt(difficulty speed))
+		-- after the previous one ended; Curse = Chapter I curse added by a pattern hit
+		First = 16, Every = { 18, 26 }, Curse = 4,
 	},
 	InPitOnly = true, -- plates / weak points only from inside the pit; only pit players count as fighters
+	-- [WP-C] Gravekeeper server (Boss.luau, docs/halloween2/BOSS.md)
+	PatternBand = 3.4, -- vertical half band of rock / bone circles centred at root height (terrace vs floor never mix)
+	ReviveScore = .01, -- reward credit (share of MaxArmor) for reviving an ally in the pit
 }
 
 ---------------------------------------------------------------------------------------------------------------------
