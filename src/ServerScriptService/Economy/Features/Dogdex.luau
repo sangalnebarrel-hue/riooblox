@@ -38,7 +38,8 @@ F.VariantBit = VARIANT_BIT
 
 local BONUS_TOTAL = 0
 for _, def in pairs(D) do
-	if type(def) == "table" and def.MuseumExcluded and not def.Reserved then
+	-- event dogs (EventDex) have their own dex tab and reward ledger (NIGHT OF THE BURIED MOON): not BONUS dogs
+	if type(def) == "table" and def.MuseumExcluded and not def.Reserved and not def.EventDex then
 		BONUS_TOTAL += 1
 	end
 end
@@ -284,7 +285,7 @@ function F.Snapshot(R, p, view, now)
 	local bonus = 0
 	for id, known in pairs(type(p.DogDex) == "table" and p.DogDex or {}) do
 		local def = D[id]
-		if known == true and type(def) == "table" and def.MuseumExcluded and not def.Reserved then
+		if known == true and type(def) == "table" and def.MuseumExcluded and not def.Reserved and not def.EventDex then
 			bonus += 1
 		end
 	end

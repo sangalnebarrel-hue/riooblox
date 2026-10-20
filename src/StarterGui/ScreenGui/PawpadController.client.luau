@@ -2,6 +2,7 @@
 local Players = game:GetService('Players')
 local Replicated = game:GetService('ReplicatedStorage')
 local DogRenderProfile = require(Replicated:WaitForChild('DogRenderProfile'))
+local DiscoveryVisuals = require(Replicated:WaitForChild('DogEconomy'):WaitForChild('DiscoveryVisuals'))
 local TweenService = game:GetService('TweenService')
 local HttpService = game:GetService('HttpService')
 local Input = game:GetService('UserInputService')
@@ -154,9 +155,11 @@ local function showPreview(holder,id,isItem,silhouette)
  local previous=holder:FindFirstChild('ModelPreview');if previous then previous:Destroy() end
  if holder:FindFirstChild('Caption') then holder.Caption.Visible=true end
  if not id or id=='' then return end
- local source
+ local source,model
  if isItem then
-  local folder=Replicated:FindFirstChild('DiscoveryModels');source=folder and folder:FindFirstChild(id)
+  -- Finds: DiscoveryVisuals builds the recipe model (or clones the old voxel model).
+  local ok,result=pcall(DiscoveryVisuals.Clone,{ItemId=id,Mutation='NORMAL'},{NoScale=true})
+  model=ok and result or nil
  else
   -- DogTemplates is server-only in this place. Reuse an already replicated dog model if present.
   for _,folderName in ipairs({'DogTemplates','DogModels','DogPreviews'}) do
@@ -173,8 +176,10 @@ local function showPreview(holder,id,isItem,silhouette)
    end
   end
  end
- if not source or not source:IsA('Model') or not source.Archivable then return end
- local model=source:Clone()
+ if not model then
+  if not source or not source:IsA('Model') or not source.Archivable then return end
+  model=source:Clone()
+ end
  if not isItem then DogRenderProfile.Apply(model,id)end
  for _,o in ipairs(model:GetDescendants()) do
   if o:IsA('LuaSourceContainer') or o:IsA('SurfaceGui') or o:IsA('BillboardGui') or o:IsA('ProximityPrompt') then o:Destroy()
@@ -189,7 +194,8 @@ local function showPreview(holder,id,isItem,silhouette)
  model.Parent=viewport
  local cf,size=model:GetBoundingBox();local camera=Instance.new('Camera');camera.FieldOfView=38;camera.Parent=viewport
  local ratio=math.max(.35,holder.AbsoluteSize.X/math.max(1,holder.AbsoluteSize.Y))
- camera.CFrame=CFrame.lookAt(cf.Position+cf:VectorToWorldSpace(Vector3.new(1,.65,-1.3).Unit)*size.Magnitude*1.4/math.min(1,ratio),cf.Position)
+ if isItem then DiscoveryVisuals.FrameCamera(camera,model,ratio)
+ else camera.CFrame=CFrame.lookAt(cf.Position+cf:VectorToWorldSpace(Vector3.new(1,.65,-1.3).Unit)*size.Magnitude*1.4/math.min(1,ratio),cf.Position)end
  viewport.CurrentCamera=camera
  holder.Caption.Visible=false
 end
@@ -276,7 +282,7 @@ bind(dex.Discoveries,function() switch('Discoveries') end)
 
 renderTrade=function()
  if not snapshot then return end
- if snapshot.Trade and Navigation.Owner=='Page'and gui:GetAttribute('OpenMenu')=='Trade'then Navigation.OpenScreen('Trade');return end
+ if snapshot.Trade and Navigation.Owner=='Page'and gui:GetAttribute('OpenMenu')=='Trade'then local ok,trade=pcall(require,gui.Modules:FindFirstChild('TradeScreen'));if ok and type(trade)=='table'then trade.Open()end;return end -- Trade 2.0 kit window (docs/TRADE.md), never the old Menus trade
  local page=pages.TradePage;local s=page.ServerPlayersPanel.Players
  clearRows(s);local rows=0;local selected
  for i,p in ipairs(snapshot.Players or {}) do

@@ -16,10 +16,10 @@ local function frame(parent,name,pos,size,color)
  return f
 end
 local function label(parent,text,pos,size,color,fontSize)
- local l=Instance.new('TextLabel');l.BackgroundTransparency=1;l.Position=pos;l.Size=size;l.Text=text;l.TextColor3=color or fg;l.Font=Enum.Font.GothamMedium;l.TextSize=fontSize or 14;l.TextXAlignment=Enum.TextXAlignment.Left;l.TextWrapped=true;l.Parent=parent;return l
+ local l=Instance.new('TextLabel');l.BackgroundTransparency=1;l.Position=pos;l.Size=size;l.Text=text;l.TextColor3=color or fg;l.Font=Enum.Font.FredokaOne;l.TextSize=fontSize or 14;l.TextXAlignment=Enum.TextXAlignment.Left;l.TextWrapped=true;l.Parent=parent;return l
 end
 local function button(parent,text,pos,size,color)
- local b=Instance.new('TextButton');b.Position=pos;b.Size=size;b.Text=text;b.BackgroundColor3=color or Color3.fromRGB(38,47,65);b.TextColor3=fg;b.Font=Enum.Font.GothamBold;b.TextSize=13;b.AutoButtonColor=true;b.BorderSizePixel=0;b.Parent=parent
+ local b=Instance.new('TextButton');b.Position=pos;b.Size=size;b.Text=text;b.BackgroundColor3=color or Color3.fromRGB(38,47,65);b.TextColor3=fg;b.Font=Enum.Font.FredokaOne;b.TextSize=13;b.AutoButtonColor=true;b.BorderSizePixel=0;b.Parent=parent
  local corner=Instance.new('UICorner');corner.CornerRadius=UDim.new(0,7);corner.Parent=b;return b
 end
 local toggle=button(gui,'EVENTS  [F6]',UDim2.new(.5,-72,0,12),UDim2.fromOffset(144,36),Color3.fromRGB(86,62,137))

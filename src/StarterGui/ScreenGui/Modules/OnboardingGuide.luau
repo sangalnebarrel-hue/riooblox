@@ -7,28 +7,29 @@ local GuiService=game:GetService('GuiService')
 local Guide={}
 local controller
 
--- Active Mining has its own LocalScript (StarterPlayerScripts.MiningClient).
+-- Active Mining has its own LocalScript (StarterPlayerScripts.MiningClient). Strength is a branch of the
+-- UPGRADE TREE; the mutation lab is the nuclear tower (step 13).
 
 local LAST=17
 local cards={
- [0]={Title='WELCOME TO DOGROTS',Icon='Dogs',Body='You start with Cash and an empty yard. This guide teaches the real DOGROTS loop step by step, including the active Mining Corner beside your kennels.',Button='START THE GUIDE'},
- [1]={Title='1 · BUY YOUR FIRST DOG',Icon='Dogs',Body='Go to THE DOG tongue and buy your first affordable dog. New dogs become workers you can assign to your yard. Rarer dogs cost much more and become long-term goals.',Button='SHOW THE DOG',Destination='THE DOG'},
- [2]={Title='2 · PUT THE DOG TO WORK',Icon='Yard',Body='Return to your yard and use an empty kennel. Assign the dog to a Dig Slot. Only assigned dogs dig.',Button='SHOW MY YARD',Destination='Your yard'},
- [3]={Title='3 · WAIT FOR A REAL DIG',Icon='Discoveries',Body='A dog works in cycles. Ordinary finds fill your yard storage; rare discoveries go to BAG. Your dog can NEVER reach a depth you have not unlocked.',Button='VIEW MY DOGS',Page='Dogs'},
- [4]={Title='4 · SELL, DON\'T JUST AFK',Icon='Coins',Body='Take ordinary finds to your Collector and sell them. Cash is intentionally earned through the loop: dig → collect → sell → reinvest.',Button='SHOW COLLECTOR',Destination='Your yard'},
- [5]={Title='5 · LEVELS OPEN THE GAME',Icon='Events',Body='XP comes from digging, selling, active mining, unlocking depths and buying upgrades. Reach Level 2. Higher levels unlock deeper layers and stronger upgrades.',Button='VIEW MY DOGS',Page='Dogs'},
- [6]={Title='6 · GROW YOUR UPGRADE TREE',Icon='Yard',Body='Open the UPGRADE TREE (yard workshop, MY YARD or this button). Tap a glowing node, check the bonus it gives and press BUY. Every node has a Cash price and a player-level requirement.',Button='OPEN UPGRADE TREE',Page='UpgradeTree'},
- [7]={Title='7 · ACTIVE MINING',Icon='Dig',Body='Your Mining Corner is next to your kennels. Buy the Wooden Pickaxe (600 Coins) at the pickaxe sign, then mine the ore: tap each circle when the white ring reaches the gold ring. Every hit pays Coins.',Button='SHOW MINING CORNER',Destination='Your yard'},
- [8]={Title='8 · TRAIN YOUR STRENGTH',Icon='Yard',Body='The weight rack stands beside the ore. Take the first weight for free and tap fast to push it UP: every lift adds Strength. Better pickaxes need both Coins and Strength.',Button='SHOW STRENGTH RACK',Destination='Your yard'},
- [9]={Title='9 · PICKAXES, WEIGHTS & ORES',Icon='Dig',Body='7 pickaxes, 7 weights, 12 ores. Cheap pickaxes need many hits; better ones add crits, combos, extra circles, ore luck and bonus Coins. The Voidbreaker breaks any ore in 1-2 hits.',Button='CONTINUE',Info=true},
- [10]={Title='10 · DOG LINE + DEPTHS',Icon='Dig',Body='THE DOG tongue is where you expand your team with new dogs; prices rise sharply with rarity. Layers are hard progression gates: Caverns opens at Level 5, then Ancient Ruins, Cursed Depths and THE VOID. Dogs can never pull loot from a layer you have not unlocked.',Button='OPEN LAYERS & CONTINUE',Page='Layers',Info=true},
- [11]={Title='11 · LUCKY BLOCKS',Icon='Inventory',Body='Lucky Blocks can be bought from the tongue and placed on Lucky Pads in your yard. Higher tiers cost much more and contain stronger reward pools.',Button='SHOW THE TONGUE & CONTINUE',Destination='THE DOG',Info=true},
- [12]={Title='12 · DOG-O-MATIC',Icon='Ticket',Body='DOG-O-MATIC spends DOG TOKENS for a random prize. A free token refills five hours after use; paid token bundles are optional. Keep one free inventory slot before spinning.',Button='OPEN DOG-O-MATIC & CONTINUE',Page='RewardMachine',Info=true},
- [13]={Title='13 · LAB & DOG GROWTH',Icon='Lab',Body='The Lab is for long-term dog progression: review genetics actions before committing them. Mastery grows through work; abilities, variants and mutations change how dogs perform.',Button='OPEN LAB & CONTINUE',Page='Lab',Info=true},
- [14]={Title='14 · DOGDEX & MUSEUM',Icon='Index',Body='DogDex tracks what you have discovered. Museum progress, sets, records and collection milestones give you reasons to hunt beyond raw Cash.',Button='OPEN DOGDEX & CONTINUE',Page='DogDex',Info=true},
- [15]={Title='15 · SAFE PLAYER TRADING',Icon='Trade',Body='Trading unlocks at Level 5 for both players. Build an offer, UPDATE it, LOCK it, review both estimated values, then wait through the safety timer before FINAL CONFIRM.',Button='OPEN TRADE & CONTINUE',Page='Trade',Info=true},
+ [0]={Title='WELCOME TO DOGROTS',Icon='Dogs',Body='You start with Cash and an empty yard. This guide walks you through the real loop: your dogs dig, you sell, level up, grow the UPGRADE TREE and mine ore in your own quarry.',Button='START THE GUIDE'},
+ [1]={Title='1 · BUY YOUR FIRST DOG',Icon='Dogs',Body="Walk to THE DOG's tongue and buy an affordable dog. Every dog is a worker for your yard; rarer dogs cost much more and become long-term goals.",Button='SHOW THE DOG',Destination='THE DOG'},
+ [2]={Title='2 · PUT THE DOG TO WORK',Icon='Yard',Body='Back in your yard, walk up to an empty kennel and assign the dog to a dig slot. Only assigned dogs dig.',Button='SHOW MY YARD',Destination='Your yard'},
+ [3]={Title='3 · WAIT FOR A DIG',Icon='Inventory',Body='Dogs dig in cycles. Ordinary finds fill your yard storage, rare discoveries go to your INVENTORY. A dog never digs a layer you have not unlocked.',Button='VIEW MY DOGS',Page='Dogs'},
+ [4]={Title='4 · SELL YOUR FINDS',Icon='Coins',Body='Take ordinary finds to the Collector in your yard and sell them. Cash comes from the loop: dig → collect → sell → reinvest.',Button='SHOW COLLECTOR',Destination='Collector'},
+ [5]={Title='5 · REACH LEVEL 2',Icon='Star',Body='XP comes from dog digs, selling, mining ore, unlocking depths and buying upgrades. Reach Level 2: higher levels open deeper layers and stronger upgrades.',Button='VIEW MY DOGS',Page='Dogs'},
+ [6]={Title='6 · GROW YOUR UPGRADE TREE',Icon='Records',Body='Open the UPGRADE TREE with the button below or in MY YARD. Tap a glowing node, read its bonus and press BUY. Every node has a Cash price and a level requirement.',Button='OPEN UPGRADE TREE',Page='UpgradeTree'},
+ [7]={Title='7 · MINE ORE IN YOUR QUARRY',Icon='Dig',Body='The ore quarry is next to your kennels. Buy a pickaxe at the PICKAXES stall: it goes to your inventory, so you can hold it anywhere. Then mine: tap each ring when it shrinks onto the target. Every hit pays Coins.',Button='SHOW ORE QUARRY',Destination='MiningCorner'},
+ [8]={Title='8 · BUILD YOUR STRENGTH',Icon='EnergySnack',Body='Strength is part of the UPGRADE TREE now: buy a node of the STRENGTH branch (start with IRON GRIP). Better pickaxes need both Coins and Strength, and Strength makes every hit hit harder.',Button='OPEN STRENGTH BRANCH',Page='UpgradeTree'},
+ [9]={Title='9 · PICKAXES & ORES',Icon='Dig',Body='16 pickaxes and 12 ores. Every pickaxe has its own look and swing; cheap ones need many hits, better ones add crits, combos, extra rings, ore luck and bonus Coins. Ores reroll from Limestone to the rare Void Crystal.',Button='CONTINUE',Info=true},
+ [10]={Title='10 · DOG LINE + DEPTHS',Icon='Bones',Body='THE DOG tongue is where you expand your team with new dogs; prices rise sharply with rarity. Layers are hard progression gates: Caverns opens at Level 5, then Ancient Ruins, Cursed Depths and THE VOID. Dogs can never pull loot from a layer you have not unlocked.',Button='OPEN LAYERS & CONTINUE',Page='Layers',Info=true},
+ [11]={Title='11 · LUCKY BLOCKS',Icon='RareBlock',Body='Lucky Blocks can be bought from the tongue and placed on Lucky Pads in your yard. Higher tiers cost much more and contain stronger reward pools.',Button='SHOW THE TONGUE & CONTINUE',Destination='THE DOG',Info=true},
+ [12]={Title='12 · DOG-O-MATIC',Icon='RewardMachine',Body='DOG-O-MATIC spends DOG TOKENS for a random prize. A free token refills five hours after use; paid token bundles are optional. Keep one free inventory slot before spinning.',Button='OPEN DOG-O-MATIC & CONTINUE',Page='RewardMachine',Info=true},
+ [13]={Title='13 · NUCLEAR MUTATION TOWER',Icon='Lab',Body='The Lab is a giant nuclear cooling tower now. At its console press START MUTATION, pick a dog and watch the show: a reroll can make it Shiny, Golden, Corrupted, Glitched or Void, each with its own glow and income bonus. The first try is free.',Button='SHOW THE TOWER & CONTINUE',Destination='Mutation lab',Info=true},
+ [14]={Title='14 · DOGDEX & MUSEUM',Icon='DogDex',Body='DogDex tracks what you have discovered. Museum progress, sets, records and collection milestones give you reasons to hunt beyond raw Cash.',Button='OPEN DOGDEX & CONTINUE',Page='DogDex',Info=true},
+ [15]={Title='15 · SAFE PLAYER TRADING',Icon='Trade',Body='Trading unlocks at Level 5 for both players. Invite a player, put dogs, items and artifacts on YOUR side, check the value bar, press READY, then HOLD CONFIRM after the short safety timer. Any change resets READY.',Button='OPEN TRADE & CONTINUE',Page='Trade',Info=true},
  [16]={Title='16 · EVENTS & RETURN REWARDS',Icon='Events',Body='Events are bonuses, not free-money farms: stay active and dig to qualify. EVENTS also holds Daily Rewards and playtime milestones. Offline income is only a small welcome-back bonus.',Button='OPEN EVENTS & CONTINUE',Page='Events',Info=true},
- [17]={Title='YOU KNOW THE WHOLE LOOP',Icon='Dogs',Body='Buy dogs → assign → dig → sell → level → upgrade → unlock depth. Between dog cycles, actively mine ore, train Strength and upgrade your pickaxe. Then chase Lucky Blocks, DOG-O-MATIC, Lab, DogDex, Museum, events and safe trades.',Button='FINISH GUIDE'},
+ [17]={Title='YOU KNOW THE WHOLE LOOP',Icon='Star',Body='Buy dogs → assign → dig → sell → level up → upgrade → unlock depth. Between dog cycles, mine ore in your quarry, grow Strength in the UPGRADE TREE and buy better pickaxes. Then chase Lucky Blocks, DOG-O-MATIC, the nuclear tower, DogDex, Museum, events and safe trades.',Button='FINISH GUIDE'},
 }
 
 function Guide.Replay()if controller then controller.Replay()end end
@@ -61,10 +62,18 @@ function Guide.Start(gui,navigation)
  end
  local myYard
  local function go(card)
-  -- Mining steps: the world marker already points at the sign / ore / rack, so a player who is
-  -- already at the corner must not get a waypoint back to the yard entrance.
+  -- The quarry step: the world marker already points at the stall / ore, so a player who is already
+  -- in the quarry must not get a waypoint back to the yard entrance.
   local step=stage()
-  if step==7 or step==8 then
+  if step==8 then
+   -- STRENGTH: the upgrade tree, opened on its STRENGTH branch when the screen supports a focus
+   local ok=pcall(function()
+    local screen=require(script.Parent:FindFirstChild('UpgradeTreeScreen'))
+    if screen and screen.Open then screen.Open('IronGrip')else error('no screen')end
+   end)
+   if ok then return end
+  end
+  if step==7 then
    local yard=myYard();local corner=yard and yard:FindFirstChild('MiningCorner')
    local pad=corner and corner:FindFirstChild('MiningPad')
    local root=player.Character and player.Character:FindFirstChild('HumanoidRootPart')
@@ -107,19 +116,17 @@ function Guide.Start(gui,navigation)
  end
  local function target(step)
   local map=workspace:FindFirstChild('DOGROTS_District')
-  if step==1 then local line=map and map:FindFirstChild('03_DogLine');return part(line),'BUY YOUR FIRST DOG'end                            
+  if step==1 then local line=map and map:FindFirstChild('03_DogLine');return part(line),'BUY YOUR FIRST DOG'end
+  if step==13 then local lab=map and map:FindFirstChild('05_MutationLab');return part(lab and lab:FindFirstChild('InteractionAnchor')),'START MUTATION'end                            
   local yard=myYard();if not yard then return end
   if step==2 or step==3 then return part(yard:FindFirstChild('DigSlot_1',true)or yard),'YOUR DIG KENNEL'end
   if step==4 then return part(yard:FindFirstChild('SellAnchor',true)),'YOUR COLLECTOR'end
-  if step==6 then return part(yard:FindFirstChild('UpgradeAnchor',true)),'UPGRADE TREE'end
-  -- Mining steps follow the player: sign -> ore, free weight -> lift.
+  -- step 6 / 8: the UPGRADE TREE is a screen (no world sign any more), so no marker
+  -- The quarry step follows the player: the PICKAXES stall -> the ore.
   local corner=yard:FindFirstChild('MiningCorner')
   if step==7 and corner then
    if (player:GetAttribute('MiningPickaxeOwned')or 0)<1 then return part(corner:FindFirstChild('MiningPickaxeShop')),'BUY A PICKAXE'end
    return part(corner:FindFirstChild('MiningOreCore')),'HIT THE ORE'
-  end
-  if step==8 and corner then
-   return part(corner:FindFirstChild('MiningStrengthRack')),(player:GetAttribute('MiningWeightOwned')or 0)<1 and'TAKE THE FREE WEIGHT'or'LIFT THE WEIGHT'
   end
  end
  render=function()
@@ -162,7 +169,7 @@ function Guide.Start(gui,navigation)
    local object,label=target(step)
    if object then
     -- Mining markers sit above tall props and must stay visible behind the ore pile.
-    local mining=step==7 or step==8
+    local mining=step==7
     local board=marker::BillboardGui
     board.AlwaysOnTop=mining
     board.StudsOffsetWorldSpace=Vector3.new(0,mining and(object.Name=='MiningOreCore'and 8 or 4.5)or 5,0)
@@ -172,7 +179,7 @@ function Guide.Start(gui,navigation)
  end
  local connections={}
  local function connect(signal,callback)table.insert(connections,signal:Connect(callback))end
- for _,name in ipairs({'TutorialStep','TutorialActive','EconomyReady','YardId','MiningPickaxeOwned','MiningWeightOwned'})do connect(player:GetAttributeChangedSignal(name),render)end
+ for _,name in ipairs({'TutorialStep','TutorialActive','EconomyReady','YardId','MiningPickaxeOwned'})do connect(player:GetAttributeChangedSignal(name),render)end
  for _,name in ipairs({'OpenMenu','ModalOwnerCount','MiningActive'})do connect(gui:GetAttributeChangedSignal(name),render)end
  connect(gui:GetPropertyChangedSignal('AbsoluteSize'),render);connect(GuiService:GetPropertyChangedSignal('TopbarInset'),render);connect(UIS:GetPropertyChangedSignal('TouchEnabled'),render)
  controller={Replay=function()navigation.Close();replayStep=0;collapsed=false;errorText=nil;showAfter=0;render()end}

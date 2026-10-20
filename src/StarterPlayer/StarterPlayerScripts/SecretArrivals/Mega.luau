@@ -240,7 +240,7 @@ function Context:Banner(title,options)
  streak.Position=UDim2.fromScale(.5,.5);streak.Size=UDim2.new(0,0,0,3);streak.BackgroundColor3=color;streak.ZIndex=19;streak.Parent=holder
  local g=Instance.new('UIGradient');g.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1),NumberSequenceKeypoint.new(.5,0),NumberSequenceKeypoint.new(1,1)});g.Parent=streak
  local font=options.Font or Enum.Font.FredokaOne
- local kicker=label(holder,{Name='Kicker',Text=options.Kicker or '✦   S E C R E T   A R R I V A L   ✦',Font=Enum.Font.GothamBlack,
+ local kicker=label(holder,{Name='Kicker',Text=options.Kicker or '✦   S E C R E T   A R R I V A L   ✦',Font=Enum.Font.FredokaOne,
   TextColor3=color:Lerp(Color3.new(1,1,1),.45),TextTransparency=1,Size=UDim2.new(1,0,0,26),Position=UDim2.new(0,0,0,6),ZIndex=21})
  local glow=label(holder,{Name='TitleGlow',Text=title,Font=font,TextColor3=color,TextTransparency=1,Size=UDim2.new(1,0,0,92),Position=UDim2.new(0,0,0,36),ZIndex=20})
  local glowStroke=Instance.new('UIStroke');glowStroke.Color=color;glowStroke.Thickness=9;glowStroke.Transparency=1;glowStroke.Parent=glow

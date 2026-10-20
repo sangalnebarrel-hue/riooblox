@@ -1,6 +1,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
+local player = game:GetService("Players").LocalPlayer -- Halloween (WP10a)
 
 local BACKGROUND_MUSIC_ID = 78560130014615
 
@@ -37,6 +38,10 @@ local function updateMusic()
 	else
 		targetVolume = NORMAL_VOLUME
 	end
+	-- Halloween (WP10a): another music owner (the Halloween OST) or the Music setting silences this track
+	if SoundService:GetAttribute("DOGROTS_MusicOwner") ~= nil or (player and player:GetAttribute("Music") == false) then
+		targetVolume = 0
+	end
 
 	if currentTween then
 		currentTween:Cancel()
@@ -52,5 +57,9 @@ local function updateMusic()
 end
 
 state:GetAttributeChangedSignal("State"):Connect(updateMusic)
+SoundService:GetAttributeChangedSignal("DOGROTS_MusicOwner"):Connect(updateMusic) -- Halloween (WP10a)
+if player then
+	player:GetAttributeChangedSignal("Music"):Connect(updateMusic)
+end
 
 updateMusic()

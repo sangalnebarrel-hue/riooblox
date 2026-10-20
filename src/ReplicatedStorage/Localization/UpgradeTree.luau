@@ -7,6 +7,20 @@
 return {
 	Exact = {
 		["UPGRADE TREE"] = "ДЕРЕВО УЛУЧШЕНИЙ",
+		-- STRENGTH branch (mining Strength moved here from the old weight rack)
+		["STRENGTH"] = "СИЛА",
+		["Mining Strength: better pickaxes need it, and every point above a pickaxe's need adds damage."] = "Сила для добычи руды: она нужна лучшим киркам, а каждое очко сверх требования кирки добавляет урон.",
+		["mining strength"] = "сила добычи",
+		["IRON GRIP"] = "ЖЕЛЕЗНАЯ ХВАТКА",
+		["+5 mining Strength per level. Strength unlocks better pickaxes and adds damage."] = "+5 к силе добычи за уровень. Сила открывает лучшие кирки и добавляет урон.",
+		["HEAVY LIFTER"] = "ТЯЖЕЛОАТЛЕТ",
+		["+10 mining Strength per level."] = "+10 к силе добычи за уровень.",
+		["TITAN BACK"] = "СПИНА ТИТАНА",
+		["+20 mining Strength per level."] = "+20 к силе добычи за уровень.",
+		["COLOSSUS"] = "КОЛОСС",
+		["+45 mining Strength per level."] = "+45 к силе добычи за уровень.",
+		["MOUNTAIN BREAKER"] = "КРУШИТЕЛЬ ГОР",
+		["Capstone: +60 mining Strength per level, up to the full 1,100."] = "Вершина ветки: +60 к силе добычи за уровень, до полных 1 100.",
 		["Upgrades work anywhere. Tap a node to see what it gives."] = "Улучшения покупаются где угодно. Нажми на узел, чтобы увидеть бонус.",
 		["MY BONUSES"] = "МОИ БОНУСЫ",
 		["YOUR TREE BONUSES"] = "БОНУСЫ ТВОЕГО ДЕРЕВА",

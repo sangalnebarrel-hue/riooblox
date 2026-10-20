@@ -1,8 +1,10 @@
 local map=workspace:WaitForChild('DOGROTS_District');local Players=game:GetService('Players');local Run=game:GetService('RunService')
 local lights,emitters={},{};local elapsed=0
+-- Lucky visuals and SelfManagedFX folders (MutationGlow) budget their own emitters and lights;
+-- MutationGlow.Blackout reads the BLACKOUT below with the same rule and turns its lights off too.
 local function ownedByLucky(p)
  local o=p.Parent
- while o and o~=map do if o:GetAttribute('LuckyVisual')then return true end;o=o.Parent end
+ while o and o~=map do if o:GetAttribute('LuckyVisual')or o:GetAttribute('SelfManagedFX')then return true end;o=o.Parent end
  return false
 end
 local function position(p)

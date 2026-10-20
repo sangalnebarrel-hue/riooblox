@@ -18,15 +18,15 @@ panel.BackgroundColor3=Color3.fromRGB(18,22,32);panel.Position=UDim2.new(0,16,0,
 panel.Parent=gui
 Instance.new('UICorner',panel).CornerRadius=UDim.new(0,10)
 local title=Instance.new('TextLabel');title.BackgroundTransparency=1;title.Size=UDim2.new(1,-20,0,30);title.Position=UDim2.fromOffset(10,4)
-title.Text='SECRET ARRIVALS  ·  F7';title.TextColor3=Color3.fromRGB(239,242,249);title.Font=Enum.Font.GothamBold;title.TextSize=14
+title.Text='SECRET ARRIVALS  ·  F7';title.TextColor3=Color3.fromRGB(239,242,249);title.Font=Enum.Font.FredokaOne;title.TextSize=14
 title.TextXAlignment=Enum.TextXAlignment.Left;title.Parent=panel
 local status=Instance.new('TextLabel');status.BackgroundTransparency=1;status.Size=UDim2.new(1,-20,0,20);status.Position=UDim2.new(0,10,1,-24)
-status.Text='Waiting for the server...';status.TextColor3=Color3.fromRGB(158,171,194);status.Font=Enum.Font.Gotham;status.TextSize=11
+status.Text='Waiting for the server...';status.TextColor3=Color3.fromRGB(158,171,194);status.Font=Enum.Font.FredokaOne;status.TextSize=11
 status.TextXAlignment=Enum.TextXAlignment.Left;status.TextTruncate=Enum.TextTruncate.AtEnd;status.Parent=panel
 local toggleButton=Instance.new('TextButton');toggleButton.Name='SecretArrivalToggle';toggleButton.Size=UDim2.fromOffset(120,26)
 toggleButton.Position=UDim2.fromOffset(16,62);toggleButton.BackgroundColor3=Color3.fromRGB(38,47,65);toggleButton.BackgroundTransparency=.25
 toggleButton.BorderSizePixel=0;toggleButton.Text='SECRETS  ·  F7';toggleButton.TextColor3=Color3.fromRGB(239,242,249)
-toggleButton.Font=Enum.Font.GothamBold;toggleButton.TextSize=12;toggleButton.Parent=gui
+toggleButton.Font=Enum.Font.FredokaOne;toggleButton.TextSize=12;toggleButton.Parent=gui
 Instance.new('UICorner',toggleButton).CornerRadius=UDim.new(0,6)
 local function remoteFunction()return RS:FindFirstChild('StudioSecretArrival')end
 local ids={}
@@ -35,7 +35,7 @@ table.sort(ids)
 for i,id in ipairs(ids)do
  local b=Instance.new('TextButton');b.Size=UDim2.new(1,-20,0,26);b.Position=UDim2.fromOffset(10,36+(i-1)*30)
  b.BackgroundColor3=Color3.fromRGB(38,47,65);b.BorderSizePixel=0;b.TextColor3=Config.Dogs[id].Color
- b.Font=Enum.Font.GothamBold;b.TextSize=13;b.Text=Config.Dogs[id].Title;b.Parent=panel
+ b.Font=Enum.Font.FredokaOne;b.TextSize=13;b.Text=Config.Dogs[id].Title;b.Parent=panel
  Instance.new('UICorner',b).CornerRadius=UDim.new(0,6)
  local function spawn(here)
   local remote=remoteFunction()

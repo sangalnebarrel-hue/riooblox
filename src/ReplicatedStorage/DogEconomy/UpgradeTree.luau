@@ -36,6 +36,9 @@ T.Stats = {
 	XP = { Label = "XP gain", Format = "percent" },
 	Offline = { Label = "offline earnings", Format = "percent" },
 	DogMutation = { Label = "mutated dog chance", Format = "percent" },
+	-- Mining Strength (Config.Mining): unlocks the better pickaxes and adds damage above a pickaxe's
+	-- requirement. Read by Economy.Rules.MiningAction / Runtime (not a Bonuses key).
+	Strength = { Label = "mining strength", Format = "units" },
 }
 
 local function rgb(r, g, b)
@@ -58,6 +61,8 @@ T.Branches = {
 		Description = "A bigger chance to dig up rare discoveries." },
 	{ Id = "Mutation", Name = "FIND MUTATIONS", Icon = "Star", Color = rgb(161, 103, 242), Side = "Crown",
 		Description = "Discoveries come out Golden, Rainbow, Cursed and other mutations more often." },
+	{ Id = "Strength", Name = "STRENGTH", Icon = "EnergySnack", Color = rgb(235, 72, 52), Side = "Crown",
+		Description = "Mining Strength: better pickaxes need it, and every point above a pickaxe's need adds damage." },
 	{ Id = "Estate", Name = "ESTATE", Icon = "Yard", Color = rgb(196, 140, 74), Side = "Roots",
 		Description = "Develop your yard: more kennels and a more valuable estate." },
 	{ Id = "Storage", Name = "STORAGE & CAPACITY", Icon = "StorageCrate", Color = rgb(70, 140, 220), Side = "Roots",
@@ -169,6 +174,27 @@ local list = {
 		Stat = "ItemMutation", PerLevel = 0.25, Max = 5, Cost = { Base = 150000000, Factor = 2, Bones = { Base = 120, Factor = 1.5 } },
 		Gate = { Base = 35, Step = 2 }, Requires = { CosmicDust = 10 },
 		Description = "Capstone: discoveries mutate much more often." },
+	-- STRENGTH ----------------------------------------------------------------------------------
+	-- Mining Strength used to be trained at the weight rack of the Mining Corner; it lives here now.
+	-- Price curve (docs/BALANCE.md): reaching each pickaxe's Strength costs about 20-40% of that
+	-- pickaxe's price, so Strength stays a real but secondary step of the pickaxe ladder
+	-- (all 1,100 points: ~3.3B Coins + Bones, the TV-Head pickaxe alone costs 10B).
+	{ Id = "IronGrip", Branch = "Strength", Name = "IRON GRIP", X = 4, Y = -1, Tier = 1,
+		Stat = "Strength", PerLevel = 5, Max = 10, Cost = { Base = 550, Factor = 1.33 }, Gate = { Base = 1, Step = 0.5 },
+		Description = "+5 mining Strength per level. Strength unlocks better pickaxes and adds damage." },
+	{ Id = "HeavyLifter", Branch = "Strength", Name = "HEAVY LIFTER", X = 4, Y = -2, Tier = 2,
+		Stat = "Strength", PerLevel = 10, Max = 10, Cost = { Base = 7500, Factor = 1.3 }, Gate = { Base = 4, Step = 0.5 },
+		Requires = { IronGrip = 5 }, Description = "+10 mining Strength per level." },
+	{ Id = "TitanBack", Branch = "Strength", Name = "TITAN BACK", X = 4, Y = -3, Tier = 3,
+		Stat = "Strength", PerLevel = 20, Max = 10, Cost = { Base = 230000, Factor = 1.3 }, Gate = { Base = 12, Step = 1 },
+		Requires = { HeavyLifter = 5 }, Description = "+20 mining Strength per level." },
+	{ Id = "Colossus", Branch = "Strength", Name = "COLOSSUS", X = 4, Y = -4, Tier = 3,
+		Stat = "Strength", PerLevel = 45, Max = 10, Cost = { Base = 4500000, Factor = 1.38 }, Gate = { Base = 20, Step = 1.5 },
+		Requires = { TitanBack = 5 }, Description = "+45 mining Strength per level." },
+	{ Id = "MountainBreaker", Branch = "Strength", Name = "MOUNTAIN BREAKER", X = 4, Y = -5, Tier = 4, Capstone = true,
+		Stat = "Strength", PerLevel = 60, Max = 5, Cost = { Base = 250000000, Factor = 1.45, Bones = { Base = 80, Factor = 1.5 } },
+		Gate = { Base = 32, Step = 2 }, Requires = { Colossus = 10 },
+		Description = "Capstone: +60 mining Strength per level, up to the full 1,100." },
 	-- ESTATE ------------------------------------------------------------------------------------
 	{ Id = "Plot", Branch = "Estate", Legacy = true, Name = "EXPAND YOUR YARD", X = -3, Y = 1, Tier = 1,
 		Label = "yard stage", Format = "stage", PerLevel = legacyEffects.Plot,
@@ -519,8 +545,21 @@ function T.Summary(p)
 		{ Id = "Offline", Label = "offline earnings", Text = T.FormatValue("percent", t.Offline), Active = t.Offline > 0 },
 		{ Id = "XP", Label = "XP gain", Text = T.FormatValue("percent", t.XP), Active = t.XP > 0 },
 		{ Id = "DogMutation", Label = "mutated dog chance", Text = T.FormatValue("percent", t.DogMutation), Active = t.DogMutation > 0 },
+		{ Id = "Strength", Label = "mining strength", Text = T.FormatValue("units", t.Strength), Active = t.Strength > 0 },
 	}
 	return rows
+end
+
+-- Mining Strength from the STRENGTH branch (added to the Strength a player trained before the branch existed).
+function T.Strength(p)
+	local total = 0
+	for _, id in ipairs(T.Order) do
+		local node = T.Nodes[id]
+		if node.Stat == "Strength" then
+			total += T.Value(id, T.Level(p, id))
+		end
+	end
+	return total
 end
 
 -- Bought levels and all levels of the tree (progress bar).

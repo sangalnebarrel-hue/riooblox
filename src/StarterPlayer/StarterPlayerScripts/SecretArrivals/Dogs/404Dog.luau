@@ -41,24 +41,24 @@ local function page(parent,url,where,blue)
   frame(bar,{Size=UDim2.fromOffset(13,13),Position=UDim2.fromOffset(i*20-6,14),BackgroundColor3=c},7)
  end
  local tab=frame(bar,{Name='Tab',Size=UDim2.fromOffset(210,40),Position=UDim2.fromOffset(78,8),BackgroundColor3=PAGE},8)
- local title=text(tab,{Size=UDim2.new(1,-28,0,30),Position=UDim2.fromOffset(14,0),Font=Enum.Font.SourceSansBold,TextSize=17,
+ local title=text(tab,{Size=UDim2.new(1,-28,0,30),Position=UDim2.fromOffset(14,0),Font=Enum.Font.FredokaOne,TextSize=17,
   TextColor3=C(196,206,228),TextXAlignment=Enum.TextXAlignment.Left,Text='404 Not Found'})
  local pill=frame(p,{Name='Url',Size=UDim2.fromOffset(W-28,30),Position=UDim2.fromOffset(14,50),BackgroundColor3=C(24,29,43)},15)
- text(pill,{Size=UDim2.new(1,-32,1,0),Position=UDim2.fromOffset(16,0),Font=Enum.Font.RobotoMono,TextSize=16,
+ text(pill,{Size=UDim2.new(1,-32,1,0),Position=UDim2.fromOffset(16,0),Font=Enum.Font.FredokaOne,TextSize=16,
   TextColor3=C(150,166,200),TextXAlignment=Enum.TextXAlignment.Left,Text=url})
  local function code(x,color,alpha,z)
-  return text(p,{Size=UDim2.fromOffset(W,118),Position=UDim2.fromOffset(x,88),Font=Enum.Font.Arcade,TextSize=108,
+  return text(p,{Size=UDim2.fromOffset(W,118),Position=UDim2.fromOffset(x,88),Font=Enum.Font.FredokaOne,TextSize=108,
    TextColor3=color,TextTransparency=alpha,ZIndex=z,Text='404'})
  end
  local r={Page=p,Tab=title,Red=code(-5,RED,.45,1),Cyan=code(5,CYAN,.45,1),Code=code(0,blue,0,2)}
- r.Sub=text(p,{Size=UDim2.fromOffset(W,34),Position=UDim2.fromOffset(0,206),Font=Enum.Font.Arcade,TextSize=30,
+ r.Sub=text(p,{Size=UDim2.fromOffset(W,34),Position=UDim2.fromOffset(0,206),Font=Enum.Font.FredokaOne,TextSize=30,
   TextColor3=WHITE,Text='DOG NOT FOUND'})
- r.Note=text(p,{Size=UDim2.fromOffset(W,22),Position=UDim2.fromOffset(0,244),Font=Enum.Font.RobotoMono,TextSize=15,
+ r.Note=text(p,{Size=UDim2.fromOffset(W,22),Position=UDim2.fromOffset(0,244),Font=Enum.Font.FredokaOne,TextSize=15,
   TextColor3=C(118,134,170),Text='the requested dog was not found '..where..'.'})
  r.Row=frame(p,{Name='Search',Size=UDim2.fromOffset(W,60),Position=UDim2.fromOffset(0,280),BackgroundTransparency=1,Visible=false})
- r.Status=text(r.Row,{Size=UDim2.fromOffset(330,22),Position=UDim2.fromOffset(64,0),Font=Enum.Font.RobotoMono,TextSize=15,
+ r.Status=text(r.Row,{Size=UDim2.fromOffset(330,22),Position=UDim2.fromOffset(64,0),Font=Enum.Font.FredokaOne,TextSize=15,
   TextColor3=C(176,194,228),TextXAlignment=Enum.TextXAlignment.Left,Text=''})
- r.Pct=text(r.Row,{Size=UDim2.fromOffset(120,22),Position=UDim2.fromOffset(W-184,0),Font=Enum.Font.RobotoMono,TextSize=15,
+ r.Pct=text(r.Row,{Size=UDim2.fromOffset(120,22),Position=UDim2.fromOffset(W-184,0),Font=Enum.Font.FredokaOne,TextSize=15,
   TextColor3=WHITE,TextXAlignment=Enum.TextXAlignment.Right,Text='0%'})
  local track=frame(r.Row,{Size=UDim2.fromOffset(W-128,10),Position=UDim2.fromOffset(64,30),BackgroundColor3=C(32,39,58)},5)
  r.Fill=frame(track,{Size=UDim2.fromScale(0,1),BackgroundColor3=blue},5)
@@ -66,7 +66,7 @@ local function page(parent,url,where,blue)
 end
 
 return function(ctx)
- ctx.WhisperStyle={Font=Enum.Font.Code,Color=C(176,212,255),Glitch=.12,Chroma=true,Shake=false,Type=.035}
+ ctx.WhisperStyle={Font=Enum.Font.FredokaOne,Color=C(176,212,255),Glitch=.12,Chroma=true,Shake=false,Type=.035}
  local Kit,scope,model,config=ctx.Kit,ctx.Scope,ctx.Model,ctx.Config
  local low,calm,origin,hold=ctx.Low,Kit.ReducedMotion(),ctx.Origin,config.Hold
  local BLUE=config.Color
@@ -421,7 +421,7 @@ return function(ctx)
   end)
  end
  for _,l in ipairs(dotLights)do l.Color=GREEN end
- ctx:Title({Font=Enum.Font.Arcade,Hold=3.4})
+ ctx:Title({Font=Enum.Font.FredokaOne,Hold=3.4})
 
  -- 4.55: the window shatters into tiles that tumble and fade.
  if not ctx:Wait(4.55)then return end

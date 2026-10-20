@@ -94,7 +94,23 @@ V.Styles=Styles
 -- Top bar, left nub, right hook, middle bar, stem, dot.
 local GLYPH={{0,3,3,1},{-2,2,1,1},{2,1.5,1,2},{.5,0,2,1},{0,-1,1,1},{0,-3,1,1}}
 
+-- Event tiers (LuckyBlockConfig.EventTiers: PUMPKIN / CURSED PUMPKIN) are pumpkins built by
+-- ReplicatedStorage.Halloween.Models.Pumpkin with the same contract (RootPart pivot, bottom -3.1, ScaleTo(.8),
+-- LuckyVisual / LuckyRank / GroundLocal, LuckyCore / DogLabelAnchor) plus LuckyShowStyle, which routes the client
+-- show to StarterPlayerScripts.PumpkinBlockFX. Without that module they fall back to the cube of their rank.
+local function eventModel(tier,ev)
+ local folder=game:GetService('ReplicatedStorage'):FindFirstChild('Halloween')
+ local models=folder and folder:FindFirstChild('Models')
+ local module=models and models:FindFirstChild('Pumpkin')
+ if not module then return nil end
+ local ok,m=pcall(function()return require(module).Block(tier,{Rank=ev.Rank,Style=ev.Style})end)
+ if ok and m then return m end
+ warn('LuckyBlockVisuals: pumpkin model failed: '..tostring(m))
+ return nil
+end
 function V.Build(tier)
+ local ev=C.EventTiers and C.EventTiers[tier]
+ if ev then local m=eventModel(tier,ev);if m then return m end end
  local rank=C.Rank(tier)or 1
  local s=Styles[rank]or Styles[1]
  local m=Instance.new('Model');m.Name=tostring(tier)..'LuckyBlock'

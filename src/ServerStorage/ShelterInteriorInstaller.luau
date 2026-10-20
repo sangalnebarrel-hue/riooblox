@@ -44,7 +44,7 @@ function Installer.Install()
   local gui=Instance.new('SurfaceGui');gui.Name='Lettering';gui.Face=Enum.NormalId.Front;gui.SizingMode=Enum.SurfaceGuiSizingMode.PixelsPerStud;gui.PixelsPerStud=45
   gui.LightInfluence=0;gui.AlwaysOnTop=false;gui.Parent=p
   local t=Instance.new('TextLabel');t.Name='Caption';t.BackgroundTransparency=1;t.Size=UDim2.fromScale(.94,.86);t.Position=UDim2.fromScale(.03,.07)
-  t.Font=Enum.Font.GothamBold;t.Text=text;t.TextColor3=ink or P.Linen;t.TextScaled=true;t.TextWrapped=true;t.Parent=gui
+  t.Font=Enum.Font.FredokaOne;t.Text=text;t.TextColor3=ink or P.Linen;t.TextScaled=true;t.TextWrapped=true;t.Parent=gui
   return p
  end
  local function paw(parent,x,y,z,scale,color,flat)

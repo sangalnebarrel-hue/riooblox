@@ -66,7 +66,7 @@ return function(m)
  -- Error signs all round the island; the biggest one hangs over the head.
  local signs={}
  local function sign(text,frame,size,popAt)
-  local part,labels=m:Text3D(text,frame,size,{Font=Enum.Font.Code,Color=RED,StrokeThickness=6,Alpha=1})
+  local part,labels=m:Text3D(text,frame,size,{Font=Enum.Font.FredokaOne,Color=RED,StrokeThickness=6,Alpha=1})
   table.insert(signs,{Part=part,Labels=labels,Home=frame,Pop=popAt,Text=text,Size=size,Jolt=CFrame.identity,JoltUntil=0})
  end
  local count=low and 5 or 10
@@ -178,7 +178,7 @@ return function(m)
   local screen=Instance.new('Frame');screen.Name='BlueScreen';screen.BorderSizePixel=0;screen.Size=UDim2.fromScale(1,1)
   screen.BackgroundColor3=BSOD;screen.ZIndex=60;screen.Parent=m.Mega.Overlay()
   m:Add(screen)
-  local text=m.Mega.Label(screen,{Name='Crash',Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center,
+  local text=m.Mega.Label(screen,{Name='Crash',Font=Enum.Font.FredokaOne,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center,
    Size=UDim2.fromScale(.8,.7),Position=UDim2.fromScale(.1,.15),ZIndex=61,
    Text=':(\n\nA fatal exception 404 has occurred at DOG:0095.\nThe current dog has been terminated.\n\n'..
     '*  Press any key to find the dog.\n*  Press CTRL+ALT+DEL to bark.\n\nCollecting dog info... 99%'})
@@ -237,7 +237,7 @@ return function(m)
    return m:Part({Name='Pixel',Size=Vector3.one*s,Color=i%3==0 and WHITE or i%3==1 and BLUE or GREEN,Transparency=1})
   end})
   m:Banner('404 DOG NOT FOUND',{Kicker='✦   2 0 0   O K   ·   D O G   F O U N D   ✦',Sub=m.VenueText..(m.By and ('  ·  '..string.upper(m.By))or''),
-   Font=Enum.Font.Code,Color=BLUE,Hold=4.5,Shake=.1})
+   Font=Enum.Font.FredokaOne,Color=BLUE,Hold=4.5,Shake=.1})
  end
  m:Wait(m.Config.MegaSeconds or 26)
 end

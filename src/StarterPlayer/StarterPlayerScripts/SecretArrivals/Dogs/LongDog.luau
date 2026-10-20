@@ -18,7 +18,7 @@ local DEPTH:{{any}}={{3.45,'10m'},{3.62,'40m'},{3.78,'150m'},{3.91,'320m'},{4.02
 local function smooth(x)x=math.clamp(x,0,1);return x*x*(3-2*x)end
 
 return function(ctx:any)
- ctx.WhisperStyle={Font=Enum.Font.Kalam,Color=C(255,230,186),Type=.06}
+ ctx.WhisperStyle={Font=Enum.Font.FredokaOne,Color=C(255,230,186),Type=.06}
  local Kit,scope,config=ctx.Kit,ctx.Scope,ctx.Config
  local model:Model=ctx.Model
  local low,calm,origin,hold=ctx.Low,Kit.ReducedMotion(),ctx.Origin,config.Hold
@@ -329,7 +329,7 @@ return function(ctx:any)
  -- KeepFont before it is parented, or the place typography swaps the face.
  local readout=Instance.new('TextLabel');readout.Name='Depth';readout:SetAttribute('KeepFont',true)
  readout.BackgroundTransparency=1;readout.AnchorPoint=Vector2.new(.5,.5);readout.Position=UDim2.fromScale(.5,.5)
- readout.Size=UDim2.new(1,-14,1,-6);readout.Font=Enum.Font.RobotoMono;readout.TextScaled=true;readout.TextColor3=SAND
+ readout.Size=UDim2.new(1,-14,1,-6);readout.Font=Enum.Font.FredokaOne;readout.TextScaled=true;readout.TextColor3=SAND
  readout.TextStrokeColor3=C(20,12,6);readout.TextStrokeTransparency=.4;readout.Text='DEPTH: 0m';readout.Parent=box
  board.Parent=stake
  Kit.Tween(pop,.3,{Scale=1},Enum.EasingStyle.Back)

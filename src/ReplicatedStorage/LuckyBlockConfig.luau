@@ -22,6 +22,33 @@ C.RobuxProducts={
  {Key='MythicBlock',Tier='Mythic',Count=1,Id=0},{Key='RarePack3',Tier='Rare',Count=3,Id=0},
  {Key='EpicPack5',Tier='Epic',Count=5,Id=0},{Key='LegendaryPack10',Tier='Legendary',Count=10,Id=0}}
 C.Sounds={Ambience='lucky/ambience',Spawn='lucky/spawn',Buy='lucky/buy',Shake='lucky/shake',Crack='lucky/crack',Burst='lucky/burst',Reveal='lucky/reveal'}
+-- Event tiers (NIGHT OF THE BURIED MOON): never in Rarities/SpawnWeights/RewardPools/RobuxProducts (no conveyor, no
+-- Robux, no roulette). Their reward rows are frozen into each block when it is granted (Economy.EventBlocks), the
+-- model is ReplicatedStorage.Halloween.Models.Pumpkin (LuckyShowStyle routes the client show to PumpkinBlockFX).
+-- Rank only drives colours and sorting. Tier ids are saved data: never rename them.
+C.EventTiers={
+ Pumpkin={Rank=4,Style='Pumpkin',Event='BuriedMoon2026',Rewards='Pumpkin',TradeValue=600000,Tradeable=false,OpenSeconds=45,GhostChance=.3},
+ ['Cursed Pumpkin']={Rank=5,Style='CursedPumpkin',Event='BuriedMoon2026',Rewards='CursedPumpkin',TradeValue=4000000,Tradeable=false,OpenSeconds=75,GhostChance=1},
+}
+do -- the event config is the source of truth when present (ReplicatedStorage.Halloween.Config.PumpkinBlocks)
+ local folder=game:GetService('ReplicatedStorage'):FindFirstChild('Halloween')
+ local module=folder and folder:FindFirstChild('Config')
+ local ok,hw=pcall(function()return module and require(module)end)
+ local blocks=ok and type(hw)=='table'and hw.PumpkinBlocks
+ if type(blocks)=='table'and type(blocks.Tiers)=='table'then
+  for tier,def in pairs(blocks.Tiers)do
+   local row=C.EventTiers[tier]or{Event=hw.EventId}
+   for k,v in pairs(def)do row[k]=v end
+   if blocks.Tradeable~=nil then row.Tradeable=blocks.Tradeable==true end
+   C.EventTiers[tier]=row
+  end
+ end
+end
 function C.Canonical(tier)return C.LegacyAliases[tier]or tier end
-function C.Rank(tier)return table.find(C.Rarities,C.Canonical(tier))end
+function C.Rank(tier)
+ tier=C.Canonical(tier)
+ local ev=C.EventTiers[tier]
+ return table.find(C.Rarities,tier)or(ev and ev.Rank)or nil
+end
+function C.IsEvent(tier)return type(tier)=='string'and C.EventTiers[tier]~=nil end
 return C

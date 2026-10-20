@@ -9,17 +9,18 @@ local T={
  ENDED={'Stopped','Остановлено'},
  TRAIN_STARTED={'Training started','Тренировка началась'},
  MISS={'Missed!','Промах!'},
- STALE={'','',},
+ STALE={'',''},
  HIT={'Hit! +%1','Удар! +%1'},
  PERFECT={'Perfect! +%1','Идеально! +%1'},
  CRIT={'CRIT! +%1','КРИТ! +%1'},
  BROKE={'%1 broken! +%2','Разбито: %1! +%2'},
+ BROKE_STONE={'%1 broken! +%2 · +%3 🪨','Разбито: %1! +%2 · +%3 🪨'}, -- BROKE with a Stone grant (3rd arg)
  EQUIPPED={'Equipped: %1','В руках: %1'},
  BOUGHT={'Bought: %1','Куплено: %1'},
  WEIGHT_EQUIPPED={'Selected: %1','Выбрано: %1'},
  WEIGHT_BOUGHT={'Unlocked: %1','Открыто: %1'},
  TRAINED={'+%1 Strength','+%1 силы'},
- NEED_PICKAXE={'Buy the Wooden Pickaxe at the pickaxe sign first','Сначала купи деревянную кирку у таблички с киркой'},
+ NEED_PICKAXE={'Buy the Wooden Pickaxe at the pickaxe stall first','Сначала купи деревянную кирку в лавке кирок'},
  SESSION_OVER={'Start mining again at the ore','Подойди к руде и начни добычу снова'},
  TARGET_GONE={'That circle is gone','Этот круг уже исчез'},
  TOO_EARLY={'Too early!','Рано!'},
@@ -27,7 +28,8 @@ local T={
  NOT_READY={'Too fast!','Слишком быстро!'},
  BAD_ITEM={'Unknown item','Нет такого предмета'},
  IN_ORDER={'Unlock them in order','Открываются по порядку'},
- NEED_STRENGTH={'Needs %1 Strength — train with a weight','Нужно %1 силы — потренируйся с гирей'},
+ NEED_STRENGTH={'Needs %1 Strength — upgrade STRENGTH in the Upgrade Tree','Нужно %1 силы — прокачай ветку СИЛА в дереве улучшений'},
+ GYM_MOVED={'The weight rack is gone: Strength is in the Upgrade Tree now','Стойки с гирями больше нет: сила теперь в дереве улучшений'},
  NEED_COINS={'Needs %1 Coins','Нужно %1 монет'},
  NEED_WEIGHT={'Take a weight from the rack first','Сначала возьми гирю на стойке'},
  WEIGHT_CAPPED={'This weight gives no more Strength — unlock the next one','Эта гиря больше не даёт силы — открой следующую'},
@@ -35,6 +37,8 @@ local T={
  BAD_ACTION={'Unknown action','Неизвестное действие'},
  -- UI
  MINING_CORNER={'MINING CORNER','МИНИ-ШАХТА'},
+ MINING_YARD={'ORE QUARRY','РУДНЫЙ КАРЬЕР'},
+ STALL_SUB={'Pickaxes · tap to open','Кирки · нажми, чтобы открыть'},
  PICKAXES={'PICKAXES','КИРКИ'},
  PICKAXE_SHOP={'PICKAXE MARKET','МАГАЗИН КИРОК'},
  STRENGTH={'STRENGTH','СИЛА'},
@@ -69,10 +73,19 @@ local T={
  SELECTED={'SELECTED','ВЫБРАНО'},
  LOCKED={'LOCKED','ЗАКРЫТО'},
  NEED_MORE_STRENGTH={'NEED STRENGTH','НУЖНА СИЛА'},
+ OPEN_STRENGTH={'UPGRADE STRENGTH','ПРОКАЧАТЬ СИЛУ'},
+ STRENGTH_FROM_TREE={'Strength comes from the STRENGTH branch of the Upgrade Tree','Сила берётся из ветки СИЛА в дереве улучшений'},
+ TOOL_ADDED={'%1 is in your inventory — equip it and swing anywhere!','%1 в инвентаре — бери в руки и бей где угодно!'},
+ TOOL_EQUIP_HINT={'Your pickaxe is in the hotbar: press 1 to hold it','Кирка в панели предметов: нажми 1, чтобы взять её'},
  NEED_MORE_COINS={'NEED COINS','НУЖНЫ МОНЕТЫ'},
  PREVIOUS_FIRST={'BUY PREVIOUS','СНАЧАЛА ПРЕДЫДУЩУЮ'},
  YOUR_STRENGTH={'Your Strength: %1','Твоя сила: %1'},
  YOUR_COINS={'Coins: %1','Монеты: %1'},
+ STONE={'Stone','Камень'},
+ YOUR_STONE={'🪨 Stone: %1','🪨 Камень: %1'},
+ STONE_GAIN={'+%1 🪨','+%1 🪨'},
+ ORE_STONE={'+%1 🪨','+%1 🪨'},
+ STONE_HINT={'🪨 Stone builds plot decor · deeper = more','🪨 Камень — для украшений участка · глубже = больше'},
  STRENGTH_BONUS={'Strength bonus +%1% damage','Бонус силы +%1% урона'},
  LIFT_HINT={'TAP / CLICK FAST TO PUSH THE WEIGHT UP','ЖМИ БЫСТРО, ЧТОБЫ ПОДНЯТЬ ГИРЮ ВВЕРХ'},
  LIFT_HINT_KEY={'or press SPACE','или жми ПРОБЕЛ'},
@@ -82,23 +95,43 @@ local T={
  NEXT_WEIGHT_HINT={'Unlock the next weight to keep growing','Открой следующую гирю, чтобы расти дальше'},
  CHOOSE_WEIGHT={'Pick a weight on the left','Выбери гирю слева'},
  GAIN_PER_REP={'+%1 per lift · up to %2','+%1 за подъём · до %2'},
- MINE_HINT={'Click each circle when the white ring reaches the GOLD ring','Жми на круг, когда белое кольцо дойдёт до ЗОЛОТОГО'},
- MINE_HINT_KEYS={'Click a circle when the white ring reaches the GOLD ring (or press SPACE)','Жми на круг, когда белое кольцо дойдёт до ЗОЛОТОГО (или ПРОБЕЛ)'},
- MINE_HINT_TOUCH={'Tap a circle when the white ring reaches the GOLD ring','Тапни по кругу, когда белое кольцо дойдёт до ЗОЛОТОГО'},
- MINE_HINT_PAD={'Press A when the white ring reaches the GOLD ring','Жми A, когда белое кольцо дойдёт до ЗОЛОТОГО'},
+ MINE_HINT={'Click a circle when the glowing ring closes onto its GOLD zone','Жми на круг, когда светящееся кольцо сожмётся до ЗОЛОТОЙ зоны'},
+ MINE_HINT_KEYS={'Click a circle when the ring closes onto its GOLD zone (or press SPACE)','Жми на круг, когда кольцо сожмётся до ЗОЛОТОЙ зоны (или ПРОБЕЛ)'},
+ MINE_HINT_TOUCH={'Tap a circle when the ring closes onto its GOLD zone','Тапни по кругу, когда кольцо сожмётся до ЗОЛОТОЙ зоны'},
+ MINE_HINT_PAD={'Press A when the ring closes onto its GOLD zone','Жми A, когда кольцо сожмётся до ЗОЛОТОЙ зоны'},
+ GOOD={'GOOD','ХОРОШО'},
+ GREAT={'PERFECT!','ИДЕАЛЬНО!'},
  SELL_HINT={'Short on Coins? Sell loot at your Collector','Не хватает монет? Продай находки Сборщику'},
  NEW_ORE={'New ore: %1','Новая руда: %1'},
  RARE_ORE={'RARE ORE: %1!','РЕДКАЯ РУДА: %1!'},
  ORE_VALUE={'Worth ~%1','Стоит ~%1'},
  NEW_FEATURE={'NEW: MINING CORNER','НОВОЕ: МИНИ-ШАХТА'},
- NEW_FEATURE_TOAST={'New! Your yard has a Mining Corner: buy a pickaxe and break ore for Coins','Новое! На участке есть мини-шахта: купи кирку и разбивай руду за монеты'},
+ NEW_FEATURE_TOAST={'New! Your yard has an Ore Quarry: buy a pickaxe and break ore for Coins','Новое! На участке есть рудный карьер: купи кирку и разбивай руду за монеты'},
  TUTORIAL_BUY={'Start here: buy the Wooden Pickaxe','Начни здесь: купи деревянную кирку'},
  TUTORIAL_HIT={'Hit the circles on the ore!','Бей по кругам на руде!'},
- TUTORIAL_WEIGHT={'Take the free weight and lift it','Возьми бесплатную гирю и подними её'},
+ TUTORIAL_STRENGTH={'Upgrade STRENGTH in the Upgrade Tree','Прокачай СИЛУ в дереве улучшений'},
  CONNECTION={'Connection problem, try again','Проблема со связью, попробуй ещё раз'},
  BUSY={'Wait a moment','Подожди немного'},
  COLLECTION={'Ores broken: %1','Разбито руды: %1'},
  STAT_LINE={'Damage %1 · %2 circle(s) · crit %3%','Урон %1 · кругов: %2 · крит %3%'},
+ CAMERA_HINT={'Right mouse / Z-C: turn camera · wheel: zoom','ПКМ / Z-C: поворот камеры · колесо: зум'},
+ CAMERA_HINT_TOUCH={'Swipe: turn camera · pinch: zoom','Свайп: поворот камеры · щипок: зум'},
+ CAMERA_HINT_PAD={'Right stick: turn camera','Правый стик: поворот камеры'},
+ -- Pickaxe market (Kit window)
+ SHOP_SUB={'%1 pickaxes · each one hits differently','%1 кирок · каждая бьёт по-своему'},
+ RARITY={'Rarity','Редкость'},
+ SPEED={'Speed','Скорость'},
+ POWER={'Power','Мощь'},
+ STRENGTH_NEED={'Needs %1 💪','Нужно %1 💪'},
+ OWNED={'OWNED','КУПЛЕНО'},
+ EQUIP={'EQUIP','ВЗЯТЬ В РУКИ'},
+ TRY_HIT={'TRY A HIT','ПРОБНЫЙ УДАР'},
+ NEXT_UP={'NEXT','СЛЕДУЮЩАЯ'},
+ YOU_HAVE={'You have','У тебя'},
+ PICK_TRAIT={'Special','Фишка'},
+ BREAKS={'Hits to break','Ударов до разлома'},
+ LOCKED_SHORT={'LOCKED','ЗАКРЫТО'},
+
 }
 Text.Table=T
 
@@ -168,11 +201,13 @@ function Text.Message(message,lookup)
  end
  local parts=string.split(body,'|')
  local key=table.remove(parts,1)
+ -- "M:BROKE|ore|coins|stone": the stone line only when the break stored some.
+ local template=(key=='BROKE'and(tonumber(parts[3])or 0)>0)and'BROKE_STONE'or key
  for i,a in ipairs(parts)do
   local def=lookup and lookup(a,key)
   if def then parts[i]=Text.Name(def)elseif tonumber(a)then parts[i]=Text.Short(tonumber(a))end
  end
- return Text.Get(key,table.unpack(parts))
+ return Text.Get(template,table.unpack(parts))
 end
 function Text.Key(message)
  return type(message)=='string'and message:match('^M:([%w_]+)')or nil

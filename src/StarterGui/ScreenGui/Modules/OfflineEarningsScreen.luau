@@ -25,7 +25,7 @@ function S.Build(c)
  U.Text(sc,string.format('Assigned dogs earn %.0f%% of their income for up to %s while you are away. Claim whenever you are ready.',(report.Efficiency or .2)*100,duration(report.CapSeconds or 7200)),12,y,W-32,63,18,P.muted);y+=71
  if report.WasCapped then U.Text(sc,'Your offline earning limit was reached. Your saved coins are safe.',12,y,W-32,48,17,P.purple);y+=54 end
  local dogs=amount>0 and(report.Dogs or{})or(report.CurrentDogs or{})
- U.Text(sc,amount>0 and'YOUR HARD-WORKING DOGS'or'YOUR ASSIGNED DOGS',12,y,W-32,31,23,P.text,true);y+=41
+ U.Section(sc,amount>0 and'YOUR HARD-WORKING DOGS'or'YOUR ASSIGNED DOGS',8,y,W-24,38);y+=48
  local cols=math.max(1,math.min(3,math.floor((W-10)/210)));local cw=(W-24-(cols-1)*12)/cols
  for i,dog in ipairs(dogs)do
   local card=U.Panel(sc,'OfflineDog_'..tostring(dog.Uid or i),8+(i-1)%cols*(cw+12),y+math.floor((i-1)/cols)*226,cw,214,true)

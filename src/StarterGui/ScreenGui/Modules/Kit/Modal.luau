@@ -15,6 +15,7 @@ local Layout = require(script.Parent.Layout)
 local Button = require(script.Parent.Button)
 local Cards = require(script.Parent.Cards)
 local Virtual = require(script.Parent.Virtual)
+local Sound = require(script.Parent.Sound)
 
 local Modal = {}
 Modal.__index = Modal
@@ -267,6 +268,7 @@ function Modal.new(props: Props): any
 				self:Resolve(false)
 			end,
 		})
+		self.CancelButton.Instance:SetAttribute("KitSound", "") -- Resolve plays the cue
 		self.Maid:Give(self.CancelButton)
 	end
 	self.ConfirmButton = Button.new(card, {
@@ -281,6 +283,7 @@ function Modal.new(props: Props): any
 			self:Resolve(true)
 		end,
 	})
+	self.ConfirmButton.Instance:SetAttribute("KitSound", "")
 	self.Maid:Give(self.ConfirmButton)
 
 	self.Entry = Overlay.Push({
@@ -291,6 +294,7 @@ function Modal.new(props: Props): any
 	})
 
 	-- Open: shade fade + scale.
+	Sound.Play(p.NoCancel and "Notify" or "Open", { Pitch = 1.1 })
 	if Motion.Reduced() then
 		shade.BackgroundTransparency = 0.4
 	else
@@ -316,6 +320,7 @@ function Modal.Resolve(self: any, value: boolean)
 	end
 	self.Done = true
 	self.Result = value == true
+	Sound.Play(self.Result and "Toggle" or "Close")
 	Overlay.Remove(self.Entry)
 	local index = table.find(open, self)
 	if index then

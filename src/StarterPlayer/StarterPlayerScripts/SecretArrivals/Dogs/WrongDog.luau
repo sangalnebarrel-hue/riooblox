@@ -18,7 +18,7 @@ local DARK,EYES,STARE,RELEASE,BLINK=2,2.2,2.4,5.6,6.15
 local BEAT,LAMP=.8,1.3
 
 return function(ctx:any)
- ctx.WhisperStyle={Font=Enum.Font.Garamond,Color=BONE,Glitch=.02,Chroma=false,Shake=false,Type=.05}
+ ctx.WhisperStyle={Font=Enum.Font.FredokaOne,Color=BONE,Glitch=.02,Chroma=false,Shake=false,Type=.05}
  local Kit,scope,model,config=ctx.Kit,ctx.Scope,ctx.Model,ctx.Config
  local low,calm,hold,origin=ctx.Low,Kit.ReducedMotion(),config.Hold,ctx.Origin
  local RED=config.Color
@@ -324,7 +324,7 @@ return function(ctx:any)
  -- 2.4: it is looking at you. Only you.
  if not ctx:Wait(STARE)then return end
  phase='stare'
- ctx.WhisperStyle={Font=Enum.Font.Garamond,Color=C(255,76,76),Glitch=.12,Chroma=true,Shake=false,Type=.07}
+ ctx.WhisperStyle={Font=Enum.Font.FredokaOne,Color=C(255,76,76),Glitch=.12,Chroma=true,Shake=false,Type=.07}
  vis.Set(0)
  spot.Brightness=0
  lampsTo('red')
@@ -368,7 +368,7 @@ return function(ctx:any)
  end
  Kit.Tween(grade,.8,{Brightness=0,Contrast=0,Saturation=0,TintColor=Color3.new(1,1,1)})
  if drone then drone.Volume=0 end
- ctx:Title({Font=Enum.Font.Garamond,Hold=3.8})
+ ctx:Title({Font=Enum.Font.FredokaOne,Hold=3.8})
  if live(RELEASE)then Kit.Cue('Chime',nil,.3)end
  -- 6.15: its eyes, once more, for two frames.
  if not ctx:Wait(BLINK)then return end

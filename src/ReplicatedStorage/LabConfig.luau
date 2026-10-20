@@ -27,4 +27,28 @@ C.HighValueVariants={Golden=true,Corrupted=true,Glitched=true,Void=true}
 -- rerolling a mutated variant) needs a held confirmation.
 C.HighValue={MinRank=3,Mastery=25}
 C.Colors={Normal=Color3.fromRGB(151,231,155),Shiny=Color3.fromRGB(168,220,255),Golden=Color3.fromRGB(255,200,63),Corrupted=Color3.fromRGB(209,64,83),Glitched=Color3.fromRGB(211,92,248),Void=Color3.fromRGB(106,49,184)}
+-- NUCLEAR MUTATION MACHINE (docs/LAB.md).
+-- SimpleMode: the lab only rerolls a dog's variant (Procedure 'Mutation': the costs, odds, first free try,
+-- cooldown and held confirmation above stay exactly as they were) through Modules.MutationLabScreen and the
+-- machine cinematic. Gene targeting, DNA extraction, ascension and recipes are refused by the server.
+-- false = the old five-procedure lab (Modules.LabScreen) as a rollback; saves are valid either way.
+C.SimpleMode=true
+-- The machine in the lab hall (MutationMachineWorld.server). false keeps the old chamber and terminal.
+C.MachineWorld=true
+-- Cinematic phases in seconds (Modules.LabPresentation): button, loading, rise + fill, colour reel,
+-- pause on the landed colour, burst + reveal; Reduced = the whole short version (Reduced Motion);
+-- PublicBurst = when players nearby see the burst after someone's commit.
+C.Machine={Activate=.7,Load=1.5,Rise=1.0,Reel=2.6,Hold=.35,Reveal=1.3,Reduced=2.2,PublicBurst=5.6}
+-- NUCLEAR MUTATION TOWER (the lab is a cooling tower now; geometry: ReplicatedStorage.NuclearLayout).
+-- Cinematic beats in seconds from the START button (Modules.LabPresentation): the dog is placed, the
+-- WARNING door opens, the arm grabs the dog (it looks at you), the door slams, the reactor shots and the
+-- colour reel; Burst = inside the chamber the dog bursts into its new colours (after the reel lands at
+-- Reveal), then the variant's own sequence (Variant = its length, from Reveal + Burst) and the exit: the
+-- dog walks out and stops on the pad, close-ups of its paws / head / tail, the pad lights up and the camera
+-- circles it, it walks back to its owner (Exit >= 11.5 keeps all of that; the walk home starts at Exit - 2).
+-- Total = Reveal + Burst + Variant + Exit: 34.7 s (Normal) .. 41.7 s (Glitched), under
+-- LabPresentation.AutoRelease (45). Reduced = the whole short version (Reduced Motion).
+-- Tap / click / Space skips to the next part (reactor -> burst -> exit -> end).
+C.Tower={Place=1.6,Door=4.6,Grab=6.6,Look=8.4,Intake=10.0,Reactor=11.8,Reel=13.0,Reveal=17.0,Burst=1.2,Exit=11.5,Reduced=4.5,
+ Variant={Normal=5,Shiny=7,Golden=7,Corrupted=8,Glitched=12,Void=10},PublicShow=7,ShowRange=900}
 return C

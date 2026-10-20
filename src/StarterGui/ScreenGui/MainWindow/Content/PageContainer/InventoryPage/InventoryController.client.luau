@@ -209,6 +209,7 @@ for key in pairs(depths) do table.insert(depthOptions,tonumber(key)) end;table.s
 for _,d in pairs(definitions)do unique(classOptions,d.Class)end;table.sort(classOptions)
 for _,profile in pairs(weights)do for _,w in ipairs(profile)do unique(weightOptions,w.Name)end end
 for _,m in ipairs(mutations)do unique(mutationOptions,m.Name)end
+for _,name in ipairs({'HAUNTED','PUMPKINIZED','BLOOD MOON','ECLIPSED'})do unique(mutationOptions,name)end -- NIGHT OF THE BURIED MOON finds
 local function cycle(list,value)
  local index=value and table.find(list,value)or 0
  return list[(index or 0)+1]

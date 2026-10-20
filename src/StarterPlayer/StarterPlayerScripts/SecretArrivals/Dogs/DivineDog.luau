@@ -32,7 +32,7 @@ end
 local function setSkin(s:SurfaceAppearance,strength:number,tint:Color3)s.EmissiveTint=tint;s.EmissiveStrength=strength end
 
 return function(ctx)
- ctx.WhisperStyle={Font=Enum.Font.Garamond,Color=CREAM,Glitch=0,Chroma=false,Shake=true,Type=.085}
+ ctx.WhisperStyle={Font=Enum.Font.FredokaOne,Color=CREAM,Glitch=0,Chroma=false,Shake=true,Type=.085}
  local Kit,scope,model,config=ctx.Kit,ctx.Scope,ctx.Model,ctx.Config
  local low,calm,origin,hold=ctx.Low,Kit.ReducedMotion(),ctx.Origin,config.Hold
  local SUN=config.Color
@@ -297,7 +297,7 @@ return function(ctx)
   g.MaxDistance=220;g.Size=UDim2.fromScale(2.6,2.6)
   local l=Instance.new('TextLabel');l.Name='Star';l:SetAttribute('KeepFont',true)
   l.BackgroundTransparency=1;l.AnchorPoint=Vector2.new(.5,.5);l.Position=UDim2.fromScale(.5,.5);l.Size=UDim2.fromScale(0,0)
-  l.Font=Enum.Font.Garamond;l.Text='✦';l.TextScaled=true;l.TextColor3=SUN;l.TextStrokeColor3=EMBER;l.TextStrokeTransparency=.4
+  l.Font=Enum.Font.FredokaOne;l.Text='✦';l.TextScaled=true;l.TextColor3=SUN;l.TextStrokeColor3=EMBER;l.TextStrokeTransparency=.4
   l.Parent=g;g.Parent=a
   scope:Life(a,1.3,function(t)
    a.CFrame=CFrame.new(from+up*2.4*out3(t))
@@ -515,8 +515,8 @@ return function(ctx)
 
  -- 2.8: it touches down. Its eyes open in a flash; the sky blinks with it.
  if not ctx:Wait(LAND)then return end
- ctx.WhisperStyle={Font=Enum.Font.Garamond,Color=CREAM,Glitch=0,Chroma=false,Shake=false,Type=TYPE}
- ctx:Title({Font=Enum.Font.Garamond,Hold=4})
+ ctx.WhisperStyle={Font=Enum.Font.FredokaOne,Color=CREAM,Glitch=0,Chroma=false,Shake=false,Type=TYPE}
+ ctx:Title({Font=Enum.Font.FredokaOne,Hold=4})
  shine()
  hl=scope:Highlight(model,SUN,PALE,1,1)
  if fresh(LAND)then

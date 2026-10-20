@@ -19,6 +19,7 @@ local function shown() return alive and main.Visible and page.Visible end
 -- Income per minute from the server's income model (player attribute IncomePerMinute, kept
 -- current by Runtime.Project); the label is translated by Localization.Income.
 local IncomeText = require(Replicated:WaitForChild("DogEconomy"):WaitForChild("IncomeText"))
+local DiscoveryVisuals = require(Replicated:WaitForChild("DogEconomy"):WaitForChild("DiscoveryVisuals"))
 grid.IncomeCard.Label.Text = "Income / min"
 local function updateIncome(perMinute)
  perMinute = tonumber(perMinute) or player:GetAttribute("IncomePerMinute")
@@ -90,11 +91,12 @@ local function fit(viewport)
  local model = viewModels[viewport]
  local camera = viewport.CurrentCamera
  if not model or not camera or viewport.AbsoluteSize.Y < 1 then return end
- local box, size = model:GetBoundingBox()
  local aspect = math.max(.2, viewport.AbsoluteSize.X / viewport.AbsoluteSize.Y)
+ if viewport ~= yardViewport then DiscoveryVisuals.FrameCamera(camera, model, aspect); return end
+ local box, size = model:GetBoundingBox()
  local vertical = math.rad(camera.FieldOfView / 2)
  local angle = math.min(vertical, math.atan(math.tan(vertical) * aspect))
- local direction = viewport == yardViewport and Vector3.new(1, 1.05, 1.2).Unit or Vector3.new(1, .65, -1.4).Unit
+ local direction = Vector3.new(1, 1.05, 1.2).Unit
  local distance = size.Magnitude * .5 / math.sin(angle) * 1.06
  camera.CFrame = CFrame.lookAt(box.Position + direction * distance, box.Position)
  camera.Focus = box
@@ -147,12 +149,50 @@ local function renderDiscovery(found)
  latest.ClassLabel.Text = string.upper(found.Class or "DISCOVERY")
  if latestUid == found.ItemUid and viewModels[itemViewport] then return end
  latestUid = found.ItemUid
- local models = Replicated:FindFirstChild("DiscoveryModels")
- local source = models and type(found.ItemId) == "string" and models:FindFirstChild(found.ItemId)
- local model = geometry(source)
+ -- The find's own model (recipe or old voxel model, mutation styled); the camera frames it.
+ local ok, model = pcall(DiscoveryVisuals.Clone, found, { NoScale = true })
+ if not ok then model = nil end
  replacePreview(itemViewport, model)
  latest.PreviewArea.EmptyMark.Visible = model == nil
  latest.PreviewArea.EmptyMark.Text = "?"
+end
+-- PLOT DECOR (Modules.DecorScreen): one button over the yard preview opens the decorations window.
+do
+ local panel = page.YardPreviewPanel
+ local button = Instance.new("TextButton")
+ button.Name = "DecorButton"
+ button.AnchorPoint = Vector2.new(1, 0)
+ button.Position = UDim2.new(1, -20, 0, 20)
+ button.Size = UDim2.fromOffset(150, 40)
+ button.BackgroundColor3 = Color3.fromRGB(64, 186, 120)
+ button.AutoButtonColor = true
+ button.Text = "DECORATE"
+ button.TextColor3 = Color3.new(1, 1, 1)
+ button.Font = Enum.Font.FredokaOne
+ button.TextScaled = true
+ button.ZIndex = yardViewport.ZIndex + 5
+ local limit = Instance.new("UITextSizeConstraint")
+ limit.MaxTextSize = 20
+ limit.Parent = button
+ local padding = Instance.new("UIPadding")
+ padding.PaddingLeft = UDim.new(0, 10)
+ padding.PaddingRight = UDim.new(0, 10)
+ padding.PaddingTop = UDim.new(0, 6)
+ padding.PaddingBottom = UDim.new(0, 6)
+ padding.Parent = button
+ local corner = Instance.new("UICorner")
+ corner.CornerRadius = UDim.new(0, 12)
+ corner.Parent = button
+ local stroke = Instance.new("UIStroke")
+ stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+ stroke.Color = Color3.fromRGB(23, 43, 76)
+ stroke.Thickness = 2
+ stroke.Parent = button
+ button.Parent = panel
+ listen(button.Activated, function()
+  local ok, N = pcall(require, main.Parent.Modules.GUIIntegration)
+  if ok and type(N) == "table" and N.OpenPage then N.OpenPage("Decor") end
+ end)
 end
 listen(yardViewport:GetPropertyChangedSignal("AbsoluteSize"), function() fit(yardViewport) end)
 listen(itemViewport:GetPropertyChangedSignal("AbsoluteSize"), function() fit(itemViewport) end)

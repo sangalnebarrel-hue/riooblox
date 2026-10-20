@@ -3,6 +3,15 @@ local Definitions=require(Rep.DogEconomy.DogDefinitions);local Products=require(
 local V=require(script.Parent.PreviewRenderer);local Marketplace=game:GetService('MarketplaceService');local Players=game:GetService('Players')
 local dexShapes={};for _,def in pairs(Definitions)do if not def.MuseumExcluded and def.Index then dexShapes[def.Index]=def end end
 local Screens={};local productInfo={};local productLoading={};local productRetry={}
+-- NIGHT OF THE BURIED MOON (Halloween event, WP9): THE DEAD YARD replaces the GLOBAL EVENT world feature while the event is on.
+local HALLOWEEN=(function()local ok,on=pcall(function()local f=Rep:FindFirstChild('Halloween');local cfg=f and f:FindFirstChild('Config');return cfg~=nil and require(cfg).HalloweenEventEnabled==true end);return ok and on==true end)()
+local function deadYardArt(U,card,x,y,w,h)
+ local f=U.Frame(card,'DeadYardArt',x,y,w,h);U.Round(f,12);U.Gradient(f,Color3.fromRGB(96,40,128),Color3.fromRGB(26,8,36))
+ local glow=U.Frame(f,'MoonGlow',w-h*.86,h*.04,h*.74,h*.74,Color3.fromRGB(255,150,60));glow.BackgroundTransparency=.7;U.Round(glow,h*.37)
+ local moon=U.Frame(f,'Moon',w-h*.8,h*.1,h*.62,h*.62);U.Round(moon,h*.31);U.Gradient(moon,Color3.fromRGB(255,246,214),Color3.fromRGB(255,170,70))
+ local art=U.Center(f,'🎃 🪦 🦇',8,h*.34,w-h*.7,h*.6,h*.4,Color3.new(1,1,1),true);art:SetAttribute('NoTranslate',true)
+ return f
+end
 local function loadProduct(c,parent,product)
  if type(product.Id)~='number'or product.Id<=0 then return'COMING SOON',nil end
  local info=productInfo[product.Key]
@@ -48,7 +57,7 @@ function Screens.Build(c)
   local current=world:GetAttribute('EventId')or 'WORLD EVENTS'
   local phase=world:GetAttribute('State')or 'NORMAL'
   local remaining=math.max(0,math.ceil((world:GetAttribute('EndTimestamp')or workspace:GetServerTimeNow())-workspace:GetServerTimeNow()))
-  U.Text(sc,tostring(current)..' · '..tostring(phase)..' · '..remaining..'s',12,4,c.W-24,48,21,P.gold,true)
+  U.Text(sc,tostring(current)..' · '..tostring(phase)..' · '..remaining..'s',12,4,c.W-24,48,21,U.TextGold,true)
   local entries={{'DOG-O-MATIC','RewardMachine'},{'DOG DETAILS / LOCK','Dogs'},{'COLLECTOR / BULK SALE / ORDINARY LOOT','Collector'},{'LAYERS / PRESTIGE','Layers'},{'MARKETPLACE','Marketplace'},{'RECORDS','Records'},{'WORLD EVENTS · PERKS & SCHEDULE','Events'},{'LUCK','Luck'},{'SUPPLIES','Supplies'},{'COSMETICS','Cosmetics'},{'SETTINGS / WORLD EVENT FX','Settings'},{'HELP / DISTRICT MAP','Help'}}
   for i,entry in ipairs(entries)do
    U.Button(sc,'Extra'..entry[2],entry[1],12,62+(i-1)*58,c.W-24,48,function()require(c.Gui.Modules.GUIIntegration).OpenScreen(entry[2])end,P.blue)
@@ -68,7 +77,7 @@ function Screens.Build(c)
  if shortGridPage then root=U.Scroll(root,c.Page..'Content',0,0,W,H)end
  local function show(page)return function()c.Show(page)end end
  local function change(k,v)s[k]=v;c.Draw()end
- local function section(parent,title,x,y,w)local b=U.Header(parent,'Section',x,y,w,38);U.Text(b,title,14,0,w-28,38,23,P.gold,true);return b end
+ local function section(parent,title,x,y,w)return U.Section(parent,title,x,y,w,38)end
  local function stat(parent,icon,title,value,x,y,w,h)
   local b=U.Panel(parent,'Stat'..title,x,y,w,h);U.Icon(b,icon,12,(h-40)/2,40,P.gold);U.Text(b,title,64,8,w-76,23,15,P.muted);U.Text(b,value,64,30,w-76,h-37,25,nil,true);return b
  end
@@ -95,7 +104,7 @@ function Screens.Build(c)
   local Income=require(Rep.DogEconomy.IncomeText)
   for _,row in ipairs({{'VARIANT',d.Variant},{'ABILITY',U.AbilityLabel(d.Ability)},{'INCOME',st.CoinsPerMin and '$'..Income.Compact(st.CoinsPerMin)..' / min'or '—'},{'DIGS / MIN',st.DigsPerMin and string.format('%.1f',st.DigsPerMin)or '—'},{'COOLDOWN',st.Cooldown and string.format('%.2fs + 4s',st.Cooldown)or '—'},{'LUCK',string.format('+%.0f%%',st.LuckPct or(st.Luck or 0)*100)},{'EFFICIENCY',st.Efficiency and string.format('x%.2f',st.Efficiency)or '—'},{'DIG LAYER',Config.Layers[p.CurrentLayer].Name},{'MASTERY',d.Mastery},{'JOB',U.DigSlotLabel(d.AssignedSlot)}})do local b=U.Panel(sc,'DogProperty',sx,y,sw,52);U.Text(b,row[1],7,1,sw-14,20,14,P.muted);U.Text(b,tostring(row[2]),7,21,sw-14,28,17,nil,true);y+=58 end
   local tags={d.Variant,'Ascension '..d.AscensionLevel};if d.Edition and d.Edition~=''then table.insert(tags,d.Edition)end;if d.SerialNumber then table.insert(tags,string.format('SERIAL #%06d',d.SerialNumber))end
-  U.Text(sc,table.concat(tags,' · '),8,y,width-28,46,16,P.gold);y+=50
+  U.Text(sc,table.concat(tags,' · '),8,y,width-28,46,16,U.TextGold);y+=50
   local definition=Definitions[d.DogId]
   if definition and definition.Signature then U.Text(sc,definition.Signature,8,y,width-28,100,16,P.text);y+=108 end
   U.Button(sc,'DogLock',d.Locked and 'UNLOCK'or 'LOCK',5,y,width-23,42,function()c.Send('DogLock',{Uid=d.DogUid,Enabled=not d.Locked})end)
@@ -111,7 +120,7 @@ function Screens.Build(c)
   local sc=U.Scroll(root,'YardContent',0,0,W,H);section(sc,'YARD OVERVIEW',0,0,W-8)
   local sideBySide=W>=720 and H>=400
   local y=48;local pw=sideBySide and math.floor(W*.4)or W-8;local ph=sideBySide and math.min(345,H*.47)or math.clamp(W*.48,190,245)
-  local home=U.Panel(sc,'YardPreview',0,y,pw,ph,true);V.Place(home,'Yard',8,8,pw-16,ph-61);U.Icon(home,'Yard',14,ph-44,32,P.gold);U.Text(home,'YOUR YARD · HOME BASE',55,ph-45,pw-66,33,20,P.gold,true)
+  local home=U.Panel(sc,'YardPreview',0,y,pw,ph,true);V.Place(home,'Yard',8,8,pw-16,ph-61);U.Icon(home,'Yard',14,ph-44,32,P.gold);U.Text(home,'YOUR YARD · HOME BASE',55,ph-45,pw-66,33,20,P.text,true)
   local sx=sideBySide and pw+14 or 0;local sy=sideBySide and y or y+ph+12;local sw=sideBySide and W-pw-22 or W-8;local statCols=sw>=420 and 2 or 1;local cw=(sw-10*(statCols-1))/statCols;local active=0;for _,d in ipairs(dogs)do if d.AssignedSlot~=''then active+=1 end end
   local stats={{'Coins','Income / minute','$'..require(Rep.DogEconomy.IncomeText).Compact(c.Snapshot.IncomePerMinute or(c.Snapshot.IncomeEstimate or 0)*60)},{'Yard','Yard level',1+(p.Upgrades.Plot or 0)},{'Storage','Dog storage',#dogs..' / '..math.min(Config.MaxDogs,20+20*(p.Upgrades.DogStorage or 0))},{'Yard','Occupied kennels',active..' / '..require(Rep.PlotCatalog).Slots(p)}}
   for i,row in ipairs(stats)do stat(sc,row[1],row[2],row[3],sx+((i-1)%statCols)*(cw+10),sy+math.floor((i-1)/statCols)*98,cw,86)end
@@ -124,15 +133,16 @@ function Screens.Build(c)
   U.Button(sc,'OfflineEarnings','OFFLINE EARNINGS',0,y,W-8,45,show('OfflineEarnings'),P.gold);y+=57
   section(sc,'WORLD FEATURES',0,y,W-8);y+=48
   local features={{'DOG LINE','03_DogLine','Factory','Meet · choose · adopt'},{'LAB','05_MutationLab','Mutation lab','Mutate · ascend · evolve'},{'GLOBAL EVENT','08_GlobalDigSite','Global event','A new adventure is on the way',true}}
+  if HALLOWEEN then features[3]={'THE DEAD YARD',false,'DeadYard','Night of the Buried Moon'}end
   local cols=math.clamp(math.floor((W+12)/272),1,3);local fw=(W-18-(cols-1)*12)/cols
-  for i,v in ipairs(features)do local card=U.Panel(sc,'Feature'..i,((i-1)%cols)*(fw+12),y+math.floor((i-1)/cols)*258,fw,246,true);U.Center(card,v[1],9,6,fw-18,33,23,P.text,true);V.Place(card,v[2],8,43,fw-16,112);U.Center(card,v[4],8,157,fw-16,34,16,P.muted);U.Button(card,'Go',v[5]and'COMING SOON'or'GO  ›',10,196,fw-20,42,not v[5]and function()c.Go(v[3])end or nil,P.green)end
+  for i,v in ipairs(features)do local card=U.Panel(sc,'Feature'..i,((i-1)%cols)*(fw+12),y+math.floor((i-1)/cols)*258,fw,246,true);U.Center(card,v[1],9,6,fw-18,33,23,P.text,true);if v[2]then V.Place(card,v[2],8,43,fw-16,112)else deadYardArt(U,card,8,43,fw-16,112)end;U.Center(card,v[4],8,157,fw-16,34,16,P.muted);U.Button(card,'Go',v[5]and'COMING SOON'or'GO  ›',10,196,fw-20,42,not v[5]and function()c.Go(v[3])end or nil,P.green)end
  elseif c.Page=='Dogs'or c.Page=='DogDetail'then
   if c.Page=='DogDetail'then
    local flow=H<440;if flow then root=U.Scroll(root,'DogDetailPage',0,0,W,H)end
    dogDetails(root,selected,W,H,flow);return
   end
   local filters={'All','Working','Storage','Favorites'};local fw=(W-24)/4
-  for i,f in ipairs(filters)do local b=U.Button(root,'Filter'..f,f,(i-1)*(fw+8),0,fw,47,function()change('DogFilter',f)end,s.DogFilter==f and P.blue or P.nav);if s.DogFilter==f then U.Glow(b,P.blue)end end
+  for i,f in ipairs(filters)do U.Tab(root,'Filter'..f,f,(i-1)*(fw+8),0,fw,47,function()change('DogFilter',f)end,s.DogFilter==f)end
   local countW=W>=520 and 96 or 0;local sortW=math.min(154,math.floor(W*.4));local searchW=W-sortW-countW-(countW>0 and 24 or 12)
   U.Search(root,'DogSearch','Search dogs…',s.DogSearch,0,60,searchW,function(v)change('DogSearch',v)end)
   U.Cycle(root,'DogSort','Sort: '..(s.DogSort or 'Rarity'),{'Rarity','Mastery','Name'},s.DogSort or 'Rarity',searchW+12,60,sortW,function(v)change('DogSort',v)end)
@@ -147,15 +157,15 @@ function Screens.Build(c)
   if dw>0 then local pane=U.Panel(root,'SelectedDog',lw+12,dogGridY,dw,H-dogGridY,true);dogDetails(pane,selected,dw,H-dogGridY)end
  elseif c.Page=='DogDex'then
   local total,bonusCount=0,0
-  for id in pairs(p.DogDex)do local def=Definitions[id];if def then if def.MuseumExcluded then bonusCount+=1 else total+=1 end end end
+  for id in pairs(p.DogDex)do local def=Definitions[id];if def and not def.EventDex then if def.MuseumExcluded then bonusCount+=1 else total+=1 end end end
   section(root,'DOG INDEX',0,0,W-8);U.Text(root,total..' / 100 · '..bonusCount..' BONUS',W*.41,0,W*.57,38,20,P.text,true);U.Bar(root,7,49,W-22,26,total/100,P.gold,total..'% MAIN COLLECTION')
-  local fw=(W-24)/4;for i,f in ipairs({'All','Found','Missing','Favorites'})do U.Button(root,'DexFilter'..f,f,(i-1)*(fw+8),87,fw,42,function()change('DexFilter',f)end,s.DexFilter==f and P.blue or P.nav)end
+  local fw=(W-24)/4;for i,f in ipairs({'All','Found','Missing','Favorites'})do U.Tab(root,'DexFilter'..f,f,(i-1)*(fw+8),87,fw,42,function()change('DexFilter',f)end,s.DexFilter==f)end
   local bw=(W-8-(dexRewardCols-1)*8)/dexRewardCols;for i,n in ipairs({10,25,50,75,100})do local claimed=p.DexClaims[tostring(n)];U.Button(root,'DexReward'..n,claimed and '✓ '..n or n..' REWARD',((i-1)%dexRewardCols)*(bw+8),141+math.floor((i-1)/dexRewardCols)*46,bw,38,not claimed and total>=n and function()c.Send('DexClaim',{Count=n})end or nil,P.gold)end
   local grid,cw=U.Grid(root,'DogDexGrid',0,dexGridY,W,shortGridPage and 274 or H-dexGridY,math.max(1,math.floor(W/190)),274)
   local byIndex={};for id,d in pairs(c.Snapshot.Dex)do byIndex[d.Index]={Id=id,Definition=d}end
   for i=1,100 do local def=byIndex[i];local found=def~=nil;local favorite=def and p.DexFavorites[def.Id];local f=s.DexFilter
    if f=='All'or f=='Found'and found or f=='Missing'and not found or f=='Favorites'and favorite then
-    local card=U.Panel(grid,'DexSlot'..i,0,0,cw,274,true);card.LayoutOrder=i;U.Button(card,'ViewEntry','VIEW',cw-82,146,74,38,function()s.SelectedDexIndex=i;s.SelectedDexBonus=nil;c.Show('DexEntry')end,P.blue);U.Text(card,string.format('#%03d',i),11,5,cw-22,30,19,P.gold,true)
+    local card=U.Panel(grid,'DexSlot'..i,0,0,cw,274,true);card.LayoutOrder=i;U.Button(card,'ViewEntry','VIEW',cw-82,146,74,38,function()s.SelectedDexIndex=i;s.SelectedDexBonus=nil;c.Show('DexEntry')end,P.blue);U.Text(card,string.format('#%03d',i),11,5,cw-22,30,19,U.TextGold,true)
     if found then V.Dog(card,def.Id,6,41,cw-12,139);U.Center(card,def.Definition.DisplayName,6,187,cw-12,48,18,nil,true);U.Badge(card,def.Definition.Rarity,10,239,cw-20,U.Rarity[def.Definition.Rarity]);U.Button(card,'DexFavorite',favorite and '★'or '☆',cw-38,5,29,29,function()c.Send('DexFavorite',{Id=def.Id,Enabled=not favorite})end,P.blue)
     else
      -- Still locked: a black silhouette of the dog that belongs in this slot.
@@ -165,7 +175,7 @@ function Screens.Build(c)
     end
    end
   end
-  local bonus={};for id,def in pairs(Definitions)do if def.MuseumExcluded then table.insert(bonus,{Id=id,Definition=def})end end
+  local bonus={};for id,def in pairs(Definitions)do if def.MuseumExcluded and not def.EventDex then table.insert(bonus,{Id=id,Definition=def})end end -- event dogs live in the event DogDex tab
   table.sort(bonus,function(a,b)return(a.Definition.Index or 0)<(b.Definition.Index or 0)end)
   for i,entry in ipairs(bonus)do
    local found=c.Snapshot.Dex[entry.Id]~=nil;local favorite=p.DexFavorites[entry.Id];local filter=s.DexFilter
@@ -186,7 +196,7 @@ function Screens.Build(c)
  elseif c.Page=='Upgrades'or c.Page=='DogTraining'or c.Page=='UpgradeTree'then
   -- Every upgrade lives in the UPGRADE TREE window (Modules.UpgradeTreeScreen), bought anywhere.
   root=U.Scroll(root,'UpgradeDirections',0,0,W,H)
-  U.Text(root,'All upgrades now live in the UPGRADE TREE: dogs, digging, luck, storage and your estate. Buy them anywhere.',12,12,W-24,90,24,P.gold,true)
+  U.Text(root,'All upgrades now live in the UPGRADE TREE: dogs, digging, luck, storage and your estate. Buy them anywhere.',12,12,W-24,90,22,P.text,true)
   U.Button(root,'OpenUpgradeTree','OPEN UPGRADE TREE',12,116,W-24,50,function()require(script.Parent.UpgradeTreeScreen).Open()end,P.green)
 
  elseif c.Page=='Feedback'then require(script.Parent.FeedbackScreen).Build(c)
@@ -200,7 +210,7 @@ function Screens.Build(c)
    U.Text(card,unlocked and 'Unlocked'or 'Level '..d.Level..' · '..U.Fmt(d.Cost)..' Cash'..(i==5 and ' · Prestige 1'or ''),15,76,narrow and W-40 or W*.65,narrow and 44 or 58,18,P.muted)
    U.Button(card,'ChooseLayer',p.CurrentLayer==i and 'DIGGING HERE'or unlocked and 'DIG HERE'or 'UNLOCK',narrow and 15 or W*.72,narrow and 128 or 96,narrow and W-40 or W*.25,40,p.CurrentLayer~=i and function()c.Send('Layer',{Layer=i})end or nil,P.green)
   end
-  U.Button(sc,'Prestige','PRESTIGE',0,49+#Config.Layers*step+8,W-8,43,function()c.Confirm('PRESTIGE','Requires Level 25 and Cursed Depths. Costs '..U.Fmt(250000*(p.Prestige+1))..' Cash. Player level resets; dogs, unlocks and permanent upgrades remain.','Prestige',{})end,P.gold)
+  U.Button(sc,'Prestige','PRESTIGE',0,49+#Config.Layers*step+8,W-8,43,function()c.Confirm('PRESTIGE','Requires Level '..tostring(Config.PrestigeLevel)..' and Corrupted Depths. Costs '..U.Fmt(Config.PrestigeBaseCost*(p.Prestige+1))..' Cash. Level and current layer reset; gain 100 Bones. Dogs, unlocked layers and permanent upgrades remain.','Prestige',{})end,P.gold)
  elseif c.Page=='RewardMachine'then require(script.Parent.RewardScreens).RewardMachine(c)
  elseif c.Page=='TicketShop'then require(script.Parent.RewardScreens).TicketShop(c)
  elseif c.Page=='Loot'then
@@ -211,15 +221,27 @@ function Screens.Build(c)
  elseif c.Page=='Supplies'then return require(script.Parent.SuppliesScreen).Build(c)
  elseif c.Page=='Settings'then
   local settings=U.Scroll(root,'SettingsContent',0,0,W,H)
-  U.Text(settings,'MAKE YOURSELF AT HOME',20,8,W-40,36,24,P.text,true)
-  for i,k in ipairs({'Motion','Leaderboard','World Event FX'})do U.Button(settings,'Setting'..k,k,20,58+(i-1)*64,W-40,50,function()c.Options.setting(k)end,P.blue)end
-  U.Button(settings,'ReplayTutorial','HOW TO PLAY',20,264,W-40,50,function()c.Close();require(script.Parent.OnboardingGuide).Replay()end,P.green)
-  U.Text(settings,'Learn kennels, selling, mining and Lucky Blocks.',20,323,W-40,48,18,P.muted)
+  U.Section(settings,'MAKE YOURSELF AT HOME',20,6,W-40,40)
+  -- Each toggle shows its state (docs/UI.md). UI SOUNDS switches Kit.Sound; HIDE UI is the H key / eye button.
+  local state=c.Options.settings and c.Options.settings()or{}
+  local fx=tostring(Players.LocalPlayer:GetAttribute('WorldEventFX')or'High'):upper()
+  local rows={{'Motion','MOTION: '..(state.motion~=false and'ON'or'OFF'),state.motion~=false},{'UI Sounds','UI SOUNDS: '..(state.sounds~=false and'ON'or'OFF'),state.sounds~=false},
+   {'Leaderboard','LEADERBOARD: '..(state.players and'ON'or'OFF'),state.players==true},{'World Event FX','WORLD EVENT FX: '..fx,true}}
+  -- MUSIC (added with Halloween, shown with the event on or off): session attribute Music; false = every music track silent
+  -- (island + world-event tracks: WorldEventAudio / WorldAmbience; the Halloween OST: Soundscape). SFX and ambience stay.
+  local music=Players.LocalPlayer:GetAttribute('Music')~=false
+  table.insert(rows,3,{'Music','MUSIC: '..(music and'ON'or'OFF'),music,function()Players.LocalPlayer:SetAttribute('Music',not music)end})
+  -- ON: a green button; OFF: the white secondary button (the old muted blue read like ON).
+  for i,row in ipairs(rows)do U.Button(settings,'Setting'..row[1],row[2],20,58+(i-1)*64,W-40,50,function()if row[4]then row[4]()else c.Options.setting(row[1])end;c.Draw()end,row[3]and P.green or P.panel)end
+  local y=58+#rows*64
+  U.Button(settings,'ReplayTutorial','HOW TO PLAY',20,y,W-40,50,function()c.Close();require(script.Parent.OnboardingGuide).Replay()end,P.green)
+  U.Text(settings,'Learn kennels, selling, mining and Lucky Blocks.',20,y+59,W-40,48,18,P.muted)
+  U.Text(settings,'HIDE UI: press H or the eye button at the top-right for clean screenshots.',20,y+108,W-40,48,18,P.muted)
  else
   local help=U.Scroll(root,'HelpContent',0,0,W,H)
   -- Room for four lines that wrap on phones and run longer in Russian.
   local helpH=W<450 and 300 or(c.Mobile and 220 or 170)
-  U.Center(help,'DOG LINE → YARD → DIG → DISCOVER\nManage your team in Dogs. Sell ordinary loot at the NPC shop.\nInventory holds your unique discoveries.\nBetween digs: mine ore, train Strength, buy pickaxes.',20,18,W-48,helpH,23,P.text,true)
+  U.Center(help,'DOG LINE → YARD → DIG → DISCOVER\nManage your team in Dogs. Sell ordinary loot at the NPC shop.\nInventory holds your unique discoveries.\nBetween digs: mine ore in your quarry, grow Strength in the Upgrade Tree.',20,18,W-48,helpH,23,P.text,true)
   U.Button(help,'ShowMap','DISTRICT MAP',20,18+helpH+22,W-48,47,function()c.Options.openMap()end,P.blue)
  end
 end
@@ -235,7 +257,7 @@ function Screens.Shop(c,parent,start,eventOnly)
  end
  for i,product in ipairs(list)do
   local card=U.Panel(parent,'Product'..product.Key,((i-1)%cols)*(cw+12),start+math.floor((i-1)/cols)*267,cw,255,true)
-  U.Center(card,product.Name:upper(),12,7,cw-24,44,23,P.gold,true);art(card,product,9,59,cw-18,106);U.Center(card,product.Description,12,173,cw-24,37,15,P.muted)
+  U.Center(card,product.Name:upper(),12,7,cw-24,44,23,P.text,true);art(card,product,9,59,cw-18,106);U.Center(card,product.Description,12,173,cw-24,37,15,P.muted)
   local label,action=loadProduct(c,parent,product)
   if not eventOnly and not c.Mobile then
    U.Button(card,'PreviewProduct','DETAILS  ›',9,218,cw-18,29,function()c.State.Product=product.Key;c.Draw()end,P.blue)
@@ -244,7 +266,7 @@ function Screens.Shop(c,parent,start,eventOnly)
  if not c.Mobile and not eventOnly then
   local product=list[1];for _,v in ipairs(list)do if v.Key==c.State.Product then product=v end end
   if product then local sideW=W-mainW-20;local side=U.Panel(parent,'ProductDetails',mainW+12,start-49,sideW,math.max(542,c.H-8),true)
-   local title=U.Header(side,'ProductHeading',4,4,sideW-8,68);U.Center(title,product.Name:upper(),11,5,sideW-30,58,25,P.gold,true)
+   local title=U.Header(side,'ProductHeading',4,4,sideW-8,68);U.Center(title,product.Name:upper(),11,5,sideW-30,58,25,P.text,true)
    art(side,product,12,86,sideW-24,210);U.Center(side,product.Description,16,313,sideW-32,75,22,P.text)
    U.Text(side,'INCLUDES\n'..product.Rewards.Cosmetic..'\nPermanent cosmetic unlock\nEquip it on your dog team.',17,409,sideW-34,113,18,P.muted)
    local label,action=loadProduct(c,parent,product);U.Button(side,'Purchase',label,12,math.max(542,c.H-8)-55,sideW-24,42,action,P.green)
@@ -273,7 +295,7 @@ function Screens.Trade(c,dogs,section)
     local card=U.Panel(grid,'Player'..other.Id,0,0,cw,154);V.Avatar(card,other.Id,8,10,77)
     U.Text(card,other.Name,96,6,cw-108,42,20,nil,true);U.Text(card,other.Status..' · Lv. '..other.Level,96,49,cw-108,28,16,P.muted)
     local allowed=p.Level>=Config.TradeLevel and other.Level>=Config.TradeLevel
-    U.Text(card,allowed and'Secure trade ready'or('Both players need Lv. '..Config.TradeLevel),96,77,cw-108,22,13,allowed and P.green or P.gold)
+    U.Text(card,allowed and'Secure trade ready'or('Both players need Lv. '..Config.TradeLevel),96,77,cw-108,22,13,allowed and U.TextGreen or U.TextGold)
     local select=U.New('TextButton',{Name='SelectPlayer',Text='',BackgroundTransparency=1,Size=UDim2.new(1,0,0,95)},card);select.Activated:Connect(function()s.TradePlayer=other;c.Draw()end)
     U.Button(card,'TradeRequest',allowed and'REQUEST TRADE'or'LEVEL LOCKED',96,104,cw-108,40,allowed and function()s.TradePlayer=other;c.Send('TradeRequest',{Target=other.Id})end or nil,allowed and P.blue or P.panel)
    end
@@ -284,7 +306,7 @@ function Screens.Trade(c,dogs,section)
    local other=c.Snapshot.Players[1];for _,v in ipairs(c.Snapshot.Players)do if s.TradePlayer and v.Id==s.TradePlayer.Id then other=v end end
    local outer=U.Panel(root,'PlayerDetails',lw+12,138,detailW,H-138,true);local panel=U.Scroll(outer,'PlayerDetailsContent',0,0,detailW,H-148);section(panel,'TRADE PARTNER',6,6,detailW-12)
    if other then
-    V.Avatar(panel,other.Id,detailW/2-58,57,116);U.Center(panel,other.Name..'\n@'..other.Username,12,181,detailW-24,58,22,P.gold,true)
+    V.Avatar(panel,other.Id,detailW/2-58,57,116);U.Center(panel,other.Name..'\n@'..other.Username,12,181,detailW-24,58,22,P.text,true)
     U.Center(panel,'Level '..other.Level..'\n'..other.Trades..' completed trades',16,246,detailW-32,72,18,P.muted)
     local allowed=p.Level>=Config.TradeLevel and other.Level>=Config.TradeLevel
     U.Button(panel,'RequestTrade',allowed and'REQUEST SECURE TRADE'or('REQUIRES LV. '..Config.TradeLevel),12,332,detailW-24,44,allowed and function()c.Send('TradeRequest',{Target=other.Id})end or nil,allowed and P.green or P.panel)
@@ -294,13 +316,13 @@ function Screens.Trade(c,dogs,section)
  end
 
  local sc=U.Scroll(root,'TradeSession',0,0,W,H);section(sc,'SECURE TRADE · VERSION '..trade.Version,0,0,W-8);local y=48
- U.Text(sc,'UPDATE → LOCK OFFER → BOTH REVIEW FOR 8 SECONDS → FINAL CONFIRM. Any change resets every lock.',8,y,W-24,43,15,P.gold,true);y+=49
+ U.Text(sc,'UPDATE → LOCK OFFER → BOTH REVIEW FOR 8 SECONDS → FINAL CONFIRM. Any change resets every lock.',8,y,W-24,43,15,U.TextGold,true);y+=49
  local wide=not c.Mobile and W>=700;local cardW=wide and math.floor((W-18)/2)or W-8;local cardH=154
  for index,id in ipairs(trade.Users)do
   local offer=trade.Offers[tostring(id)];local x=wide and(index-1)*(cardW+10)or 0;local yy=wide and y or y+(index-1)*(cardH+10)
   local card=U.Panel(sc,'Offer'..id,x,yy,cardW,cardH,true)
   local status=trade.Confirmed[tostring(id)]and'CONFIRMED'or trade.Ready[tostring(id)]and'LOCKED'or offer and'REVIEWING'or'NO OFFER'
-  U.Text(card,playerName(id)..' · '..status,12,8,cardW-24,30,20,status=='CONFIRMED'and P.green or status=='LOCKED'and P.gold or P.text,true)
+  U.Text(card,playerName(id)..' · '..status,12,8,cardW-24,30,20,status=='CONFIRMED'and U.TextGreen or status=='LOCKED'and U.TextGold or P.text,true)
   local estimate=offer and(offer.Estimated or offer.Cash or 0)or 0
   U.Text(card,'EST. VALUE '..U.Fmt(estimate)..' · CASH '..U.Fmt(offer and offer.Cash or 0),12,39,cardW-24,25,14,P.muted,true)
   local names={}

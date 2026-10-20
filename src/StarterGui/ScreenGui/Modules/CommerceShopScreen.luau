@@ -50,8 +50,7 @@ function S.Build(c)
   if #group>0 then
    table.insert(categories,category);sections[category]=y
    if not short then
-    local header=U.Header(sc,'Category_'..category,8,y,W-24,40)
-    U.Text(header,category:upper(),12,0,W-48,40,24,P.text,true);y+=52
+    U.Section(sc,category:upper(),8,y,W-24,40).Name='Category_'..category;y+=52
    end
    -- The spins section opens with the prize everyone is chasing.
    if category=='DOG-O-MATIC Spins'and not short then
@@ -83,13 +82,13 @@ function S.Build(c)
     if owned then label,action='OWNED',nil end
     local color=colors[category]or P.blue
     if short then
-     local art=U.Frame(card,'Art',10,10,108,108,color);U.Round(art,12);U.Icon(art,row.Key,4,4,100,P.text)
+     local art=U.Frame(card,'Art',10,10,108,108,color);U.Round(art,12);U.Gradient(art,color:Lerp(Color3.new(1,1,1),.3),color);U.Icon(art,row.Key,4,4,100,P.text)
      U.Text(card,row.Name,132,5,cw-144,30,22,P.text,true)
      local listed=U.Text(card,contents(row,p,now),132,36,cw-144,36,15,P.text,true)
      listed.TextScaled=true;U.New('UITextSizeConstraint',{MinTextSize=8,MaxTextSize=15},listed)
      U.Button(card,'Buy',label,132,76,cw-144,44,action,color).Caption.TextSize=19
     else
-     local art=U.Frame(card,'Art',10,10,cw-20,93,color);U.Round(art,12)
+     local art=U.Frame(card,'Art',10,10,cw-20,93,color);U.Round(art,12);U.Gradient(art,color:Lerp(Color3.new(1,1,1),.3),color)
      U.Icon(art,row.Key,(cw-20-86)/2,3,86,P.text)
      if row.Once then U.Badge(card,owned and'OWNED'or'ONE TIME',cw-118,16,100,owned and P.green or P.gold)end
      U.Center(card,row.Name,10,108,cw-20,30,23,P.text,true)

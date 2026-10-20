@@ -198,7 +198,7 @@ return function(m)
  -- 9.2: it has arrived.
  if not m:Wait(ARRIVE)then return end
  if m:Fresh(ARRIVE,1.5)then
-  m:Banner('THE DOG',{Kicker='?     ?     ?',Sub=m.VenueText,Font=Enum.Font.SpecialElite,Color=WHITE,Hold=6,Shake=.1})
+  m:Banner('THE DOG',{Kicker='?     ?     ?',Sub=m.VenueText,Font=Enum.Font.FredokaOne,Color=WHITE,Hold=6,Shake=.1})
   if not localIntro()then m:Cue('Sting',nil,.8);m:Flash(WHITE,.55,1.1)end
  end
  -- It keeps its vigil until THE DOG is owned or the watch runs out.

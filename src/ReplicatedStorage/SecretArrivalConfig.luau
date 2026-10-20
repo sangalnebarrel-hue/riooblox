@@ -116,6 +116,17 @@ C.Dogs = {
 		MegaSeconds = 28,
 		Color = Color3.fromRGB(150, 220, 255),
 	},
+	-- NIGHT OF THE BURIED MOON event Secret (WP4): never on the tongue, arrives where it is won (SecretReveal);
+	-- Color also tints its SecretAura. Dogs/HW_EclipseDog: a pool of night opens, a little moon is eclipsed, the dog
+	-- rises out of the pool at totality (3.0). Mega/HW_EclipseDog: a total eclipse over the whole island on the same beat.
+	HW_EclipseDog = {
+		Hold = 7.5,
+		Clips = { { 0, "Idle", true }, { 3.0, "Howl" }, { 6.8, "Idle", true } }, -- Howl: its signature clip (3.8 s), at totality
+		Whispers = { { 0.3, "the moon went out." }, { 2.6, "something black is standing where it fell." } },
+		Title = "ECLIPSE DOG",
+		MegaSeconds = 28,
+		Color = Color3.fromRGB(176, 70, 255),
+	},
 	TheDog = {
 		Hold = 14,
 		SpeedScale = 0.5,

@@ -230,6 +230,7 @@ return {
 		["Now: %s · tap ASSIGN to swap"] = "Сейчас: %s · НАЗНАЧИТЬ поменяет собак местами",
 		["Pick a dog to compare with %s"] = "Выбери собаку для сравнения с: %s",
 		["Raised in the Genetics Lab by merging copies: %s income."] = "Повышается в лаборатории мутаций объединением копий: %s дохода.",
+		["Ascension from earlier lab work: %s income."] = "Вознесение за прошлые опыты в лаборатории: %s дохода.",
 		["Rarity power <b>x%s</b> on every loot roll"] = "Сила редкости <b>x%s</b> на каждую добычу",
 		["Reward for %d dogs: %s"] = "Награда за %d собак: %s",
 		["Show %s on a stand in your yard."] = "Покажи собаку %s на витрине своего участка.",

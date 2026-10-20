@@ -7,6 +7,7 @@ local L={Models={},Opening={},Retries={},Presented={},ReadyTimers={}};local rand
 local function rt()return require(script.Parent.Runtime)end
 local function rewards()return require(script.Parent.RewardService)end
 local function guid()return Http:GenerateGUID(false):gsub('-','')end
+local function events()return require(script.Parent.EventBlocks)end
 function L.Normalize(p)
  p.OwnedBlocks=p.OwnedBlocks or {};p.BlockSchema=C.Version
  p.LuckyCredits=p.LuckyCredits or {};p.LuckyOpened=p.LuckyOpened or {};p.LuckyPity=p.LuckyPity or {};p.RewardHistory=p.RewardHistory or {}
@@ -30,6 +31,7 @@ local function serialledDog(id)
 end
 local function freeze(p,b)
  if b.Pool and b.Variants and b.Seed then return end
+ if Blocks.IsEvent and Blocks.IsEvent(b.Tier)then events().Freeze(b,random);return end
  local frozen={};for _,row in ipairs(rewards().Pool(p,b.Tier))do table.insert(frozen,{Id=row.Id,Weight=row.Weight,Rank=row.Rank})end
  b.Pool=frozen;b.Seed=b.Seed or random:NextInteger(1,2147483646)
  b.Variants=R.Copy(require(RS.WorldEvents.WorldEventModifiers).MutationRows(require(script.Parent.Config).Variants,'Name','Weight',os.time()))
@@ -39,6 +41,8 @@ function L.AddStored(p,tier,count,origin,paid)
  local ids={}
  for _=1,count do
   local uid=guid();p.OwnedBlocks[uid]={Uid=uid,OwnerUserId=p.UserId,Tier=tier,State='Stored',PurchasedAt=os.time(),PaidRandom=paid==true,Origin=origin or'Reward'}
+  -- Event tiers (PUMPKIN / CURSED PUMPKIN) have no RewardPools entry: their reward table is frozen right now.
+  if Blocks.IsEvent and Blocks.IsEvent(tier)then events().Freeze(p.OwnedBlocks[uid],random)end
   table.insert(ids,uid)
  end
  return ids
@@ -189,9 +193,14 @@ function L.Open(player,a)
  local pool=b.Pool;local rand=Random.new(b.Seed);local total=0;for _,row in ipairs(pool)do total+=row.Weight end
  local n=rand:NextNumber()*total;local chosen=pool[#pool]
  for _,row in ipairs(pool)do n-=row.Weight;if n<0 then chosen=row;break end end
- R.Check(chosen and runtime.Engine.AssetReady(chosen.Id),'Reward asset unavailable; your block is safe')
- local receipt='block-open:'..uid;local dogUid=guid();local supplyKey='supply:'..chosen.Id
- local keys={'p:'..player.UserId};local needsSupply=serialledDog(chosen.Id);if needsSupply then table.insert(keys,supplyKey)end
+ -- Event blocks (Pumpkin / Cursed Pumpkin) also hold coins, bones, decor, skins and event-mutated finds: only a
+ -- dog row (Kind nil or 'Dog') mints a dog; every other row resolves in EventBlocks.Apply inside the transaction.
+ local isDog=chosen~=nil and(chosen.Kind==nil or chosen.Kind=='Dog')
+ R.Check(chosen and(not isDog or runtime.Engine.AssetReady(chosen.Id)),'Reward asset unavailable; your block is safe')
+ local receipt='block-open:'..uid;local dogUid=guid();local supplyKey='supply:'..tostring(chosen.Id)
+ local keys={'p:'..player.UserId};local needsSupply=isDog and serialledDog(chosen.Id);if needsSupply then table.insert(keys,supplyKey)end
+ local event=Blocks.IsEvent and Blocks.IsEvent(b.Tier)
+ local ghost=event and events().Ghost(b)or nil;local questDone=nil
  -- The receipt now lives inside the player profile instead of a separate
  -- blockresult:<uid> DataStore key. This keeps retry safety across reconnects
  -- while allowing the overwhelmingly common open to stay on the RAM fast path.
@@ -199,7 +208,16 @@ function L.Open(player,a)
   local profile=v['p:'..player.UserId];runtime.Engine:Authorize(profile,player.UserId);L.Normalize(profile)
   local saved=profile.BlockOpenReceipts[uid];if saved then return saved end
   local current=owned(profile,uid);R.Check((current.State=='Placed'or current.State=='Ready')and current.ReadyAt<=os.time(),'Block is not ready');openingPad(player,current,a)
-  R.Check(current.Seed==b.Seed,'Block state changed');R.Check(R.Free(profile),'Dog storage full · make room to finish opening')
+  R.Check(current.Seed==b.Seed,'Block state changed')
+  if not isDog then
+   local value=events().Apply(profile,current,chosen,rand,os.time())
+   value.UserId=player.UserId;value.Tier=current.Tier;value.At=os.time();value.Receipt=receipt;value.BlockUid=uid;value.Ghost=ghost
+   profile.LuckyOpened[current.Tier]=(profile.LuckyOpened[current.Tier]or 0)+1
+   questDone=events().Track(profile,current,value,os.time())
+   table.insert(profile.RewardHistory,1,value);while #profile.RewardHistory>12 do table.remove(profile.RewardHistory)end
+   profile.OwnedBlocks[uid]=nil;rememberOpen(profile,uid,value);R.Validate(profile);return value
+  end
+  R.Check(R.Free(profile),'Dog storage full · make room to finish opening')
   local supply=needsSupply and(v[supplyKey]or{})or{Minted=0};if needsSupply then v[supplyKey]=supply end
   local sum=0;for _,row in ipairs(current.Variants)do sum+=row.Weight end
   local roll=rand:NextNumber()*sum;local variant=current.Variants[1].Name
@@ -208,7 +226,8 @@ function L.Open(player,a)
   dog.LuckyBlockRarity=current.Tier;dog.PaidRandom=current.PaidRandom
   profile.LuckyOpened[current.Tier]=(profile.LuckyOpened[current.Tier]or 0)+1
   profile.LuckyPity[current.Tier]=chosen.Rank>=Blocks.PitySettings.GoodRank and 0 or (profile.LuckyPity[current.Tier]or 0)+1
-  local value={Kind='Dog',UserId=player.UserId,Dog=R.Copy(dog),Tier=current.Tier,At=os.time(),Receipt=receipt,BlockUid=uid}
+  local value={Kind='Dog',UserId=player.UserId,Dog=R.Copy(dog),Tier=current.Tier,At=os.time(),Receipt=receipt,BlockUid=uid,Ghost=ghost}
+  if event then questDone=events().Track(profile,current,value,os.time())end
   table.insert(profile.RewardHistory,1,value);while #profile.RewardHistory>12 do table.remove(profile.RewardHistory)end
   profile.OwnedBlocks[uid]=nil;rememberOpen(profile,uid,value);R.Validate(profile);return value
  end,'bo:'..uid)
@@ -224,6 +243,13 @@ function L.Open(player,a)
     model:SetAttribute('RewardDogId',dog.DogId);model:SetAttribute('RewardRank',def and def.Rank or 1)
     model:SetAttribute('RewardVariant',tostring(dog.Variant or'Normal'));model:SetAttribute('RewardName',tostring(dog.DisplayName or(def and def.DisplayName)or dog.DogId))
    end
+   -- Event blocks: what popped out for the pumpkin show (PumpkinBlockFX), set before OpenedAt / BlockState.
+   if type(result)=='table'and result.Kind~='Dog'then
+    model:SetAttribute('RewardKind',tostring(result.Kind));model:SetAttribute('RewardRank',tonumber(result.Rank)or 1);model:SetAttribute('RewardName',tostring(result.Name))
+    if result.Id~=nil then model:SetAttribute('RewardId',tostring(result.Id))end
+    if type(result.Item)=='table'then model:SetAttribute('RewardMutation',tostring(result.Item.Mutation));model:SetAttribute('RewardItemId',tostring(result.Item.ItemId))end
+   end
+   if type(result)=='table'and result.Ghost then model:SetAttribute('RewardGhost',true)end
    model:SetAttribute('OpenedAt',workspace:GetServerTimeNow())
    model:SetAttribute('BlockState','Opened');task.delay(.55,function()if model.Parent then model:Destroy()end end);L.Models[player.UserId..':'..uid]=nil
   end
@@ -258,6 +284,7 @@ function L.Open(player,a)
    pcall(function()runtime.Refresh(player)end);pcall(function()L.Sync(player)end)
   end)
   task.defer(function()local saved,err=pcall(function()return runtime.Tx:FlushProfile(player.UserId)end);if not saved then warn('Lucky Block async save deferred:',err)end end)
+  if event then task.defer(events().AfterOpen,player,result,questDone)end
  else local model=L.Models[player.UserId..':'..uid];if model then model:SetAttribute('OpenMessage',tostring(result))end end
  return ok,result
 end

@@ -115,9 +115,23 @@ function FX.new(ctx)
   TweenService:Create(flash,TweenInfo.new(.4),{BackgroundTransparency=1}):Play()
  end
  function self.Shake(amount)
-  -- Only the mining camera consumes shake; outside a session it would just pile up.
-  if self.ReducedMotion()or not(ctx.Mine and ctx.Mine.Active)then return end
-  self.ShakeAmount=math.min(1.2,self.ShakeAmount+(amount or .3))
+  -- Only the mining / training cameras consume shake; outside a session it would just pile up.
+  if self.ReducedMotion()or not((ctx.Mine and ctx.Mine.Active)or(ctx.Gym and ctx.Gym.Active))then return end
+  self.ShakeAmount=math.min(2.6,self.ShakeAmount+(amount or .3))
+  self.ShakeSeed=math.random()*100
+ end
+ -- Camera offset for the current shake (rotation + small translation, smooth noise, not jitter);
+ -- decays frame-rate independently. Returns a CFrame to multiply the camera with.
+ local shakeT=0
+ function self.ShakeOffset(dt)
+  local s=self.ShakeAmount
+  if s<.002 then self.ShakeAmount=0;return CFrame.identity end
+  shakeT+=dt*(24+s*10)
+  local seed=self.ShakeSeed or 0
+  local nx,ny,nz=math.noise(shakeT,seed),math.noise(seed,shakeT),math.noise(shakeT*.7,seed*.5)
+  self.ShakeAmount=s*math.exp(-dt*7.5)
+  local k=math.min(1.8,s)
+  return CFrame.new(nx*k*.35,ny*k*.35,0)*CFrame.Angles(nx*k*.028,ny*k*.028,nz*k*.05)
  end
 
  -- Coins pop out of the ore and fly to the player (the "money drops" of every hit).
@@ -159,7 +173,9 @@ function FX.new(ctx)
   {Texture=FIRE,Color=Color3.fromRGB(255,140,50),Color2=Color3.fromRGB(255,60,20),Count=16,Chunks=6,Ring=true,Embers=true},
   {Texture=SPARK,Color=Color3.fromRGB(200,120,255),Color2=Color3.fromRGB(90,30,170),Count=26,Chunks=7,Ring=true,Void=true},
  }
- function self.Hit(pos,normal,oreColor,oreMaterial,tier,quality,crit,remote)
+ -- theme (optional): the pickaxe's Theme; its own effects (MiningClient.PickFX) play on top.
+ function self.Hit(pos,normal,oreColor,oreMaterial,tier,quality,crit,remote,theme)
+  if theme and ctx.PickFX then ctx.PickFX.Hit(theme,pos,normal,quality,crit,remote)end
   local row=TIER[math.clamp(tier or 1,1,#TIER)]
   local mult=(quality==2 and 1.5 or 1)*(crit and 1.6 or 1)
   local dir=normal or Vector3.new(0,1,0)
@@ -179,9 +195,9 @@ function FX.new(ctx)
   if remote then return end
   if crit then
    self.Flash(Color3.fromRGB(255,220,150),.18)
-   self.Shake(.5)
+   self.Shake(.9)
   else
-   self.Shake(quality==2 and .22 or .12)
+   self.Shake(quality==2 and .45 or .3)
   end
  end
 

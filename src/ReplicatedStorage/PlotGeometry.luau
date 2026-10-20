@@ -20,7 +20,7 @@ end
 function G.Sign(parent,cf,size,text,color,name)
  local p=G.Part(parent,name or 'Sign',size,cf,Color3.fromRGB(16,22,28),Enum.Material.Metal)
  local g=Instance.new('SurfaceGui');g.Name='Lettering';g.Face=Enum.NormalId.Front;g.CanvasSize=Vector2.new(800,math.max(100,800*size.Y/size.X));g.LightInfluence=0;g.Parent=p
- local t=Instance.new('TextLabel');t.Name='Caption';t.Size=UDim2.fromScale(.94,.86);t.Position=UDim2.fromScale(.03,.07);t.BackgroundTransparency=1;t.Text=text;t.TextColor3=color;t.Font=Enum.Font.GothamBold;t.TextScaled=true;t.Parent=g
+ local t=Instance.new('TextLabel');t.Name='Caption';t.Size=UDim2.fromScale(.94,.86);t.Position=UDim2.fromScale(.03,.07);t.BackgroundTransparency=1;t.Text=text;t.TextColor3=color;t.Font=Enum.Font.FredokaOne;t.TextScaled=true;t.Parent=g
  return p
 end
 function G.Bone(parent,cf,s,color)

@@ -25,7 +25,7 @@ local function curve(points)
 end
 return function(ctx)
  local Kit,scope,model,config=ctx.Kit,ctx.Scope,ctx.Model,ctx.Config
- ctx.WhisperStyle={Font=Enum.Font.JosefinSans,Color=C(212,240,255),Type=.04}
+ ctx.WhisperStyle={Font=Enum.Font.FredokaOne,Color=C(212,240,255),Type=.04}
  local low,origin,hold=ctx.Low,ctx.Origin,config.Hold
  local size=Kit.Size(model)
  -- Compact on purpose: the machine is next to the stand (all within ~20 studs, under 30 up).

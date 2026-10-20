@@ -1,5 +1,6 @@
 -- Active Mining client: ore piles on every yard, the timing-circle mining session, the pickaxe
--- market and strength training. Runs in its own LocalScript so a failure here can never take
+-- market and the pickaxe Tool in the inventory. (Strength training was removed: Strength is in the
+-- UPGRADE TREE now.) Runs in its own LocalScript so a failure here can never take
 -- down the main menus (it used to live inside OnboardingGuide).
 -- Start-up order: the world (ore piles + prompt handling) comes first and depends neither on the
 -- game's main ScreenGui nor on the PAWPAD menu modules, so a slow or failing menu can never hide
@@ -29,7 +30,7 @@ local function report(message)
   local l=Instance.new('TextLabel');l.Name='Errors';l.AnchorPoint=Vector2.new(0,1);l.Position=UDim2.new(0,8,1,-8)
   l.Size=UDim2.fromOffset(460,0);l.AutomaticSize=Enum.AutomaticSize.Y
   l.BackgroundColor3=Color3.fromRGB(60,10,20);l.BackgroundTransparency=.25;l.TextColor3=Color3.new(1,1,1);l.TextSize=12
-  l.Font=Enum.Font.Code;l.TextWrapped=true;l.TextXAlignment=Enum.TextXAlignment.Left;l.TextYAlignment=Enum.TextYAlignment.Top
+  l.Font=Enum.Font.FredokaOne;l.TextWrapped=true;l.TextXAlignment=Enum.TextXAlignment.Left;l.TextYAlignment=Enum.TextYAlignment.Top
   l:SetAttribute('NoTranslate',true);l.Parent=g;g.Parent=playerGui;panel=l
  end
  render()
@@ -112,7 +113,7 @@ function ctx.SetControls(enabled)
  task.spawn(function()
   while ctx.MenuOpen()do task.wait(.1)end
   releasing=false
-  local busy=(ctx.Mine and ctx.Mine.Active)or(ctx.Gym and ctx.Gym.Active)
+  local busy=ctx.Mine and ctx.Mine.Active
   if not busy then pcall(function()controls:Enable()end)end
  end)
 end
@@ -123,7 +124,8 @@ local function start(name)
  ctx[name]=load(name,function()return module.new(ctx)end)
 end
 -- World first: ore piles and prompt handling never wait for the main GUI or the menu modules.
-for _,name in ipairs({'Net','Anim','FX','World'})do start(name)end
+-- PickFX (pickaxe effects and living models) and Combo (2D hit juice) need only FX.
+for _,name in ipairs({'Net','Anim','FX','PickFX','Combo','World'})do start(name)end
 if ctx.World and ctx.World.Start then load('World.Start',ctx.World.Start)end
 
 -- The game's main GUI (HUD money counter, PAWPAD navigation, UITheme).
@@ -151,7 +153,7 @@ if not ctx.N then
  function N.Close()N.Owner='HUD'end
  ctx.N=N
 end
-for _,name in ipairs({'Mine','Shop','Gym','Debug'})do start(name)end
+for _,name in ipairs({'Mine','Shop','Tool','Debug','HalloweenStrike'})do start(name)end -- HalloweenStrike: NIGHT OF THE BURIED MOON timing hits (Halloween targets)
 local started={}
-for _,name in ipairs({'Net','Anim','FX','Hud','World','Mine','Shop','Gym','Debug'})do if ctx[name]then table.insert(started,name)end end
+for _,name in ipairs({'Net','Anim','FX','PickFX','Combo','Hud','World','Mine','Shop','Tool','Debug','HalloweenStrike'})do if ctx[name]then table.insert(started,name)end end
 ctx.Log('client started: '..table.concat(started,', '))

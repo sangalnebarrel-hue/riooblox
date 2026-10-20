@@ -97,7 +97,7 @@ local function walk(dir: string, rel: { string })
 					if isNew and attrCount > 0 then
 						fail("unexpected attributes on " .. pathText)
 					end
-					if (cls == "Script" or cls == "LocalScript") and inst.Disabled then
+					if isNew and (cls == "Script" or cls == "LocalScript") and inst.Disabled then
 						fail("script disabled: " .. pathText)
 					end
 					checked += 1

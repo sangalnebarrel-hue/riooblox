@@ -8,6 +8,7 @@
 --   Pay(n)   charge cash (errors if short)     Credit(n) add earned cash
 --   AddXP(n) grant player XP                   Layer   deepest unlocked dig layer (1..5)
 --   Session  RAM table for timing targets      Ping    player's network round trip (seconds)
+--   AddStone(n) -> added   store Stone (Resources.Add(p,'Stone',n)); optional, no Stone without it
 -- Messages and errors are codes "M:KEY|arg|arg" localized by ReplicatedStorage.Mining.MiningText.
 local Rules={}
 
@@ -25,6 +26,10 @@ local function check(ok,key,...)if not ok then error(code(key,...),0)end end
 
 -- v1 (MINING_POLISH_1) stored only the ore index; these were its ids in order.
 local LEGACY_ORE_IDS={'Limestone','Copper','Iron','Quartz','Amethyst','Ruby','Emerald','Meteorite','VoidCrystal'}
+-- v2 saved an index into the old 7-pickaxe list (Wooden, Stone, Iron, Steel, Crystal, Inferno,
+-- Voidbreaker); v3 (the DOGROTS pickaxe pack) maps each to the pack pickaxe with the closest
+-- Strength requirement at or below the old one, so nobody loses power they already earned.
+local LEGACY_PICKAXES={1,3,4,6,8,11,15}
 
 function Rules.OreById(M,id)
  for i,ore in ipairs(M.Ores)do if ore.Id==id then return ore,i end end
@@ -35,24 +40,43 @@ local function oreMid(ore)return math.floor((ore.ValueMin+ore.ValueMax)/2)end
 
 function Rules.New(M)
  local ore=M.Ores[1]
- return {Version=2,Strength=0,PickaxeOwned=0,PickaxeLevel=0,WeightOwned=0,WeightLevel=0,Hits=0,OresBroken=0,CoinsEarned=0,
+ return {Version=3,Strength=0,PickaxeOwned=0,PickaxeLevel=0,WeightOwned=0,WeightLevel=0,Hits=0,OresBroken=0,CoinsEarned=0,
   TrainingReps=0,OreIndex=1,OreId=ore.Id,OreMaxHP=ore.HP,OreHP=ore.HP,OreValue=oreMid(ore),OreEarned=0,OreSerial=1,
   Combo=0,BestOre=0,Collection={},LastHitAt=0,LastTrainAt=0,ActiveUntil=0,TrainingUntil=0,LastPayout=0,LastDamage=0,LastQuality=1,
-  LastBreak=false,LastCrit=false,LastBrokenId='',LastBrokenValue=0}
+  LastBreak=false,LastCrit=false,LastBrokenId='',LastBrokenValue=0,LastStone=0,StoneMined=0}
 end
 
 -- Repairs / migrates a saved state in place and returns it.
 function Rules.Normalize(m,M)
  if type(m)~='table'then m=Rules.New(M)end
  local pickCount,weightCount=#M.Pickaxes,#M.Weights
+ if (tonumber(m.Version)or 1)<3 then
+  local v3=m.PickaxeV3
+  if type(v3)=='table'then
+   -- Already migrated, then re-saved as v2 by a server still running the 7-pickaxe build: its
+   -- PickaxeOwned/Level hold v3 indices (clamped to 7 there). Restore them, never remap twice.
+   m.PickaxeOwned=math.max(int(v3.Owned,0),int(m.PickaxeOwned,0));m.PickaxeLevel=int(v3.Level,0)
+  else
+   local function remap(level)
+    level=int(level,0)
+    if level<1 then return 0 end
+    return LEGACY_PICKAXES[math.min(level,#LEGACY_PICKAXES)]
+   end
+   m.PickaxeOwned=remap(m.PickaxeOwned);m.PickaxeLevel=remap(m.PickaxeLevel)
+  end
+ end
  m.Strength=math.clamp(int(m.Strength,0),0,M.MaxStrength)
+ m.BonusStrength=math.clamp(int(m.BonusStrength,0),0,M.MaxStrength)
  m.PickaxeOwned=math.clamp(int(m.PickaxeOwned,0),0,pickCount)
  m.PickaxeLevel=math.clamp(int(m.PickaxeLevel,0),0,m.PickaxeOwned)
  if m.PickaxeOwned>0 and m.PickaxeLevel==0 then m.PickaxeLevel=m.PickaxeOwned end
+ -- v3 shadow: older servers keep this unknown field, so a v2 re-save is recognised above.
+ local v3=type(m.PickaxeV3)=='table'and m.PickaxeV3 or{};v3.Owned=m.PickaxeOwned;v3.Level=m.PickaxeLevel;m.PickaxeV3=v3
  m.WeightOwned=math.clamp(int(m.WeightOwned,0),0,weightCount)
  m.WeightLevel=math.clamp(int(m.WeightLevel,0),0,m.WeightOwned)
  if m.WeightOwned>0 and m.WeightLevel==0 then m.WeightLevel=m.WeightOwned end
- for _,key in ipairs({'Hits','OresBroken','CoinsEarned','TrainingReps','Combo','BestOre','LastPayout','LastDamage','LastBrokenValue'})do
+ -- LastStone/StoneMined are new in the BALANCE update: older saves start at 0.
+ for _,key in ipairs({'Hits','OresBroken','CoinsEarned','TrainingReps','Combo','BestOre','LastPayout','LastDamage','LastBrokenValue','LastStone','StoneMined'})do
   m[key]=math.max(0,int(m[key],0))
  end
  m.Combo=math.min(m.Combo,M.ComboCap)
@@ -80,7 +104,7 @@ function Rules.Normalize(m,M)
  m.TrainingUntil=tonumber(m.TrainingUntil)or 0
  m.LastQuality=math.clamp(int(m.LastQuality,1),1,2);m.LastBreak=m.LastBreak==true;m.LastCrit=m.LastCrit==true
  m.LastBrokenId=type(m.LastBrokenId)=='string'and m.LastBrokenId or''
- m.Version=2
+ m.Version=3
  return m
 end
 
@@ -99,6 +123,15 @@ function Rules.LayerMult(M,layer)
  return M.LayerValue[math.clamp(int(layer,1),1,#M.LayerValue)]
 end
 
+-- Stone a broken ore grants (stored in p.Resources.Stone, spent on plot decor): the ore's Stone
+-- yield, +StoneLayerBonus of it per dig layer beyond the first. Ores without Stone give none.
+function Rules.StoneForBreak(M,ore,layer)
+ local base=tonumber(ore and ore.Stone)or 0
+ if base~=base or base<=0 then return 0 end
+ local deep=math.clamp(int(layer,1),1,#M.LayerValue)-1
+ return math.max(0,math.floor(base*(1+(tonumber(M.StoneLayerBonus)or 0)*deep)+.5))
+end
+
 function Rules.RollOre(m,M,random,luck,layer)
  local weights,total=Rules.OreWeights(M,luck)
  local roll=random()*total;local index=#M.Ores
@@ -110,9 +143,19 @@ function Rules.RollOre(m,M,random,luck,layer)
  return ore,index
 end
 
+-- Effective Strength: what was trained at the old weight rack (m.Strength, kept for older saves) plus
+-- the STRENGTH branch of the UPGRADE TREE (m.BonusStrength, written by Economy.Rules.MiningAction
+-- before every action; clients pass {Strength=projected total}).
+function Rules.Strength(M,m)
+ local base=tonumber(m and m.Strength)or 0
+ local bonus=tonumber(m and m.BonusStrength)or 0
+ if bonus~=bonus then bonus=0 end
+ return math.clamp(math.floor(base+math.max(0,bonus)),0,M.MaxStrength or 1100)
+end
+
 -- Damage multiplier from Strength above the equipped pickaxe's requirement.
 function Rules.StrengthBonus(M,m,pick)
- local surplus=math.max(0,(m.Strength or 0)-(pick.Strength or 0))
+ local surplus=math.max(0,Rules.Strength(M,m)-(pick.Strength or 0))
  return 1+math.min(M.StrengthBonusMax,surplus*M.StrengthBonusPerPoint)
 end
 
@@ -223,17 +266,21 @@ function Rules.Hit(m,M,ctx,args)
  if broke then payout=remaining end
  payout=math.min(payout,math.max(0,(M.MaxCash or math.huge)-(ctx.Cash or 0)))
  if payout>0 then ctx.Credit(payout);m.OreEarned+=payout;m.CoinsEarned+=payout end
- m.LastPayout=payout;m.LastDamage=applied;m.LastQuality=quality;m.LastBreak=broke;m.LastCrit=crit
+ m.LastPayout=payout;m.LastDamage=applied;m.LastQuality=quality;m.LastBreak=broke;m.LastCrit=crit;m.LastStone=0
  if broke then
   m.OresBroken+=1;m.LastBrokenId=ore.Id;m.LastBrokenValue=m.OreEarned
   m.Collection[ore.Id]=(m.Collection[ore.Id]or 0)+1
   m.BestOre=math.max(m.BestOre,m.OreIndex)
   ctx.AddXP(M.BreakXP+M.BreakXPPerTier*(m.OreIndex-1))
+  -- Stone goes into the same transaction as the coins (Resources.Add clamps to its Max).
+  local stone=Rules.StoneForBreak(M,ore,ctx.Layer)
+  if stone>0 and ctx.AddStone then stone=math.max(0,int(ctx.AddStone(stone),stone))else stone=0 end
+  m.LastStone=stone;m.StoneMined=(m.StoneMined or 0)+stone
   Rules.RollOre(m,M,ctx.Random,pick.Luck,ctx.Layer)
   -- Every circle pauses while the old pile crumbles and the new one rises.
   s.PauseUntil=ctx.Clock+M.Client.BreakPause
   Rules.IssueTargets(s,M,pick,ctx.Clock,M.Client.BreakPause)
-  return code('BROKE',ore.Id,m.LastBrokenValue)
+  return code('BROKE',ore.Id,m.LastBrokenValue,stone)
  end
  newTarget(s,slot,ctx.Clock+M.Client.RespawnDelay,pick.Window)
  return code(crit and'CRIT'or quality==2 and'PERFECT'or'HIT',payout)
@@ -249,7 +296,7 @@ function Rules.BuyPickaxe(m,M,ctx,level)
  end
  check(level==m.PickaxeOwned+1,'IN_ORDER')
  local def=M.Pickaxes[level]
- check(m.Strength>=def.Strength,'NEED_STRENGTH',def.Strength)
+ check(Rules.Strength(M,m)>=def.Strength,'NEED_STRENGTH',def.Strength)
  check((ctx.Cash or 0)>=def.Price,'NEED_COINS',def.Price)
  ctx.Pay(def.Price)
  m.PickaxeOwned=level;m.PickaxeLevel=level
@@ -258,45 +305,9 @@ function Rules.BuyPickaxe(m,M,ctx,level)
  return code('BOUGHT',def.Id)
 end
 
-function Rules.BuyWeight(m,M,ctx,level)
- level=int(level,0);check(level>=1 and level<=#M.Weights,'BAD_ITEM')
- -- Choosing a weight at the rack counts as training activity: keep the weight in hand.
- if (m.TrainingUntil or 0)>=ctx.Now then m.TrainingUntil=ctx.Now+M.SessionSeconds end
- if level<=m.WeightOwned then m.WeightLevel=level;return code('WEIGHT_EQUIPPED',M.Weights[level].Id)end
- check(level==m.WeightOwned+1,'IN_ORDER')
- local def=M.Weights[level]
- check(m.Strength>=def.Strength,'NEED_STRENGTH',def.Strength)
- check((ctx.Cash or 0)>=def.Price,'NEED_COINS',def.Price)
- if def.Price>0 then ctx.Pay(def.Price)end
- m.WeightOwned=level;m.WeightLevel=level
- return code('WEIGHT_BOUGHT',def.Id)
-end
-
--- A training session only shows the weight in the character's hands (MiningWorld); reps are
--- validated on their own.
-function Rules.TrainBegin(m,M,ctx)
- m.TrainingUntil=ctx.Now+M.SessionSeconds;m.ActiveUntil=0;m.Combo=0
- if ctx.Session then ctx.Session.Targets={}end
- return code('TRAIN_STARTED')
-end
-function Rules.TrainEnd(m)
- m.TrainingUntil=0
- return code('ENDED')
-end
-
-function Rules.Train(m,M,ctx)
- local def=M.Weights[m.WeightLevel];check(def~=nil,'NEED_WEIGHT')
- check(m.Strength<math.min(def.Cap,M.MaxStrength),'WEIGHT_CAPPED')
- -- Rest + the shortest possible lift; a rep can never be scripted faster than a fast human.
- check(ctx.Clock-(m.LastTrainAt or 0)>=def.Cooldown*M.CooldownTolerance+M.MinLiftTime,'REST')
- -- Lifting ends any mining session (no interleaving reps with hits).
- m.ActiveUntil=0;m.Combo=0
- if ctx.Session then ctx.Session.Targets={};ctx.Session.Stale={}end
- m.LastTrainAt=ctx.Clock;m.TrainingReps+=1;m.TrainingUntil=ctx.Now+M.SessionSeconds
- local before=m.Strength
- m.Strength=math.min(def.Cap,M.MaxStrength,m.Strength+def.Gain)
- return code('TRAINED',m.Strength-before)
-end
+-- The weight rack and its lifting minigame were removed: Strength is bought in the UPGRADE TREE.
+-- Old clients asking for the rack get a clear answer.
+local function gymGone()error(code('GYM_MOVED'),0)end
 
 -- Single entry point used by Economy/Rules.
 function Rules.Action(m,M,action,args,ctx)
@@ -305,10 +316,8 @@ function Rules.Action(m,M,action,args,ctx)
  elseif action=='MiningEnd'then return Rules.End(m,M,ctx)
  elseif action=='MiningHit'then return Rules.Hit(m,M,ctx,args)
  elseif action=='MiningPickaxe'then return Rules.BuyPickaxe(m,M,ctx,args.Level)
- elseif action=='MiningWeight'then return Rules.BuyWeight(m,M,ctx,args.Level)
- elseif action=='MiningTrain'then return Rules.Train(m,M,ctx)
- elseif action=='MiningTrainBegin'then return Rules.TrainBegin(m,M,ctx)
- elseif action=='MiningTrainEnd'then return Rules.TrainEnd(m)
+ elseif action=='MiningWeight'or action=='MiningTrain'or action=='MiningTrainBegin'then return gymGone()
+ elseif action=='MiningTrainEnd'then m.TrainingUntil=0;return code('ENDED')
  end
  error(code('BAD_ACTION'),0)
 end

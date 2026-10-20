@@ -46,7 +46,12 @@ function O.Observe(p,now)
  if (p.Level or 1)>=2 then seen.Levelled=true end
  local mining=type(p.Mining)=='table'and p.Mining or{}
  if positive(mining.Hits)then seen.MiningHit=true end
- if positive(mining.TrainingReps)or positive(mining.Strength)then seen.StrengthTrain=true end
+ -- Step 8 (STRENGTH): any level of the UPGRADE TREE's STRENGTH branch (or Strength trained before it existed).
+ local upgrades=type(p.Upgrades)=='table'and p.Upgrades or{}
+ for _,id in ipairs({'IronGrip','HeavyLifter','TitanBack','Colossus','MountainBreaker'})do
+  if positive(upgrades[id])then seen.StrengthTrain=true;break end
+ end
+ if positive(mining.Strength)then seen.StrengthTrain=true end
  if t.Status=='Active'and t.Step>0 then
   while milestones[t.Step]and seen[milestones[t.Step]]do t.Step+=1 end
  end

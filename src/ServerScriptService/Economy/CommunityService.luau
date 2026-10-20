@@ -11,7 +11,7 @@ local function displayName(id)
  local ok,name=pcall(function()return Players:GetNameFromUserIdAsync(id)end);if ok then S.Names[id]=name end;return ok and name or ('Player '..id)
 end
 local function guiText(parent,name,text,pos,size,color)
- local t=Instance.new('TextLabel');t.Name=name;t.BackgroundTransparency=1;t.Position=pos;t.Size=size;t.Text=text;t.TextColor3=color or Color3.fromRGB(248,235,204);t.Font=Enum.Font.GothamBold;t.TextScaled=true;t.Parent=parent;return t
+ local t=Instance.new('TextLabel');t.Name=name;t.BackgroundTransparency=1;t.Position=pos;t.Size=size;t.Text=text;t.TextColor3=color or Color3.fromRGB(248,235,204);t.Font=Enum.Font.FredokaOne;t.TextScaled=true;t.Parent=parent;return t
 end
 function S.RefreshBoard()
  -- The rebuilt plaza has its own LeaderboardService; the legacy board is optional.

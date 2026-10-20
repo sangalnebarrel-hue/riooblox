@@ -144,7 +144,7 @@ return function(m)
   m:Flash(WHITE,.5+.25*(1-near),.4)
   grade.Brightness=.22;m:Tween(grade,.6,{Brightness=0})
   m:Banner('CUBEDOG',{Kicker='✦   T H E   G R I D   ✦',Sub=m.VenueText..(m.By and ('  ·  '..string.upper(m.By))or''),
-   Font=Enum.Font.Michroma,Color=CYAN,Hold=4.6,Shake=.15})
+   Font=Enum.Font.FredokaOne,Color=CYAN,Hold=4.6,Shake=.15})
  end
  m:Shockwave(ground,CYAN,{Speed=300,Height=22,Thickness=1.6,Alpha=.18,OnPass=function()
   m:Shake(.42,.5);m:FOV(-4,.05,.5);m:Cue('Impact',nil,.6);m:Flash(C(200,242,255),.75,.3)

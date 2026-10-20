@@ -1,6 +1,9 @@
 local RS=game:GetService('ReplicatedStorage');local Http=game:GetService('HttpService')
 local R=require(script.Parent.Rules);local I=require(script.Parent.ItemRules);local Stats=require(script.Parent.RecordStats);local Value=require(RS.ItemValuation)
 local Access=require(RS.PlotInteractionAccess)
+-- Finds pinned in the MY BEST FINDS showcase (Features.Showcase) are never sold: the collector
+-- refuses them until they are taken out of the showcase (bulk sales keep them and sell the rest).
+local Showcase=require(RS.DogEconomy.ShowcaseRules)
 local S={Quotes={}};local function runtime()return require(script.Parent.Runtime)end
 function S.Yard(player)
  local id=player:GetAttribute('YardId');local map=workspace:FindFirstChild('DOGROTS_District')
@@ -41,6 +44,15 @@ function S.CanSell(p,uid)
  local x=p.Items and p.Items[uid]
  return x~=nil and x.ItemUid==uid and x.OwnerUserId==p.UserId
 end
+function S.Pinned(p,uid)return Showcase.IsPinned(p,uid)~=nil end
+-- The refusal for showcased finds (uids: the pinned ones the player tried to sell).
+function S.PinnedMessage(p,uids)
+ if #uids==1 then
+  local x=p.Items and p.Items[uids[1]]
+  return (x and x.DisplayName or 'This find')..' is in your showcase. Take it out of MY BEST FINDS before selling'
+ end
+ return #uids..' finds are in your showcase. Take them out of MY BEST FINDS before selling'
+end
 function S.BulkSell(player,a,receipt)
  R.Check(S.ValidBulkArgs(a),'Choose unique item IDs (up to 1000)')
  local rt=runtime()
@@ -48,9 +60,10 @@ function S.BulkSell(player,a,receipt)
   S.Visit(player)
   local p=v['p:'..player.UserId];rt.Engine:Authorize(p,player.UserId)
   R.Check(not rt.Engine.TradeByUser[player.UserId],'Finish your trade before selling')
-  local total,sold=0,{}
+  local total,sold,kept=0,{},{}
   for _,uid in ipairs(a.Uids)do
-   if S.CanSell(p,uid)then
+   if S.CanSell(p,uid)and S.Pinned(p,uid)then table.insert(kept,uid)
+   elseif S.CanSell(p,uid)then
     local item=I.Get(p,uid,false)
     local price=Value.Price(item) -- Server is authoritative for price.
     total+=price
@@ -60,9 +73,11 @@ function S.BulkSell(player,a,receipt)
     table.insert(sold,uid)
    end
   end
+  R.Check(#sold>0 or #kept==0,S.PinnedMessage(p,kept))
   R.Check(#sold>0,'No items selected')
   R.Credit(p,total);local xp=R.AddXP(p,math.clamp(math.floor(math.sqrt(total)*2),5,250));Stats.Sale(p,total);p.LastSaleAt=os.time();R.Validate(p)
-  return {Count=#sold,Cash=total,XPGranted=xp,SoldUids=sold,Message='Sold '..#sold..' items for '..total..' Coins · +'..xp..' XP',
+  local note=#kept>0 and(' · '..#kept..' kept in your showcase')or''
+  return {Count=#sold,Cash=total,XPGranted=xp,SoldUids=sold,KeptUids=kept,Message='Sold '..#sold..' items for '..total..' Coins · +'..xp..' XP'..note,
    FastSale={Cash=p.Cash,ItemCount=I.Count(p.Items),SoldUids=R.Copy(sold),Stats=R.Copy(p.Stats),LastSaleAt=p.LastSaleAt,XP=p.XP,Level=p.Level}}
  end,receipt)
 end
@@ -73,10 +88,12 @@ function S.Request(player,action,a,receipt)
  if action=='SellQuote'then
   local p=rt.Engine:Get(player.UserId);local rows,total={},0;local seen={}
   if a.All then
-   for uid in pairs(p.Items)do if #rows<20 then table.insert(rows,{Uid=uid})end end
+   for uid in pairs(p.Items)do if #rows<20 and not S.Pinned(p,uid)then table.insert(rows,{Uid=uid})end end
   else
    R.Check(type(a.Uids)=='table'and #a.Uids>0 and #a.Uids<=20,'Choose 1–20 finds')
    for _,uid in ipairs(a.Uids)do R.Check(type(uid)=='string'and not seen[uid],'Duplicate item');seen[uid]=true;table.insert(rows,{Uid=uid})end
+   local pinned={};for _,row in ipairs(rows)do if S.Pinned(p,row.Uid)then table.insert(pinned,row.Uid)end end
+   R.Check(#pinned==0,S.PinnedMessage(p,pinned))
   end
   R.Check(#rows>0,'No items selected')
   for _,row in ipairs(rows)do
@@ -95,6 +112,7 @@ function S.Request(player,action,a,receipt)
    local total=0
    for _,row in ipairs(quote.Rows)do
     R.Check(S.CanSell(p,row.Uid),'Item no longer exists')
+    R.Check(not S.Pinned(p,row.Uid),S.PinnedMessage(p,{row.Uid}))
     local x=I.Get(p,row.Uid,false);local price=Value.Price(x)
     R.Check(price==row.Price,'Find changed; request a new appraisal')
     total+=price;p.Items[row.Uid]=nil
@@ -112,6 +130,22 @@ function S.TryOpen(player,yard,target,page)
  if not rt.Ready(player)or not Access.CanUse(player,yard,target)or not rt.Allow(player,1)then return false end
  RS.DogEconomyOpen:FireClient(player,page);return true
 end
+-- MY BEST FINDS walk-up spot: an invisible anchor at the front of the stand and the zone in
+-- front of it (PlotInteractionAccess). Both are yard children, so stage / skin rebuilds of the
+-- stand (PlotAppearance.Apply) never remove the owner's EDIT SHOWCASE prompt.
+function S.ShowcaseAnchor(yard)
+ local anchor=yard:FindFirstChild('ShowcaseAnchor')
+ if anchor then return anchor end
+ local f,sx=require(script.Parent.PlotDecorWorld).Frame(yard)
+ if not f then return nil end
+ local cf=require(RS.PlotAppearance).ShowcaseFrame(f,sx)
+ local function part(name,size,at)
+  local p=Instance.new('Part');p.Name=name;p.Size=size;p.CFrame=at;p.Transparency=1;p.Anchored=true
+  p.CanCollide=false;p.CanTouch=false;p.CanQuery=false;p.CastShadow=false;p.Parent=yard;return p
+ end
+ part('ShowcaseInteractionZone',Vector3.new(27,10,16),cf*CFrame.new(0,4,-3))
+ return part('ShowcaseAnchor',Vector3.one,cf*CFrame.new(0,3,-6.2))
+end
 function S.Start()
  require(script.Parent.PlotShowcase).Start()
  local function prompt(yard,target,title,page,action)
@@ -119,15 +153,18 @@ function S.Start()
   local p=Instance.new('ProximityPrompt');p.Name='YardInteraction';p.ActionText=action;p.ObjectText=title
   p.MaxActivationDistance=Access.Distance;p.RequiresLineOfSight=true;p.HoldDuration=.15;p.Parent=target
   p.Triggered:Connect(function(player)S.TryOpen(player,yard,target,page)end)
+  return p
  end
  for _,yard in workspace.DOGROTS_District['04_PlayerYards']:GetChildren()do if yard:GetAttribute('YardId')then
   prompt(yard,yard:FindFirstChild('SellAnchor'),'SELL · YOUR FINDS','Collector','SELL FINDS')
-  -- The yard workshop opens the UPGRADE TREE (its sign is relabelled to match).
-  prompt(yard,yard:FindFirstChild('UpgradeAnchor'),'UPGRADE TREE','UpgradeTree','OPEN UPGRADES')
+  -- The UPGRADE TREE opens from the menu only (no world button / sign in front of the mine).
   local workshop=yard:FindFirstChild('Workshop');local sign=workshop and workshop:FindFirstChild('ServiceTitle')
   local lettering=sign and sign:FindFirstChild('Lettering');local text=lettering and lettering:FindFirstChildWhichIsA('TextLabel')
   if text then text.Text='UPGRADE TREE'end
   prompt(yard,yard:FindFirstChild('StorageAnchor'),'DOG STORAGE','Storage','MANAGE DOGS')
+  -- Owner only (PlotPrompts hides YardInteraction prompts outside the owner's zone); E / ButtonX.
+  local edit=prompt(yard,S.ShowcaseAnchor(yard),'MY BEST FINDS','Showcase','EDIT SHOWCASE')
+  if edit then edit.RequiresLineOfSight=false end
  end end
  game.Players.PlayerRemoving:Connect(function(p)S.Quotes[p.UserId]=nil end)
 end

@@ -96,7 +96,7 @@ return function(m)
  if not m:Wait(BOOM+.8)then return end
  if m:Fresh(BOOM+.8,1)then
   m:Banner('NUCLEAR PUG',{Kicker='✦   C R I T I C A L I T Y   E V E N T   ✦',Sub=m.VenueText..(m.By and ('  ·  '..string.upper(m.By))or''),
-   Font=Enum.Font.GothamBlack,Color=TOXIC,Hold=5,Shake=.15})
+   Font=Enum.Font.FredokaOne,Color=TOXIC,Hold=5,Shake=.15})
   m:Cue('Geiger',nil,.28,6)
  end
  local ash=m:FollowRain({Rate=low and 25 or 70,Texture=m.Kit.Textures.Spark,Color=ColorSequence.new(TOXIC,PALE),LightEmission=.9,LightInfluence=0,

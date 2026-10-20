@@ -5,6 +5,7 @@ local Theme = require(script.Parent.Theme)
 local Base = require(script.Parent.Base)
 local Motion = require(script.Parent.Motion)
 local Overlay = require(script.Parent.Overlay)
+local Sound = require(script.Parent.Sound)
 
 local Feedback = {}
 
@@ -12,11 +13,21 @@ local Feedback = {}
 -- Toast
 ------------------------------------------------------------------------------------------------
 local KINDS = {
-	info = { Color = Theme.Info, Glyph = "i" },
-	success = { Color = Theme.Success, Glyph = "✓" },
-	error = { Color = Theme.Danger, Glyph = "!" },
-	warn = { Color = Theme.Warning, Glyph = "!" },
+	info = { Color = Theme.Info, Glyph = "i", Sound = "Notify" },
+	success = { Color = Theme.Success, Glyph = "✓", Sound = "Success" },
+	error = { Color = Theme.Danger, Glyph = "!", Sound = "Error" },
+	warn = { Color = Theme.Warning, Glyph = "!", Sound = "Notify", Pitch = 0.85 },
 }
+
+-- The cue of a toast: opts.Sound ("Coin" for a sale, false for none), else its kind's cue.
+local function toastSound(entry: any)
+	if entry.Sound == false then
+		return
+	end
+	local kind = KINDS[entry.Kind] or KINDS.info
+	local cue = type(entry.Sound) == "string" and entry.Sound or kind.Sound
+	Sound.Play(cue, kind.Pitch and cue == kind.Sound and { Pitch = kind.Pitch } or nil)
+end
 Feedback.MaxToasts = 3
 local queue: { any } = {}
 local shown: { any } = {}
@@ -144,11 +155,13 @@ local function show(entry: any)
 	}
 	table.insert(shown, toast)
 	layoutToasts(false)
+	-- Slides in from above its slot with a small overshoot.
 	local final = frame.Position
-	frame.Position = final - UDim2.fromOffset(0, 14)
+	frame.Position = final - UDim2.fromOffset(0, TOAST_H + 18)
 	frame.BackgroundTransparency = 0.3
 	frame.Parent = gui
-	Motion.Tween(frame, Theme.Motion.Slide, { Position = final, BackgroundTransparency = 0 }, Enum.EasingStyle.Back)
+	Motion.Tween(frame, Theme.Motion.Slide + 0.06, { Position = final, BackgroundTransparency = 0 }, Enum.EasingStyle.Back)
+	toastSound(entry)
 	schedule(toast)
 end
 
@@ -167,7 +180,8 @@ end
 
 -- Shows a short notification at the top of the screen. Never blocks input. Repeating the text
 -- of a visible toast bumps its counter ("×2") instead of stacking.
--- opts: Kind "info" | "success" | "error" | "warn", Duration seconds (2.6), NoTranslate.
+-- opts: Kind "info" | "success" | "error" | "warn", Duration seconds (2.6), NoTranslate,
+-- Sound (a Kit.Sound cue instead of the kind's cue, or false for a silent toast).
 function Feedback.Toast(text: string, opts: any?)
 	local o: any = opts or {}
 	local duration = o.Duration or 2.6
@@ -177,6 +191,13 @@ function Feedback.Toast(text: string, opts: any?)
 			toast.CountLabel.Text = "×" .. toast.Count
 			toast.Duration = duration
 			schedule(toast)
+			toastSound({ Kind = o.Kind or "info", Sound = o.Sound })
+			-- A small pop on the repeated toast.
+			if not Motion.Reduced() then
+				local pop = toast.Frame:FindFirstChild("KitPop") or Base.New("UIScale", { Name = "KitPop" }, toast.Frame)
+				pop.Scale = 1.05
+				Motion.Tween(pop, Theme.Motion.Fast, { Scale = 1 })
+			end
 			return
 		end
 	end
@@ -185,7 +206,7 @@ function Feedback.Toast(text: string, opts: any?)
 			return
 		end
 	end
-	table.insert(queue, { Text = text, Kind = o.Kind or "info", Duration = duration, NoTranslate = o.NoTranslate })
+	table.insert(queue, { Text = text, Kind = o.Kind or "info", Duration = duration, NoTranslate = o.NoTranslate, Sound = o.Sound })
 	pump()
 end
 

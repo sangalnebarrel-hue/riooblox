@@ -104,6 +104,96 @@ local function mutate(action,args,kind)
   end
  end)
 end
+-- Prestige button lives in the mine layer picker (MINE ELEVATOR), not on the HUD.
+local playerGui=player:WaitForChild('PlayerGui')
+local prestigeQuickButton=playerGui:FindFirstChild('PrestigeQuickButton',true) or gui:FindFirstChild('PrestigeQuickButton')
+if not prestigeQuickButton then
+ prestigeQuickButton=Instance.new('TextButton')
+ prestigeQuickButton.Name='PrestigeQuickButton'
+ prestigeQuickButton.BackgroundColor3=Color3.fromRGB(235,174,52)
+ prestigeQuickButton.BorderSizePixel=0
+ prestigeQuickButton.AutoButtonColor=true
+ prestigeQuickButton.Font=Enum.Font.GothamBold
+ prestigeQuickButton.Text='👑  PRESTIGE'
+ prestigeQuickButton.TextColor3=Color3.fromRGB(34,27,12)
+ prestigeQuickButton.TextSize=17
+ prestigeQuickButton.ZIndex=70
+ prestigeQuickButton.Parent=gui
+ local pc=Instance.new('UICorner');pc.CornerRadius=UDim.new(0,12);pc.Parent=prestigeQuickButton
+ local ps=Instance.new('UIStroke');ps.Color=Color3.fromRGB(255,222,128);ps.Thickness=1.5;ps.Parent=prestigeQuickButton
+end
+prestigeQuickButton.Visible=false
+local function movePrestigeToLayerPicker()
+ if not playerGui then return false end
+ for _,candidate in ipairs(playerGui:GetDescendants()) do
+  if candidate:IsA('ScrollingFrame') and candidate.Name=='Depths' then
+   prestigeQuickButton.Parent=candidate
+   prestigeQuickButton.AnchorPoint=Vector2.new(0,0)
+   prestigeQuickButton.Position=UDim2.new(0,4,0,0)
+   prestigeQuickButton.Size=UDim2.new(1,-8,0,44)
+   prestigeQuickButton.LayoutOrder=-1
+   prestigeQuickButton.Visible=true
+   return true
+  end
+ end
+ return false
+end
+movePrestigeToLayerPicker()
+playerGui.DescendantAdded:Connect(function(obj)
+ if obj:IsA('ScrollingFrame') and obj.Name=='Depths' then
+  task.defer(movePrestigeToLayerPicker)
+ end
+end)
+local function openPrestigeConfirmation()
+ local layerGui=prestigeQuickButton:FindFirstAncestorWhichIsA('ScreenGui') or gui
+ if layerGui:FindFirstChild('PrestigeConfirmation') then return end
+ local overlay=Instance.new('Frame')
+ overlay.Name='PrestigeConfirmation'
+ overlay.Size=UDim2.fromScale(1,1)
+ overlay.Position=UDim2.fromScale(0,0)
+ overlay.BackgroundColor3=Color3.fromRGB(8,12,22)
+ overlay.BackgroundTransparency=0.30
+ overlay.BorderSizePixel=0
+ overlay.Active=true
+ overlay.ZIndex=100
+ overlay.Parent=layerGui
+ local panel=Instance.new('Frame')
+ panel.Name='Dialog'
+ panel.AnchorPoint=Vector2.new(.5,.5)
+ panel.Position=UDim2.fromScale(.5,.5)
+ panel.Size=UDim2.new(.9,0,0,286)
+ panel.BackgroundColor3=Color3.fromRGB(25,31,47)
+ panel.BorderSizePixel=0
+ panel.ZIndex=101
+ panel.Parent=overlay
+ local limit=Instance.new('UISizeConstraint');limit.MaxSize=Vector2.new(460,286);limit.Parent=panel
+ local corner=Instance.new('UICorner');corner.CornerRadius=UDim.new(0,16);corner.Parent=panel
+ local stroke=Instance.new('UIStroke');stroke.Color=Color3.fromRGB(236,182,65);stroke.Thickness=2;stroke.Parent=panel
+ local title=Instance.new('TextLabel')
+ title.Name='Title';title.BackgroundTransparency=1;title.Position=UDim2.new(0,16,0,12);title.Size=UDim2.new(1,-32,0,36)
+ title.Font=Enum.Font.GothamBold;title.Text='CONFIRM PRESTIGE';title.TextColor3=Color3.fromRGB(255,211,104);title.TextSize=22;title.ZIndex=102;title.Parent=panel
+ local details=Instance.new('TextLabel')
+ details.Name='Details';details.BackgroundTransparency=1;details.Position=UDim2.new(0,20,0,55);details.Size=UDim2.new(1,-40,0,152)
+ details.Font=Enum.Font.Gotham;details.Text= 'Requires Level '..tostring(config.PrestigeLevel or 35)..' and Corrupted Depths (Layer 4).\n\nBase price: '..format(config.PrestigeBaseCost or 12000000)..' Cash × (current Prestige + 1).\n\nYour level resets to 1 and you return to Layer 1. You receive 100 Bones; dogs, unlocked layers and permanent upgrades stay.'
+ details.TextColor3=Color3.fromRGB(235,239,248);details.TextSize=15;details.TextWrapped=true;details.TextYAlignment=Enum.TextYAlignment.Top;details.ZIndex=102;details.Parent=panel
+ local cancel=Instance.new('TextButton')
+ cancel.Name='Cancel';cancel.Position=UDim2.new(.05,0,1,-58);cancel.Size=UDim2.new(.41,0,0,42);cancel.BackgroundColor3=Color3.fromRGB(67,77,96);cancel.BorderSizePixel=0
+ cancel.Font=Enum.Font.GothamBold;cancel.Text='CANCEL';cancel.TextColor3=Color3.new(1,1,1);cancel.TextSize=15;cancel.ZIndex=102;cancel.Parent=panel
+ local cc=Instance.new('UICorner');cc.CornerRadius=UDim.new(0,9);cc.Parent=cancel
+ local confirm=Instance.new('TextButton')
+ confirm.Name='Confirm';confirm.Position=UDim2.new(.54,0,1,-58);confirm.Size=UDim2.new(.41,0,0,42);confirm.BackgroundColor3=Color3.fromRGB(235,174,52);confirm.BorderSizePixel=0
+ confirm.Font=Enum.Font.GothamBold;confirm.Text='CONFIRM';confirm.TextColor3=Color3.fromRGB(34,27,12);confirm.TextSize=15;confirm.ZIndex=102;confirm.Parent=panel
+ local fc=Instance.new('UICorner');fc.CornerRadius=UDim.new(0,9);fc.Parent=confirm
+ cancel.Activated:Connect(function()overlay:Destroy()end)
+ confirm.Activated:Connect(function()
+  if busy then return end
+  confirm.Active=false;confirm.Text='WORKING...'
+  overlay:Destroy()
+  mutate('Prestige',{},nil)
+ end)
+end
+prestigeQuickButton.Activated:Connect(openPrestigeConfirmation)
+
 -- DOG TRAINING and ESTATE UPGRADES moved into the UPGRADE TREE (Modules.UpgradeTreeScreen): every
 -- old way into them (yard workshop prompt, MY YARD button, Paw Market terminal, help links) opens
 -- the tree, where purchases work anywhere and show their level gate.
@@ -142,7 +232,7 @@ updateSeller=function()
  for _,card in ipairs(gridCards)do
   local on=sellerSelection[card.Key]==true
   local stroke=card.Frame.Main:FindFirstChild('BorderStroke')
-  if stroke then stroke.Color=on and U.accent or gui.MainWindow.Content.PageContainer.YardPage.LatestFoundCard.Main.BorderStroke.Color end
+  if stroke then stroke.Color=on and U.select or gui.MainWindow.Content.PageContainer.YardPage.LatestFoundCard.Main.BorderStroke.Color;stroke.Thickness=on and 4 or 2 end
   local mark=card.Frame.Main:FindFirstChild('SelectionMark')
   if mark then mark.Text=on and'✓ SELECTED'or'□ SELECT';mark.TextColor3=on and U.accent or U.muted end
  end
@@ -190,7 +280,7 @@ selectRow=function(row)
  end
  for _,c in ipairs(gridCards)do
   local border=c.Frame.Main:FindFirstChild('BorderStroke')
-  if border then border.Color=row and c.Key==selected and U.accent or gui.MainWindow.Content.PageContainer.YardPage.LatestFoundCard.Main.BorderStroke.Color end
+  if border then local on=row and c.Key==selected;border.Color=on and U.select or gui.MainWindow.Content.PageContainer.YardPage.LatestFoundCard.Main.BorderStroke.Color;border.Thickness=on and 4 or 2 end
  end
  if mode=='Seller'then updateSeller()end
 end
@@ -282,6 +372,14 @@ ui.Kennels.Action.Activated:Connect(function()
 end)
 open=function(name,context)
  if treePages[name] then UpgradeTree.Open(name=='Estate'and'Plot'or nil);return end
+ -- KENNELS: the kit dog picker (Modules.KennelScreen): rarity ribbons, mutation auras, one action button.
+ -- The legacy ASSIGN DOG panel below stays as the fallback if the window cannot open.
+ if name=='Kennels' then
+  if not context or context.YardId~=player:GetAttribute('YardId') then return end
+  local ok,err=pcall(function()require(assert(gui.Modules:FindFirstChild('KennelScreen'),'Modules.KennelScreen is missing')).Open(context)end)
+  if ok then return end
+  warn('DOGROTS kennel window: '..tostring(err))
+ end
  if pending then mutate(pending.Action,pending.Args,pending.Kind);return end
  if name=='Kennels' and (not context or context.YardId~=player:GetAttribute('YardId')) then return end
  for _,service in ipairs({'Seller','Kennels'})do ui[service].Scroll.CanvasPosition=Vector2.zero end
@@ -289,6 +387,9 @@ open=function(name,context)
  viewToken+=1;mode=name;selected=nil;quote=nil;kennelContext=context;snapshot=nil;table.clear(sellerSelection)
  clearGrid();ui.Status.Text='Loading saved data...'
  ui.Title.Text=({Layers='DIGGING LAYERS',Seller='SELL FINDS',Kennels='ASSIGN DOG'})[name]
+ -- Kit header colour + icon per service (Layers: dig blue, Seller: coin gold, Kennels: dog orange).
+ local look=({Layers={Color3.fromRGB(38,164,243),'Dig'},Seller={Color3.fromRGB(249,180,35),'Coins'},Kennels={Color3.fromRGB(255,169,38),'Dogs'}})[name]
+ if look and ui.SetAccent then ui.SetAccent(look[1],look[2])end
  navigation:Fire('Service',name)
  if ui[name] and ui[name].Grid then ui[name].Empty.Visible=true;ui[name].Empty.Text='Loading...';selectRow(nil) end
  task.spawn(function()refresh(true);if active() and snapshot then status('')end end)

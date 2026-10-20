@@ -836,6 +836,7 @@ end
 
 ---------------------------------------------------------------- start
 local function startStage(m:Model,uid:string,isLocal:boolean,startAt:number,length:number)
+ if m:GetAttribute('LuckyShowStyle')then return nil end -- event blocks (pumpkins): StarterPlayerScripts.PumpkinBlockFX
  local pivot=m:GetPivot()
  if cameraDistance(pivot.Position)>NEAR then return nil end
  local scale=m:GetScale()
@@ -1020,6 +1021,7 @@ Run.Heartbeat:Connect(function(dt)
     text.Text=predicted and 'OPENING…'or state=='Carried'and 'CARRY TO YOUR YARD'or state=='Opened'and 'GOOD FIND!'or m:GetAttribute('OpenMessage')
      or(state=='Ready'or ready and ready<=t)and 'READY · PRESS E TO OPEN'or('PREPARING · '..math.max(0,math.ceil((ready or t)-t))..'s')
    end
+   if m:GetAttribute('LuckyShowStyle')then clearCracks(row);return end -- pumpkins: PumpkinBlockFX owns the progress look
    if stages[uid]then clearCracks(row);return end -- the opening show owns this block
    local pivot=m:GetPivot()
    local near=(camera.CFrame.Position-pivot.Position).Magnitude<PROGRESS_NEAR

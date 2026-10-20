@@ -1,7 +1,37 @@
 -- Physical representatives of the same configured reward types shown by the server.
 local V={};local RS=game:GetService('ReplicatedStorage')
+-- NIGHT OF THE BURIED MOON reward rows (Pumpkin Lucky Blocks, cauldron, quests): decorations, pickaxe skins,
+-- candy and event-mutated finds. nil when the art module is missing (callers fall back to the name).
+local function eventArt(row)
+ if row.Kind=='Decor'then
+  local folder=RS:FindFirstChild('Decor');local module=folder and folder:FindFirstChild('DecorModels')
+  return module and require(module).Get(row.Id)or nil
+ elseif row.Kind=='Skin'then
+  local folder=RS:FindFirstChild('Halloween');local module=folder and folder:FindFirstChild('PickaxeSkins')
+  if not module then return nil end
+  local Skins=require(module);return Skins.Build and Skins.Build(row.Id)or nil
+ elseif row.Kind=='Candy'then
+  local folder=RS:FindFirstChild('Halloween');local models=folder and folder:FindFirstChild('Models');local module=models and models:FindFirstChild('Pumpkin')
+  if not module then return nil end
+  local P=require(module);local m=Instance.new('Model');m.Name='CandyPile'
+  for i,col in ipairs({Color3.fromRGB(255,128,24),Color3.fromRGB(122,62,200),Color3.fromRGB(120,255,110),Color3.fromRGB(255,80,120)})do
+   local candy=P.Candy(col);candy:PivotTo(CFrame.new((i-2.5)*.9,math.abs(i-2.5)*-.3+.6,(i%2)*.5)*CFrame.Angles(0,i*.9,(i%2)*.4));candy.Parent=m
+   if not m.PrimaryPart then m.PrimaryPart=candy.PrimaryPart end
+  end
+  return m
+ elseif row.Kind=='Mutation'and type(row.Item)=='table'then
+  return require(RS.DogEconomy.DiscoveryVisuals).Clone(row.Item)
+ end
+ return nil
+end
 function V.Build(row)
- if row.Kind=='Item'then local source=RS.DiscoveryModels:FindFirstChild(row.Id);return source and source:Clone()end
+ -- Finds use the same model as everywhere else (DiscoveryVisuals: recipe model or the old one).
+ if row.Kind=='Item'then return require(RS.DogEconomy.DiscoveryVisuals).Clone({ItemId=row.Id,Mutation=row.Mutation or'NORMAL'})end
+ if row.Kind=='Decor'or row.Kind=='Skin'or row.Kind=='Candy'or row.Kind=='Mutation'then
+  local ok,model=pcall(eventArt,row)
+  if ok and model then return model end
+  if row.Kind~='Candy'then return nil end
+ end
  local model=Instance.new('Model');model.Name=row.Name or row.Kind or 'Reward'
  local function part(name,size,pos,color,shape)
   local p=Instance.new('Part');p.Name=name;p.Size=size;p.Position=pos;p.Color=color;p.Material=Enum.Material.SmoothPlastic;p.Anchored=true;p.CanCollide=false;p.CanTouch=false;p.CanQuery=false;p.Parent=model
@@ -17,7 +47,7 @@ function V.Build(row)
   local pack=part('EnergySnack',Vector3.new(2.8,3.5,1.3),Vector3.new(0,1,0),Color3.fromRGB(202,129,52))
   part('GoldSeal',Vector3.new(2.9,.4,1.4),Vector3.new(0,2.9,0),Color3.fromRGB(251,210,100))
   local g=Instance.new('SurfaceGui');g.Face=Enum.NormalId.Front;g.CanvasSize=Vector2.new(220,180);g.LightInfluence=0;g.Parent=pack
-  local text=Instance.new('TextLabel');text.Size=UDim2.fromScale(1,1);text.BackgroundTransparency=1;text.Text='ENERGY\nSNACK';text.TextScaled=true;text.Font=Enum.Font.GothamBold;text.TextColor3=Color3.fromRGB(65,43,30);text.Parent=g
+  local text=Instance.new('TextLabel');text.Size=UDim2.fromScale(1,1);text.BackgroundTransparency=1;text.Text='ENERGY\nSNACK';text.TextScaled=true;text.Font=Enum.Font.FredokaOne;text.TextColor3=Color3.fromRGB(65,43,30);text.Parent=g
  else model:Destroy();return nil end
  return model
 end

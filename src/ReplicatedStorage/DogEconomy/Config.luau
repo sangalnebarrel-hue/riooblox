@@ -113,7 +113,7 @@ C.LuckItemBoost=.4
 C.ServerLuck={Ranks={4,5,6},MaxSeconds=7200}
 C.Cosmetics={GoldenKennel={Cash=50000},CyberKennel={Cash=250000},VoidAura={Cash=1000000,Bones=100},FounderPlaque={Cash=100000}}
 -- Levels are now real progression gates instead of a cosmetic counter.
-C.MaxLevel=50
+C.MaxLevel=1000
 function C.XPForLevel(level)
  level=math.clamp(math.floor(tonumber(level)or 1),1,C.MaxLevel)
  if level<=1 then return 0 end

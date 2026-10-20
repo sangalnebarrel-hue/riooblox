@@ -1,5 +1,8 @@
--- The genetics terminal prompt (created by Economy.LabService) shows only where the lab really works
--- (LabAccess: inside the lab, near the terminal, in line of sight), and speaks the player's language.
+-- The lab prompt (created by Economy.LabService: START MUTATION at the nuclear tower's console, or the old
+-- genetics terminal when LabConfig.SimpleMode is off) shows only where the lab really works (LabAccess:
+-- inside the lab, near the console, in line of sight), and speaks the player's language.
+-- It also starts the machine's client side (Modules.LabPresentation.StartWorld: idle motion near the
+-- machine and the short public effect when another player mutates a dog).
 local player=game.Players.LocalPlayer;local Access=require(game.ReplicatedStorage.LabAccess)
 local Localization=game:GetService('LocalizationService')
 local function russian()
@@ -16,7 +19,20 @@ game:GetService('RunService').Heartbeat:Connect(function(dt)
  if prompt then
   prompt.Enabled=Access.CanUse(player)
   if russian()and prompt:GetAttribute('Localized')~=true then
-   prompt.ActionText='ИСПОЛЬЗОВАТЬ ЛАБОРАТОРИЮ';prompt.ObjectText='ГЕНЕТИЧЕСКИЙ ТЕРМИНАЛ';prompt:SetAttribute('Localized',true)
+   if prompt:GetAttribute('Simple')then prompt.ActionText='ЗАПУСК МУТАЦИИ';prompt.ObjectText='ЯДЕРНЫЙ ПУЛЬТ'
+   else prompt.ActionText='ИСПОЛЬЗОВАТЬ ЛАБОРАТОРИЮ';prompt.ObjectText='ГЕНЕТИЧЕСКИЙ ТЕРМИНАЛ'end
+   prompt:SetAttribute('Localized',true)
   end
+ end
+end)
+task.spawn(function()
+ local gui=player:WaitForChild('PlayerGui'):WaitForChild('ScreenGui',60)
+ local modules=gui and gui:WaitForChild('Modules',60)
+ local module=modules and modules:WaitForChild('LabPresentation',60)
+ if not module then return end
+ local ok,presentation=pcall(require,module)
+ if ok and type(presentation)=='table'and presentation.StartWorld then
+  local started,err=pcall(presentation.StartWorld)
+  if not started then warn('Mutation machine FX: '..tostring(err))end
  end
 end)

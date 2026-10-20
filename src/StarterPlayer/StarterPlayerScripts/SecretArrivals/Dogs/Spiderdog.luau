@@ -28,7 +28,7 @@ local function smooth(x)x=math.clamp(x,0,1);return x*x*(3-2*x)end
 local function sine(x)x=math.clamp(x,0,1);return .5-.5*math.cos(x*math.pi)end
 
 return function(ctx)
- ctx.WhisperStyle={Font=Enum.Font.Creepster,Color=C(246,238,230),Glitch=0,Chroma=false,Shake=true,Type=.038}
+ ctx.WhisperStyle={Font=Enum.Font.FredokaOne,Color=C(246,238,230),Glitch=0,Chroma=false,Shake=true,Type=.038}
  local Kit,scope,model,config=ctx.Kit,ctx.Scope,ctx.Model,ctx.Config
  local low,calm,origin,hold=ctx.Low,Kit.ReducedMotion(),ctx.Origin,config.Hold
  local ORANGE=config.Color
@@ -474,7 +474,7 @@ return function(ctx)
    end
   else switch(o,true,.3)end
  end
- ctx:Title({Font=Enum.Font.Creepster})
+ ctx:Title({Font=Enum.Font.FredokaOne})
 
  -- 2.9: Ability_MultiDig. Dirt flies off each paw in turn, every 0.1 s; on the first
  -- round each leg lights the nearest dark rune on its side, up a creepy ladder.

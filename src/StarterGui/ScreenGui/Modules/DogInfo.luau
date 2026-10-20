@@ -30,11 +30,20 @@ function Info.RarityRank(name: any): number
 	return RARITY_RANK[name] or 0
 end
 
--- Every species of the catalogue in Dogdex order (#1 ... #100, then the bonus dogs).
+-- Every species of the catalogue in Dogdex order (#1 ... #100, then the bonus dogs). Event dogs (def.EventDex) are not
+-- part of COLLECTION: they live in their own event dex (Info.EventSpecies[eventDex], ordered by EventIndex).
 Info.Species = {}
 Info.MuseumTotal = 0
+Info.EventSpecies = {}
 for _, def in pairs(Defs) do
-	if type(def) == "table" and def.Id and def.Rank and not def.Reserved then
+	if type(def) == "table" and def.Id and def.Rank and not def.Reserved and def.EventDex then
+		local list = Info.EventSpecies[def.EventDex]
+		if not list then
+			list = {}
+			Info.EventSpecies[def.EventDex] = list
+		end
+		table.insert(list, def)
+	elseif type(def) == "table" and def.Id and def.Rank and not def.Reserved then
 		table.insert(Info.Species, def)
 		if not def.MuseumExcluded and (def.Index or 0) >= 1 and (def.Index or 0) <= 100 then
 			Info.MuseumTotal += 1
@@ -48,6 +57,12 @@ table.sort(Info.Species, function(a, b)
 	end
 	return (a.Index or 0) < (b.Index or 0)
 end)
+
+for _, list in pairs(Info.EventSpecies) do
+	table.sort(list, function(a, b)
+		return (a.EventIndex or a.Index or 0) < (b.EventIndex or b.Index or 0)
+	end)
+end
 
 -- Lower case for search, Cyrillic included (string.lower only folds ASCII).
 function Info.Fold(s: any): string
@@ -314,6 +329,9 @@ function Info.Sources(def: any): { any }
 			table.insert(out, { Key = "Lucky", Tiers = tiers })
 		end
 	end
+	if def.Acquisition == "Event" then
+		table.insert(out, { Key = "Event", Event = def.EventDex, Places = Info.EventSources(def) })
+	end
 	if def.Jackpot or (def.Acquisition == "RouletteOnly") then
 		table.insert(out, { Key = "Jackpot" })
 	elseif def.CanDropFromRoulette == true then
@@ -324,7 +342,8 @@ function Info.Sources(def: any): { any }
 end
 
 -- Dogdex grid entries. dex: snapshot.Features.Dogdex (may be nil); names: DogId -> display name.
-function Info.SpeciesEntries(profile: any, dex: any, names: any): { any }
+-- list (optional): the species to describe (default Info.Species; an event dex passes Info.EventSpecies[id]).
+function Info.SpeciesEntries(profile: any, dex: any, names: any, list: { any }?): { any }
 	local owned, best = {}, {}
 	for _, d in pairs(profile and profile.Dogs or {}) do
 		if type(d) == "table" and d.DogId then
@@ -336,7 +355,7 @@ function Info.SpeciesEntries(profile: any, dex: any, names: any): { any }
 	local favorites = profile and profile.DexFavorites or {}
 	local stats = dex and dex.DexStats or {}
 	local out = {}
-	for _, def in ipairs(Info.Species) do
+	for _, def in ipairs(list or Info.Species) do
 		local name = (names and names[def.Id]) or def.DisplayName
 		local found = known[def.Id] == true
 		table.insert(out, {
@@ -484,6 +503,109 @@ function Info.RewardRows(dex: any, profile: any): ({ any }, number)
 			Coins = s and tonumber(s.Coins) or nil,
 			Missing = math.max(0, tier.Count - count),
 		})
+	end
+	return rows, count
+end
+
+------------------------------------------------------------------------------------------------
+-- Event dex (NIGHT OF THE BURIED MOON: "BuriedMoon2026"). Rewards come from ReplicatedStorage.Halloween.Config
+-- (DexRewards) and their claims from snapshot.Features.Halloween.DexClaims (a separate ledger from p.DexClaims).
+------------------------------------------------------------------------------------------------
+local halloween = nil
+function Info.HalloweenConfig(): any
+	if halloween then
+		return halloween
+	end
+	local ok, res = pcall(function()
+		local folder = RS:FindFirstChild("Halloween")
+		local module = folder and folder:FindFirstChild("Config")
+		return module and require(module) or nil
+	end)
+	-- not cached while missing (it may still be replicating)
+	halloween = ok and type(res) == "table" and res or nil
+	return halloween
+end
+
+-- Is the event running (config flag confirmed by RS.Halloween.State.Enabled)?
+function Info.EventLive(): boolean
+	local cfg = Info.HalloweenConfig()
+	if not cfg or not cfg.HalloweenEventEnabled then
+		return false
+	end
+	local folder = RS:FindFirstChild("Halloween")
+	local state = folder and folder:FindFirstChild("State")
+	local v = state and state:GetAttribute("Enabled")
+	return v == nil or v == true
+end
+
+-- Discovered species of an event dex.
+function Info.EventCount(profile: any, eventId: string): number
+	local n = 0
+	local known = profile and profile.DogDex or {}
+	for _, def in ipairs(Info.EventSpecies[eventId] or {}) do
+		if known[def.Id] == true then
+			n += 1
+		end
+	end
+	return n
+end
+
+function Info.EventTotal(eventId: string): number
+	return #(Info.EventSpecies[eventId] or {})
+end
+
+-- Where an event dog drops during the event: "Pumpkin" / "CursedPumpkin" (Lucky Blocks), "Cauldron" (TREAT brew), "Boss".
+function Info.EventSources(def: any): { string }
+	local out = {}
+	local cfg = Info.HalloweenConfig()
+	if not cfg or type(def) ~= "table" then
+		return out
+	end
+	local rewards = cfg.Rewards or {}
+	local function has(rows)
+		for _, row in ipairs(rows or {}) do
+			if row.Kind == "Dog" and row.Id == def.Id then
+				return true
+			end
+		end
+		return false
+	end
+	if has(rewards.Pumpkin) then
+		table.insert(out, "Pumpkin")
+	end
+	if has(rewards.CursedPumpkin) then
+		table.insert(out, "CursedPumpkin")
+	end
+	for _, level in ipairs(cfg.Cauldron and cfg.Cauldron.Levels or {}) do
+		if has(rewards[level.Table]) then
+			table.insert(out, "Cauldron")
+			break
+		end
+	end
+	if table.find(cfg.Boss and cfg.Boss.EventDogs or {}, def.Id) then
+		table.insert(out, "Boss")
+	end
+	return out
+end
+
+-- Event reward track: {Tier, Count, State = "claimed" | "ready" | "locked" | "over", Missing}.
+-- view: snapshot.Features.Halloween (DexClaims); claims made while the event ran stay claimed afterwards.
+function Info.EventRewardRows(view: any, profile: any, eventId: string): ({ any }, number)
+	local cfg = Info.HalloweenConfig()
+	local count = Info.EventCount(profile, eventId)
+	local claims = type(view) == "table" and type(view.DexClaims) == "table" and view.DexClaims or {}
+	local live = Info.EventLive()
+	local rows = {}
+	for _, tier in ipairs(cfg and cfg.DexRewards or {}) do
+		local state
+		if claims[tostring(tier.Count)] == true then
+			state = "claimed"
+		elseif count >= tier.Count then
+			state = live and "ready" or "over"
+		else
+			state = live and "locked" or "over"
+		end
+		table.insert(rows, { Tier = tier, Count = tier.Count, State = state, Missing = math.max(0, tier.Count - count) })
 	end
 	return rows, count
 end

@@ -1,8 +1,10 @@
 local Epic=require(script.Parent.WorldEventSpectacle)
 local Cataclysm=require(script.Parent.WorldEventCataclysm)
+-- DOG RUSH: packs of dogs running along real streets, in world space (not around the player).
+local Stampede=require(script.Parent.WorldEventStampede)
 local RS=game:GetService('ReplicatedStorage');local Players=game:GetService('Players');local Run=game:GetService('RunService')
 local V=require(script.Parent.WorldEventObjects);local Route=require(RS.MapRouting);local Audio=require(script.Parent.WorldEventAudio)
-local F={Token=0};local root;local models={};local rain={};local beams={};local dogs={};local def;local budget;local elapsed=0;local ending;local signatureUntil=0;local connections={}
+local F={Token=0};local root;local models={};local rain={};local beams={};local def;local budget;local eventState;local elapsed=0;local ending;local signatureUntil=0;local connections={}
 local C=Color3.fromRGB
 local function digSiteOpen()
  local config=RS:FindFirstChild('GlobalDigConfig')
@@ -136,27 +138,12 @@ local function setup()
  elseif def.ParticleProfile=='Debris'or def.ParticleProfile=='Crystals'then
   for i=1,budget.Debris do local p=part(root,'AirDebris',Vector3.zero,Vector3.new(.5,.7,.5),color,def.ParticleProfile=='Crystals');table.insert(rain,{Part=p,Index=i,Kind='Stone'})end
  end
- if def.WorldProps=='DogCrowd'then
-  -- A pack of real dogs runs past the player along both sides of their view.
-  local templates=RS:FindFirstChild('MenuModels');local names={'Breadog','CoffeeDog','DJDoggo','Vampug','AngelDoggo','Sausagedog'}
-  local count=math.min(budget.Dogs,10)
-  local animModule=RS:FindFirstChild('DogAnimationPlayer');local okPlayer,Animator=false,nil
-  if animModule then okPlayer,Animator=pcall(require,animModule)end
-  if templates and okPlayer then for i=1,count do local name=names[(i-1)%#names+1];local template=templates:FindFirstChild(name);if template then
-   local m=template:Clone()
-   for _,p in ipairs(m:GetDescendants())do if p:IsA('BasePart')then p.Anchored=true;p.CanCollide=false;p.CanTouch=false;p.CanQuery=false;p.CastShadow=false elseif p:IsA('BaseScript')or p:IsA('ProximityPrompt')or p:IsA('BillboardGui')then p:Destroy()end end
-   if not m:GetAttribute('AnimationBaseScale')then m:SetAttribute('AnimationBaseScale',m:GetScale())end
-   local _,size=m:GetBoundingBox();m:ScaleTo(m:GetScale()*math.min(4.4/size.Y,5.5/size.X));m.Parent=root
-   local box,extents=m:GetBoundingBox();local foot=m:GetPivot():PointToObjectSpace(box.Position-Vector3.new(0,extents.Y/2,0))
-   local anim=Animator.new(m,name);anim:Play('Walk',{Looped=true,Speed=1.7,StartTime=workspace:GetServerTimeNow()-i*.37})
-   local parts={};for _,p in ipairs(m:GetDescendants())do if p:IsA('BasePart')then table.insert(parts,p)end end
-   table.insert(dogs,{Model=m,Index=i,Animation=anim,Foot=foot,Parts=parts,Side=i%2==0 and 1 or -1})
-  end end end
- end
+ if def.WorldProps=='Stampede'then Stampede.Begin(def,eventState,budget)end
 end
 function F.Signature(duration)
  Cataclysm.Signature()
  Epic.Signature(duration)
+ Stampede.Surge(duration)
  signatureUntil=os.clock()+duration;Audio.Cue('rare',origin('GlobalDigSite'));F.ShakeUntil=os.clock()+math.min(duration,2)
  if def and def.WorldProps=='CrystalStrike'then
   local base=origin('GlobalDigSite');local strike=Instance.new('Folder');strike.Name='ChargedLightning';strike.Parent=root
@@ -170,14 +157,13 @@ function F.Signature(duration)
  end
 end
 function F.Begin(event,state,quality)
- F.Stop();F.Token+=1;def=event;budget=quality;ending=nil;F.StartedAt=os.clock();F.State=state
+ F.Stop();F.Token+=1;def=event;budget=quality;ending=nil;F.StartedAt=os.clock();F.State=state;eventState=state
  root=workspace:FindFirstChild('WorldEventClientFX')or Instance.new('Folder');root.Name='WorldEventClientFX';root.Parent=workspace
  local cam=workspace.CurrentCamera;local look=cam and cam.CFrame.LookVector or Vector3.new(0,0,-1)
  look=Vector3.new(look.X,0,look.Z);if look.Magnitude<.1 then look=Vector3.new(0,0,-1)end;F.Heading=look.Unit
  setup();Epic.Begin(event,state,quality);Cataclysm.Begin(event,state,quality)
- -- Running dogs fade on their own loop; keep them out of the shared arrival fade.
- local dogParts={};for _,d in ipairs(dogs)do for _,p in ipairs(d.Parts)do dogParts[p]=true end end
- F.Visuals={};for _,p in ipairs(root:GetDescendants())do if p:IsA('BasePart')and not dogParts[p]then table.insert(F.Visuals,p)end end
+ -- The stampede (its own folder) fades on its own loop; only this root joins the shared arrival fade.
+ F.Visuals={};for _,p in ipairs(root:GetDescendants())do if p:IsA('BasePart')then table.insert(F.Visuals,p)end end
  F.LastSpecial=os.clock();F.Shadow=nil
  if def.Id=='UFO_INVASION'then F.Shadow=V.Ellipsoid(root,'ArrivalShadow',Vector3.new(30,.05,30),CFrame.new(origin('GlobalDigSite')+Vector3.new(-90,.6,0)),C(28,37,33),Enum.Material.SmoothPlastic);F.Shadow.Transparency=.65 end
  table.insert(connections,Run.Heartbeat:Connect(function(dt)
@@ -256,27 +242,6 @@ function F.Begin(event,state,quality)
   end
   if os.clock()-(F.LastSpecial or 0)>14 then F.LastSpecial=os.clock();local role=(def.Id=='BONE_RAIN'or def.Id=='DOG_RUSH'or def.Id=='CRYSTAL_STORM')and ('variation_'..math.random(1,3))or 'special';Audio.Cue(role,near+Vector3.new(40,10,30))end
  end))
- if #dogs>0 then
-  -- Dogs update every frame so the run cycle and stride stay smooth.
-  local heading=CFrame.lookAt(Vector3.zero,F.Heading)
-  table.insert(connections,Run.Heartbeat:Connect(function()
-   local player=Players.LocalPlayer;local char=player.Character;local hrp=char and char:FindFirstChild('HumanoidRootPart')
-   local near=hrp and hrp.Position or origin('WelcomeHub')
-   local now=workspace:GetServerTimeNow();local departure=ending and math.clamp((os.clock()-ending)/4,0,1)or 0
-   local arrival=math.clamp((os.clock()-F.StartedAt)/2,0,1)
-   for _,d in ipairs(dogs)do
-    local lane=d.Side*(14+(d.Index%3)*5)
-    local z=((now*18+d.Index*29)%180)-90
-    local world=near+heading:VectorToWorldSpace(Vector3.new(lane,0,-z))
-    local surface=ground(world,10)or Vector3.new(world.X,near.Y-3,world.Z)
-    local forward=heading.LookVector
-    d.Model:PivotTo(CFrame.lookAt(surface,surface+forward)*CFrame.new(-d.Foot))
-    d.Animation:Step(now)
-    local edge=math.clamp((90-math.abs(z))/18,0,1)
-    for _,p in ipairs(d.Parts)do p.LocalTransparencyModifier=1-edge*arrival*(1-departure)end
-   end
-  end))
- end
  -- Brief camera impulses are removed before the following frame's camera evaluation.
  Run:BindToRenderStep('DOGROTS_EventCamera',Enum.RenderPriority.Camera.Value+1,function()
   if not def or (def.Id~='EARTHQUAKE'and def.Id~='CRYSTAL_STORM')or os.clock()>=(F.ShakeUntil or 0)then return end
@@ -285,12 +250,12 @@ function F.Begin(event,state,quality)
   local t=os.clock();camera.CFrame*=CFrame.new(math.sin(t*31)*.05,math.cos(t*39)*.04,0)
  end)
 end
-function F.End()Epic.End();Cataclysm.End();ending=os.clock();if F.Emitter then F.Emitter.Enabled=false end end
+function F.End()Epic.End();Cataclysm.End();Stampede.End();ending=os.clock();if F.Emitter then F.Emitter.Enabled=false end end
 function F.Stop()
  Cataclysm.Stop()
  Epic.Stop()
+ Stampede.Stop()
  F.Token+=1;for _,c in ipairs(connections)do c:Disconnect()end;connections={};Run:UnbindFromRenderStep('DOGROTS_EventCamera')
- for _,d in ipairs(dogs)do d.Animation:Destroy()end
- if root then root:ClearAllChildren()end;models={};rain={};beams={};dogs={};F.Visuals={};F.Emitter=nil;F.EmitterPart=nil;signatureUntil=0;def=nil;F.Shadow=nil
+ if root then root:ClearAllChildren()end;models={};rain={};beams={};F.Visuals={};F.Emitter=nil;F.EmitterPart=nil;signatureUntil=0;def=nil;F.Shadow=nil
 end
 return F

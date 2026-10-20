@@ -9,7 +9,7 @@ local Theme = {}
 -- attribute, so Font is the default; FontNumeric is for numbers (stats, prices, timers) and
 -- every label using it gets KeepFont (Base.Text does that).
 Theme.Font = Font.fromEnum(Enum.Font.FredokaOne)
-Theme.FontNumeric = Font.fromEnum(Enum.Font.BuilderSansBold)
+Theme.FontNumeric = Font.fromEnum(Enum.Font.FredokaOne)
 
 -- Same keys and values as UITheme.U.Colors.
 Theme.Colors = {
@@ -58,6 +58,9 @@ Theme.Rarity = {
 	Mythic = P.red,
 	Secret = C(230, 115, 245),
 	["Brainrot God"] = P.red,
+	-- NIGHT OF THE BURIED MOON Lucky Block tiers (LuckyBlockConfig.EventTiers)
+	Pumpkin = C(255, 128, 24),
+	["Cursed Pumpkin"] = C(122, 62, 200),
 }
 -- Item rarities (ItemValueConfig.Rarity names): same colours as dogs so a rarity reads the same everywhere.
 Theme.ItemRarity = {
@@ -74,9 +77,11 @@ Theme.RarityGradient = {
 	Mythic = { C(255, 104, 139), C(214, 44, 98) },
 	Secret = { C(244, 140, 255), C(120, 92, 255) },
 	["Brainrot God"] = { C(255, 104, 139), C(255, 196, 64) },
+	Pumpkin = { C(255, 176, 64), C(232, 92, 16) },
+	["Cursed Pumpkin"] = { C(176, 96, 255), C(64, 22, 112) },
 }
 -- One order for sorting both catalogues (dogs have no Uncommon, items have no Mythic).
-Theme.RarityRank = { Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5, Mythic = 6, Secret = 7, ["Brainrot God"] = 8 }
+Theme.RarityRank = { Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5, Mythic = 6, Secret = 7, ["Brainrot God"] = 8, Pumpkin = 5.5, ["Cursed Pumpkin"] = 6.5 }
 
 -- Dog variants: the names of ReplicatedStorage.DogEconomy.Config.Variants, colours of LabConfig.Colors.
 Theme.Variant = {
@@ -108,6 +113,11 @@ Theme.Mutation = {
 	SOLAR = C(255, 170, 40),
 	RADIOACTIVE = C(150, 240, 60),
 	SPOILED = C(130, 140, 90),
+	-- NIGHT OF THE BURIED MOON (post-cap value; DiscoveryVisuals has their 3D looks)
+	HAUNTED = C(96, 214, 178),
+	PUMPKINIZED = C(255, 128, 24),
+	["BLOOD MOON"] = C(204, 26, 46),
+	ECLIPSED = C(98, 36, 168),
 }
 
 -- Image assets of the HUD tiles (same ids as UITheme.U.Assets). Other keys resolve through

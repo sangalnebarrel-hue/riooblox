@@ -4,6 +4,7 @@
 local Players=game:GetService('Players')
 local TweenService=game:GetService('TweenService')
 local World={}
+local Skins=(function()local ok,m=pcall(function()return require(game:GetService('ReplicatedStorage'):WaitForChild('Halloween',10):WaitForChild('PickaxeSkins',10))end);if ok and type(m)=='table'then return m end;return{For=function(_,d)return d end,Register=function()end}end)() -- Halloween pickaxe skins (cosmetic visual def)
 
 local RARE_FROM=7 -- ore index from which a reveal pillar + chime plays (Amethyst and rarer)
 
@@ -12,6 +13,7 @@ function World.new(ctx)
  local player=ctx.Player
  local M,Text,Models,Audio=ctx.M,ctx.Text,ctx.Models,ctx.Audio
  local function fx()return ctx.FX end
+ pcall(Skins.Register,ctx) -- Halloween skins: sound kits + hit themes into ctx.Audio / ctx.PickFX (before any held model is tracked)
 
  local function oreDef(id)
   local ore,index=ctx.Rules.OreById(M,id);if ore then return ore,index end
@@ -28,6 +30,21 @@ function World.new(ctx)
   return corner and corner:GetAttribute('OwnerUserId')==player.UserId
  end
  self.IsOwner=isOwner
+ -- Where a player's pickaxe sounds come from: the visible pickaxe welded to the character
+ -- (MiningHeldPickaxe, ServerScriptService.MiningWorld), else the hotbar Tool's stand-in handle.
+ local function pickaxeHandle(owner)
+  local character=owner and owner.Character
+  if not character then return nil end
+  local held=character:FindFirstChild('MiningHeldPickaxe')
+  local handle=held and held:IsA('Model')and(held.PrimaryPart or held:FindFirstChild('Handle'))
+  if handle and handle:IsA('BasePart')then return handle end
+  for _,c in ipairs(character:GetChildren())do
+   if c:IsA('Tool')and c:GetAttribute('MiningPickaxeTool')==true then
+    local h=c:FindFirstChild('Handle');if h and h:IsA('BasePart')then return h end
+   end
+  end
+  return nil
+ end
  function self.MyCorner()
   for corner,_ in pairs(self.Views)do if isOwner(corner)and corner.Parent then return corner end end
   local map=workspace:FindFirstChild('DOGROTS_District');local yards=map and map:FindFirstChild('04_PlayerYards')
@@ -66,7 +83,32 @@ function World.new(ctx)
  end
  local function destroyPile(view)
   if view.Pile then view.Pile:Destroy();view.Pile=nil end
+  for _,sat in ipairs(view.Sats or{})do sat.Model:Destroy()end
+  view.Sats={}
   view.HitPoints={}
+ end
+ -- Satellite outcrops (Attachments OreSat* on the core, written by MiningWorld): the same ore in
+ -- smaller piles around the main one. Their hit points join the main pile's, so the timing
+ -- circles spread over the whole dig site. Low FX keeps them only on the player's own corner.
+ local function buildSats(view,def,serial,owner,index)
+  view.Sats={}
+  local core=view.Core;if not core then return end
+  if fx().Low()and not isOwner(view.Corner)then return end
+  for _,att in ipairs(core:GetChildren())do
+   local i=att:IsA('Attachment')and tonumber(string.match(att.Name,'^OreSat(%d+)$'))
+   if i then
+    local scale=att:GetAttribute('Scale')or .45
+    local cf=CFrame.new(att.WorldPosition)*CFrame.Angles(0,(i*1.7)%(math.pi*2),0)
+    local model,points=Models.Ore(def,serial*7919+(owner%100003)+index+i*131,cf,scale,true)
+    model.Name='OreSat_'..i
+    for _,d in ipairs(model:GetDescendants())do
+     if d:IsA('ParticleEmitter')then d.Rate*=.4 elseif d:IsA('PointLight')then d:Destroy()end
+    end
+    model.Parent=fx().Folder
+    table.insert(view.Sats,{Model=model,BaseCF=model:GetPivot()})
+    for _,a in ipairs(points)do table.insert(view.HitPoints,a)end
+   end
+  end
  end
  -- state (optional) overrides the corner attributes with a fresher server response.
  local function buildPile(view,grow,state)
@@ -86,25 +128,31 @@ function World.new(ctx)
   model.Parent=fx().Folder
   view.Pile=model;view.HitPoints=points;view.Def=def;view.Index=index;view.Serial=serial
   view.BaseCF=model:GetPivot()
+  buildSats(view,def,serial,owner,index)
   if not view.ScaleValue then
    view.ScaleValue=Instance.new('NumberValue');view.ScaleValue.Value=1
    view.ScaleValue.Changed:Connect(function(v)
-    local m=view.Pile;if m and m.Parent and v>.01 then pcall(function()m:ScaleTo(v)end)end
+    if v<=.01 then return end
+    local m=view.Pile;if m and m.Parent then pcall(function()m:ScaleTo(v)end)end
+    -- Satellites shrink less than the main pile (they are the "rest of the vein").
+    local k=.5+v*.5
+    for _,sat in ipairs(view.Sats or{})do if sat.Model.Parent then pcall(function()sat.Model:ScaleTo(k)end)end end
    end)
   end
   if grow then
    view.ScaleValue.Value=.05;pcall(function()model:ScaleTo(.05)end)
+   for _,sat in ipairs(view.Sats)do pcall(function()sat.Model:ScaleTo(.05)end)end
    setScale(view,targetScale(view,state),.65)
   else
    view.ScaleValue.Value=targetScale(view,state);pcall(function()model:ScaleTo(view.ScaleValue.Value)end)
+   local k=.5+view.ScaleValue.Value*.5
+   for _,sat in ipairs(view.Sats)do pcall(function()sat.Model:ScaleTo(k)end)end
   end
   self.UpdateLabel(view,state)
  end
 
- -- Every chunk of the old pile flies apart.
- local function shatter(view)
-  local model=view.Pile;if not model then return end
-  view.Pile=nil
+ -- Every chunk of the old pile (and its satellites) flies apart.
+ local function shatterModel(model)
   local center=model:GetPivot().Position+Vector3.new(0,3,0)
   for _,d in ipairs(model:GetDescendants())do
    if d:IsA('BasePart')and d.Transparency<1 then
@@ -117,6 +165,13 @@ function World.new(ctx)
    elseif d:IsA('PointLight')then d.Enabled=false end
   end
   task.delay(1.3,function()model:Destroy()end)
+ end
+ local function shatter(view)
+  local model=view.Pile;if not model then return end
+  view.Pile=nil
+  shatterModel(model)
+  for _,sat in ipairs(view.Sats or{})do shatterModel(sat.Model)end
+  view.Sats={}
  end
 
  -- Break + rebuild sequence (also used by the owner's Mine module, which passes the fresh
@@ -135,11 +190,18 @@ function World.new(ctx)
   F.Ring(center-Vector3.new(0,2.6,0),color,18,.7)
   F.Chunks(center,rockColor(def),Enum.Material.Slate,10,Vector3.new(0,1,0),24)
   local index=view.Index or 1
+  -- The rock break plus the breaking pickaxe's own flavour (its sound kit).
+  local breaker=Skins.For(Players:GetPlayerByUserId(view.Corner:GetAttribute('OwnerUserId')or 0),M.Pickaxes[(state and state.PickaxeLevel)or view.Corner:GetAttribute('PickaxeLevel')or 1]or M.Pickaxes[1])
   if local2D then
    Audio.Play(index>=RARE_FROM and'RareBreak'or'Break')
+   Audio.Pickaxe('Break',breaker)
    F.Shake(.7);F.Flash(color,.25)
   else
    Audio.Play('Break',view.Core)
+   local cam=workspace.CurrentCamera
+   if cam and(cam.CFrame.Position-view.Core.CFrame.Position).Magnitude<=90 then
+    Audio.Pickaxe('Break',breaker,view.Core,{Remote=true,Key=view.Corner})
+   end
   end
   view.Serial=state and state.OreSerial or view.Corner:GetAttribute('OreSerial')or 0
   task.delay(M.Client.BreakPause*.55,function()
@@ -170,9 +232,14 @@ function World.new(ctx)
   end
   return best
  end
- function self.Wobble(view,strength)
-  local model=view.Pile;if not model or not model.Parent then return end
-  local base=view.BaseCF or model:GetPivot()
+ -- point (optional): the hit point that was struck; the pile (main or satellite) it sits on wobbles.
+ function self.Wobble(view,strength,point)
+  local model,base=view.Pile,view.BaseCF
+  if point then
+   for _,sat in ipairs(view.Sats or{})do if point:IsDescendantOf(sat.Model)then model,base=sat.Model,sat.BaseCF end end
+  end
+  if not model or not model.Parent then return end
+  base=base or model:GetPivot()
   local s=(strength or 1)*.35
   model:PivotTo(base*CFrame.new((math.random()-.5)*s,0,(math.random()-.5)*s)*CFrame.Angles(0,0,(math.random()-.5)*.06*(strength or 1)))
   task.delay(.06,function()if model.Parent then model:PivotTo(base)end end)
@@ -214,7 +281,7 @@ function World.new(ctx)
  end
  local function applyPromptAccess(view)
   local owner=isOwner(view.Corner)
-  local busy=(ctx.Mine and ctx.Mine.Active)or(ctx.Gym and ctx.Gym.Active)
+  local busy=ctx.Mine and ctx.Mine.Active
   for p in pairs(view.Prompts)do
    local want=owner and not busy
    if p.Enabled~=want then p.Enabled=want end
@@ -229,13 +296,15 @@ function World.new(ctx)
    if frame:FindFirstChild('Title')then frame.Title.Text=Text.Get('PICKAXES')end
    if frame:FindFirstChild('Sub')then frame.Sub.Text=Text.Get('TAP_SIGN')end
   end
-  local gym=corner:FindFirstChild('StrengthSign');local gface=gym and gym:FindFirstChild('Face')
-  local gframe=gface and gface:FindFirstChildWhichIsA('Frame')
-  if gframe then
-   gface:SetAttribute('NoTranslate',true)
-   if gframe:FindFirstChild('Title')then gframe.Title.Text=Text.Get('STRENGTH')end
-   if gframe:FindFirstChild('Sub')then gframe.Sub.Text=Text.L('Lift weights','Поднимай гири')end
+  -- the quarry's arch and tunnel signs
+  for _,name in ipairs({'ArchHeader','ArchHeaderBack','TunnelSign'})do
+   local sign=corner:FindFirstChild(name)
+   for _,face in ipairs(sign and sign:GetChildren()or{})do
+    local f=face:IsA('SurfaceGui')and face:FindFirstChildWhichIsA('Frame')
+    if f then face:SetAttribute('NoTranslate',true);if f:FindFirstChild('Title')then f.Title.Text=Text.Get('MINING_YARD')end end
+   end
   end
+  if frame and frame:FindFirstChild('Sub')then frame.Sub.Text=Text.Get('STALL_SUB')end
  end
  -- Locked weights on the owner's rack look dim.
  local function updateRack(view)
@@ -289,10 +358,16 @@ function World.new(ctx)
   if not cam or not view.Core or(cam.CFrame.Position-view.Core.Position).Magnitude>90 then return end
   local att=self.HitPoint(view,cam.CFrame.Position)
   if att and view.Def then
-   local tier=M.Pickaxes[corner:GetAttribute('PickaxeLevel')or 1]
-   fx().Hit(att.WorldPosition,att:GetAttribute('Normal'),oreColor(view.Def),Enum.Material.Slate,tier and tier.FX or 1,corner:GetAttribute('HitQuality'),corner:GetAttribute('HitCrit'),true)
-   self.Wobble(view,.6)
-   Audio.Play(corner:GetAttribute('HitCrit')and'Crit'or'Hit',view.Core,tier and tier.FX or 1)
+   local tier=Skins.For(Players:GetPlayerByUserId(corner:GetAttribute('OwnerUserId')or 0),M.Pickaxes[corner:GetAttribute('PickaxeLevel')or 1])
+   fx().Hit(att.WorldPosition,att:GetAttribute('Normal'),oreColor(view.Def),Enum.Material.Slate,tier and tier.FX or 1,corner:GetAttribute('HitQuality'),corner:GetAttribute('HitCrit'),true,tier and tier.Theme)
+   self.Wobble(view,.6,att)
+   -- Another miner's pickaxe (its sound kit, 3D and lighter): the strike from the ore, the swish
+   -- from the pickaxe in their hand (the ore when it is not there). The strike is issued first:
+   -- with several miners nearby the shared remote voice budget then drops a swish, never a strike.
+   local cue=corner:GetAttribute('HitCrit')and'Crit'or(corner:GetAttribute('HitQuality')==2 and'Perfect'or'Hit')
+   local owner=Players:GetPlayerByUserId(corner:GetAttribute('OwnerUserId')or 0)
+   Audio.Pickaxe(cue,tier,view.Core,{Remote=true,Key=corner})
+   Audio.Pickaxe('Swing',tier,pickaxeHandle(owner)or view.Core,{Remote=true,Key=corner})
   end
  end
  local function onOre(view)
@@ -351,7 +426,7 @@ function World.new(ctx)
    if view.Clicks[d]then return end
    view.Clicks[d]=d.MouseClick:Connect(function(who)
     if who~=player then return end
-    if (ctx.Mine and ctx.Mine.Active)or(ctx.Gym and ctx.Gym.Active)or ctx.MenuOpen()then return end
+    if (ctx.Mine and ctx.Mine.Active)or ctx.MenuOpen()then return end
     trigger(KIND[d.Name],corner)
    end)
   end
@@ -403,6 +478,10 @@ function World.new(ctx)
   end))
   if ctx.Anim then ctx.Anim.RemoteTraining(corner,false)end
   table.insert(view.Connections,corner:GetAttributeChangedSignal('HitSerial'):Connect(function()onHit(view)end))
+  -- Other miners hold their pickaxe ready while their session is open.
+  table.insert(view.Connections,corner:GetAttributeChangedSignal('Active'):Connect(function()
+   if ctx.Anim and ctx.Anim.RemoteActive then ctx.Anim.RemoteActive(corner)end
+  end))
   table.insert(view.Connections,corner:GetAttributeChangedSignal('OwnerUserId'):Connect(function()
    applyPromptAccess(view);updateRack(view);if view.Core then buildPile(view,false)end
   end))
@@ -439,6 +518,26 @@ function World.new(ctx)
    for _,yard in ipairs(yards:GetChildren())do watchYard(yard)end
    yards.ChildAdded:Connect(watchYard)
   end)
+  -- Another player nearby takes a pickaxe out of the hotbar: a quiet 3D draw from their hand.
+  local function watchDraws(other)
+   if other==player then return end
+   local function onCharacter(character)
+    character.ChildAdded:Connect(function(c)
+     if not(c:IsA('Tool')and c:GetAttribute('MiningPickaxeTool')==true)then return end
+     task.defer(function()
+      local handle=pickaxeHandle(other)
+      local cam=workspace.CurrentCamera
+      if handle and cam and(cam.CFrame.Position-handle.CFrame.Position).Magnitude<60 then
+       Audio.Pickaxe('Draw',Skins.For(other,M.Pickaxes[c:GetAttribute('Level')or 1]),handle,{Remote=true,Key=other})
+      end
+     end)
+    end)
+   end
+   if other.Character then onCharacter(other.Character)end
+   other.CharacterAdded:Connect(onCharacter)
+  end
+  for _,other in ipairs(Players:GetPlayers())do watchDraws(other)end
+  Players.PlayerAdded:Connect(watchDraws)
   -- Players who finished the tutorial before mining existed get one nudge per session.
   task.spawn(function()
    local hint=Instance.new('BillboardGui');hint.Name='MiningNewHint';hint.Size=UDim2.fromOffset(240,44);hint.StudsOffsetWorldSpace=Vector3.new(0,5.5,0)

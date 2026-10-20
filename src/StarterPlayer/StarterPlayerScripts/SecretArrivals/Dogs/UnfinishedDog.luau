@@ -50,7 +50,7 @@ end
 
 return function(ctx:any)
  -- The first line is a code comment; the second (set before it) glitches in magenta.
- ctx.WhisperStyle={Font=Enum.Font.Code,Color=C(106,153,85),Glitch=0,Chroma=false,Shake=false,Type=.045}
+ ctx.WhisperStyle={Font=Enum.Font.FredokaOne,Color=C(106,153,85),Glitch=0,Chroma=false,Shake=false,Type=.045}
  local Kit,scope,model,config=ctx.Kit,ctx.Scope,ctx.Model,ctx.Config
  local low,calm,origin,hold=ctx.Low,Kit.ReducedMotion(),ctx.Origin,config.Hold
  local MAGENTA=config.Color
@@ -233,7 +233,7 @@ return function(ctx:any)
   round(row,4)
   local edge=Instance.new('UIStroke');edge.Color=BLUE;edge.Thickness=1.5;edge.ApplyStrokeMode=Enum.ApplyStrokeMode.Border;edge.Parent=row
   round(frame(row,{Name='Icon',Size=UDim2.fromOffset(11,11),Position=UDim2.fromOffset(7,6),BackgroundColor3=GREY}),2)
-  local label=text(row,{Name='Name',Size=UDim2.new(1,-28,1,0),Position=UDim2.fromOffset(25,0),Font=Enum.Font.SourceSans,TextSize=18,
+  local label=text(row,{Name='Name',Size=UDim2.new(1,-28,1,0),Position=UDim2.fromOffset(25,0),Font=Enum.Font.FredokaOne,TextSize=18,
    TextColor3=WHITE,TextXAlignment=Enum.TextXAlignment.Left,Text=name})
   g.Parent=adornee
   return {Gui=g,Edge=edge,Label=label}
@@ -292,7 +292,7 @@ return function(ctx:any)
  local head=frame(window,{Name='Header',Size=UDim2.new(1,0,0,22),BackgroundColor3=ROW})
  round(head,5)
  frame(head,{Name='Square',Size=UDim2.new(1,0,0,6),Position=UDim2.new(0,0,1,-6),BackgroundColor3=ROW})
- text(head,{Name='Tab',Size=UDim2.new(0,80,1,-2),Position=UDim2.fromOffset(10,0),Font=Enum.Font.SourceSansSemibold,TextSize=15,
+ text(head,{Name='Tab',Size=UDim2.new(0,80,1,-2),Position=UDim2.fromOffset(10,0),Font=Enum.Font.FredokaOne,TextSize=15,
   TextColor3=C(232,232,232),TextXAlignment=Enum.TextXAlignment.Left,Text='Output'})
  frame(head,{Name='Active',Size=UDim2.fromOffset(50,2),Position=UDim2.new(0,6,1,-2),BackgroundColor3=BLUE})
  local body=frame(window,{Name='Log',Size=UDim2.new(1,-16,1,-28),Position=UDim2.fromOffset(8,25),BackgroundTransparency=1,ClipsDescendants=true})
@@ -304,7 +304,7 @@ return function(ctx:any)
  round(cap,8)
  local rim=Instance.new('UIStroke');rim.Color=C(120,120,120);rim.Thickness=1.5;rim.Parent=cap
  local pop=Instance.new('UIScale');pop.Parent=cap
- local capLabel=text(cap,{Name='Label',Size=UDim2.fromScale(1,1),Font=Enum.Font.SourceSansBold,TextSize=22,TextColor3=WHITE,Text=''})
+ local capLabel=text(cap,{Name='Label',Size=UDim2.fromScale(1,1),Font=Enum.Font.FredokaOne,TextSize=22,TextColor3=WHITE,Text=''})
  -- Clear of the money stack (bottom left) and the touch thumbstick and jump button.
  local function layout()
   local width=math.clamp(gui.AbsoluteSize.X-2*(touch and 230 or 350),250,540)
@@ -321,7 +321,7 @@ return function(ctx:any)
  local serial=0
  local function log(kind:string,message:string,animate:boolean)
   serial+=1
-  local l=text(body,{Name='Line',LayoutOrder=serial,Size=UDim2.new(1,0,0,rowH),Font=Enum.Font.Code,TextSize=textSize,
+  local l=text(body,{Name='Line',LayoutOrder=serial,Size=UDim2.new(1,0,0,rowH),Font=Enum.Font.FredokaOne,TextSize=textSize,
    TextColor3=TINT[kind]or INK,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,RichText=true,
    Text='<font color="#7c7c7c">'..tostring(os.date('%H:%M:%S'))..'</font>  '..message,TextTransparency=animate and 1 or 0})
   table.insert(logged,l)
@@ -516,7 +516,7 @@ return function(ctx:any)
   if not ctx:Wait(d.Mark)then return end
   if i==1 then
    grab(nil)
-   ctx.WhisperStyle={Font=Enum.Font.Code,Color=C(255,150,255),Glitch=.06,Chroma=true,Shake=false,Type=.05}
+   ctx.WhisperStyle={Font=Enum.Font.FredokaOne,Color=C(255,150,255),Glitch=.06,Chroma=true,Shake=false,Type=.05}
   end
   local dupe=made[i]
   if dupe then
@@ -556,7 +556,7 @@ return function(ctx:any)
  if plate and plate.Parent then
   if fresh then plate.Color=MAGENTA;Kit.Tween(plate,.55,{Transparency=1})else plate:Destroy()end
  end
- ctx:Title({Font=Enum.Font.Code,Tier=not ctx.By and 'SECRET · DEV BUILD'or nil,Hold=3.6})
+ ctx:Title({Font=Enum.Font.FredokaOne,Tier=not ctx.By and 'SECRET · DEV BUILD'or nil,Hold=3.6})
  if fresh then
   local n=near()
   grade.Saturation=.2*hue;grade.Brightness=.05*hue;grade.TintColor=WHITE:Lerp(C(255,225,255),hue)

@@ -127,7 +127,7 @@ return function(m)
  -- A sign over the arc measures it as it comes out.
  local apex=along((dA+dB)/2)+Vector3.new(0,75,0)
  local side=Vector3.new(-dir.Z,0,dir.X)
- local sign,labels=m:Text3D('LENGTH: 0m',CFrame.lookAt(apex,apex+side),Vector2.new(170,34),{Color=SAND,Font=Enum.Font.Kalam,Alpha=1})
+ local sign,labels=m:Text3D('LENGTH: 0m',CFrame.lookAt(apex,apex+side),Vector2.new(170,34),{Color=SAND,Font=Enum.Font.FredokaOne,Alpha=1})
  local strokes={}
  for _,l in ipairs(labels)do local s=l:FindFirstChildOfClass('UIStroke');if s then s.Transparency=1;table.insert(strokes,s)end end
  local shown=''
@@ -210,7 +210,7 @@ return function(m)
  if not m:Wait(headIn+.4)then return end
  if m:Fresh(headIn+.4,1.2)then
   m:Banner(m.Config.Title,{Kicker='✦   T H E   H O L E   K E P T   G O I N G   ✦',Sub=m.VenueText..(m.By and ('  ·  '..string.upper(m.By))or''),
-   Font=Enum.Font.Kalam,Color=SAND,Hold=5,Shake=.12})
+   Font=Enum.Font.FredokaOne,Color=SAND,Hold=5,Shake=.12})
   m:Cue('Chime',nil,.45)
  end
 

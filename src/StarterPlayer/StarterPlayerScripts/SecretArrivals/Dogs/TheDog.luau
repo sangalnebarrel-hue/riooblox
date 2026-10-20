@@ -30,7 +30,7 @@ return function(ctx)
  end
  local function say(i,options)
   options=options or {}
-  options.Font=options.Font or Enum.Font.SpecialElite
+  options.Font=options.Font or Enum.Font.FredokaOne
   options.Color=options.Color or C(240,236,250)
   options.Type=options.Type or .06
   local said=ctx:Say(lines[i][2],options)
@@ -220,7 +220,7 @@ return function(ctx)
   if not low then act:Ring(origin+Vector3.new(0,.3,0),C(200,210,255),1,38,2.2,{Thickness=.25,Alpha=.4})end
   scope:Highlight(model,C(255,255,255),C(255,255,255),.92,.15)
   scope:Drone('Choir',low and .2 or .32,.8,2.5)
-  ctx:Title({Tier='? ? ?',Color=C(255,255,255),Hold=4.5,Font=Enum.Font.SpecialElite})
+  ctx:Title({Tier='? ? ?',Color=C(255,255,255),Hold=4.5,Font=Enum.Font.FredokaOne})
   for _,p in ipairs(candles)do if p.Parent then Kit.Tween(p,1.5,{Transparency=1})end end
   Kit.Tween(hole,2.5,{Size=Vector3.new(.2,.1,.1)})
   if not ctx:Wait(10.4)then return end
@@ -234,7 +234,7 @@ return function(ctx)
   -- Late: no intro, straight to the stare, marked as everyone else saw it rise. The
   -- line of the moment at once, the rest on schedule.
   scope:Highlight(model,C(255,255,255),C(255,255,255),.92,.15)
-  ctx:Title({Tier='? ? ?',Color=C(255,255,255),Hold=4.5,Font=Enum.Font.SpecialElite})
+  ctx:Title({Tier='? ? ?',Color=C(255,255,255),Hold=4.5,Font=Enum.Font.FredokaOne})
   local now,current=ctx:Elapsed(),1
   for i,l in ipairs(lines)do if l[1]<=now then current=i end end
   say(current,{Type=0})
@@ -269,7 +269,7 @@ return function(ctx)
    ownerSeen=owner
    local mine=model:GetAttribute('OwnerUserId')==Players.LocalPlayer.UserId
    local chosen=ctx:Say(mine and 'it chose you.'or 'it chose '..string.lower(owner)..'.',
-    {Font=Enum.Font.SpecialElite,Color=C(255,255,255),Type=.08,Chroma=true})
+    {Font=Enum.Font.FredokaOne,Color=C(255,255,255),Type=.08,Chroma=true})
    W.Breathe(chosen,3)
    Kit.Cue('Sting',nil,.6)
   end

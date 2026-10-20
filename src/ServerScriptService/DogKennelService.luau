@@ -11,6 +11,9 @@ local Runtime=require(script.Parent.Economy.Runtime)
 local Http=game:GetService("HttpService")
 local Definitions=require(Replicated.DogEconomy.DogDefinitions)
 local Rig=require(Replicated.DogRig)
+-- Dogs dig DOWN (docs/MINE.md): while the owner's CurrentLayer is 2..5 each assigned dog stands
+-- at its worksite in that level of the yard's mine (MineLayout), otherwise on its surface pit.
+local MineLayout=require(Replicated:WaitForChild("Mine"):WaitForChild("MineLayout"))
 local Service = {}
 local cooldown = {}
 local connections = {}
@@ -102,7 +105,15 @@ local function clearEntry(entry)
     entry:SetAttribute("AssignedSlot", "")
     entry:SetAttribute("State", "Inventory")
 end
-local function prepare(entry, slot)
+-- The mine worksite of a slot on a layer (nil on the surface or when the yard has no layout).
+local function worksite(slot, layer)
+    if (tonumber(layer) or 1)<2 then return nil end
+    local index=tonumber(slot.Name:match("^DigSlot_(%d+)$"))
+    local layout=index and MineLayout.ForYard(slot.Parent)
+    return layout and layout:Worksite(layer,index) or nil
+end
+Service.Worksite=worksite
+local function prepare(entry, slot, layer)
     local id = entry:GetAttribute("DogId")
     local template = templates:FindFirstChild(Definitions[id] and Definitions[id].VisualAsset or id or "")
     local floor = slot:FindFirstChild("KennelFloor")
@@ -130,6 +141,13 @@ local function prepare(entry, slot)
     local position=center-forward*inset
     local surface=excavation and (excavation.Position.Y+excavation.Size.Y/2) or (center.Y+digSize.Y/2)
     position=Vector3.new(position.X,surface+.04,position.Z)
+    local site=worksite(slot,layer)
+    if site then
+        -- In the mine: the dog's nose at the dig face, facing the ore vein (floor liner is .1 thick).
+        forward=site.Face.LookVector
+        position=site.Face.Position-forward*(bodyDepth/2)+Vector3.new(0,.14,0)
+    end
+    dog:SetAttribute("MinePlacement",MineLayout.DogPlacement(site and layer or 1))
     dog:PivotTo(CFrame.new(position)*CFrame.lookAt(Vector3.zero,forward)*CFrame.new(-ground))
     dog.Name=entry.Name
     dog:SetAttribute("DogId",id); dog:SetAttribute("DogUid",entry.Name)
@@ -149,11 +167,11 @@ local function prepare(entry, slot)
     local dogName=entry:GetAttribute("DisplayName") or entry.Value
     dog:SetAttribute("DogName",dogName)
     local text=Instance.new("TextLabel");text.Name="NameLabel";text.Size=UDim2.fromScale(1,.56);text.BackgroundTransparency=1
-    text.Font=Enum.Font.GothamBold;text.TextSize=16;text.TextColor3=Color3.fromRGB(205,230,255)
+    text.Font=Enum.Font.FredokaOne;text.TextSize=16;text.TextColor3=Color3.fromRGB(205,230,255)
     text.TextStrokeTransparency=.4;text.TextTruncate=Enum.TextTruncate.AtEnd;text.Text=dogName;text.Parent=label
     -- The status line is written (and localized) by every client: it counts down each second.
     local status=Instance.new("TextLabel");status.Name="StatusLabel";status.Position=UDim2.fromScale(0,.56);status.Size=UDim2.fromScale(1,.44)
-    status.BackgroundTransparency=1;status.Font=Enum.Font.GothamBold;status.TextScaled=true;status.TextColor3=Color3.fromRGB(150,230,160)
+    status.BackgroundTransparency=1;status.Font=Enum.Font.FredokaOne;status.TextScaled=true;status.TextColor3=Color3.fromRGB(150,230,160)
     status.TextStrokeTransparency=.4;status:SetAttribute("NoTranslate",true);status.Text="";status.Parent=label
     local limit=Instance.new("UITextSizeConstraint");limit.MaxTextSize=13;limit.MinTextSize=8;limit.Parent=status
     return dog
@@ -168,10 +186,15 @@ function Service.Reconcile(player,profile)
             slot:SetAttribute("AssignedDogUid",nil);slot:SetAttribute("AssignedOwnerUserId",nil);slot:SetAttribute("AssignedDogName",nil)
         end
     end
+    -- Where the dogs work now: a model standing elsewhere (the owner changed the dig layer) is
+    -- rebuilt fresh at the new place, so every client restarts its dig animation there.
+    local layer=MineLayout.LayerNumber(profile.CurrentLayer) or 1
+    local placement=MineLayout.DogPlacement(layer)
     for _,model in ipairs(residents:GetChildren()) do
         if model:GetAttribute("OwnerUserId")==player.UserId then
             local dog=profile.Dogs[model:GetAttribute("DogUid")]
-            if not dog or dog.AssignedSlot=="" or dog.AssignedSlot~=model:GetAttribute("AssignedSlot") then model:Destroy() end
+            if not dog or dog.AssignedSlot=="" or dog.AssignedSlot~=model:GetAttribute("AssignedSlot")
+                or (model:GetAttribute("MinePlacement") or "Surface")~=placement then model:Destroy() end
         end
     end
     local now=os.time()
@@ -183,7 +206,7 @@ function Service.Reconcile(player,profile)
             local model=residents:FindFirstChild(uid)
             local fresh=false
             if not model then
-                local ok,result=pcall(prepare,entry,slot)
+                local ok,result=pcall(prepare,entry,slot,layer)
                 if ok and result then model=result;fresh=true else warn("Kennel asset unavailable",d.DogId) end
             end
             if model then

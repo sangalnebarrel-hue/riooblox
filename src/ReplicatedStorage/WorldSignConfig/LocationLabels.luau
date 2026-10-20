@@ -9,7 +9,8 @@ local GUI_NAME = "LocationLabel"
 Labels.Locations = {
     {Path = {"11_Shops", "COSMETICS"}, Text = "Shop", Button = "ShopButton", Roof = "Architecture"},
     {Path = {"06_DogDexMuseum"}, Text = "Museum", Button = "DogDexButton", Roof = "SteppedNavyRoof", Clearance = 24},
-    {Path = {"05_MutationLab"}, Text = "Lab", Button = "LabButton", Roof = "TechnicalRoof"},
+    -- the lab is the nuclear cooling tower now: the label floats over its crown
+    {Path = {"05_MutationLab"}, Text = "Lab", Button = "LabButton", Roof = "NuclearCompound", Clearance = 10},
     {Path = {"32_WelcomeHub", "DogShelter"}, Text = "Shelter", Button = "DogsButton", Roof = "Architecture"},
 }
 

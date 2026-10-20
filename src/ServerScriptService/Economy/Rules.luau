@@ -14,9 +14,13 @@ local LuckRules=require(script.Parent.LuckRules)
 local Pricing=require(game.ReplicatedStorage.DogEconomy.BoostPricing)
 local Onboarding=require(script.Parent.OnboardingRules)
 local MiningRules=require(game:GetService('ReplicatedStorage'):WaitForChild('Mining'):WaitForChild('MiningRules'))
+local UpgradeTree=require(game:GetService('ReplicatedStorage'):WaitForChild('DogEconomy'):WaitForChild('UpgradeTree'))
 local Features=require(script.Parent.FeatureRegistry)
 local Bonuses=require(game:GetService('ReplicatedStorage').DogEconomy.Bonuses)
+local Resources=require(game:GetService('ReplicatedStorage').DogEconomy.Resources)
 local IncomeModel=require(script.Parent.IncomeModel)
+-- NIGHT OF THE BURIED MOON (WP4): event dog abilities + event mutation rows inside R.Dig; every hook is pcall-safe
+local Halloween do local ok,m=pcall(function()return require(script.Parent.HalloweenHooks)end);Halloween=ok and m or nil end
 local R={Items=I,Features=Features,Bonuses=Bonuses}
 function R.Copy(v) if type(v)~="table" then return v end local r={};for k,x in pairs(v) do r[k]=R.Copy(x) end;return r end
 function R.Int(n,min,max) return type(n)=="number" and n==n and n%1==0 and n>=min and n<=max end
@@ -118,10 +122,18 @@ function R.AddXP(p,amount)
  amount=math.max(0,math.floor(tonumber(amount)or 0));p.XP+=amount;R.UpdateLevel(p);return amount
 end
 -- Active Mining (ReplicatedStorage.Mining.MiningRules). session = RAM timing targets, ping in seconds.
+-- Broken ores also store Stone (p.Resources.Stone, DogEconomy.Resources) in the same transaction.
+-- Mining Strength from the UPGRADE TREE's STRENGTH branch (added to the legacy trained Strength).
+function R.TreeStrength(p)
+ local ok,v=pcall(UpgradeTree.Strength,p)
+ return ok and tonumber(v)or 0
+end
 function R.MiningAction(p,action,a,now,random,session,ping)
  p.Mining=MiningRules.Normalize(p.Mining,C.Mining)
+ p.Mining.BonusStrength=R.TreeStrength(p)
  local ctx={Now=now,Clock=workspace:GetServerTimeNow(),Random=random,Cash=p.Cash,Layer=R.MaxUnlockedLayer(p),Session=session,Ping=ping,
-  Pay=function(n)R.Pay(p,n)end,Credit=function(n)R.Credit(p,n)end,AddXP=function(n)R.AddXP(p,n)end}
+  Pay=function(n)R.Pay(p,n)end,Credit=function(n)R.Credit(p,n)end,AddXP=function(n)R.AddXP(p,n)end,
+  AddStone=function(n)return Resources.Add(p,'Stone',n)end}
  return MiningRules.Action(p.Mining,C.Mining,action,a,ctx)
 end
 function R.MaxUnlockedLayer(p)
@@ -339,6 +351,7 @@ function R.Dig(p,now,random)
  -- Bought boosts: the active luck tier and the Golden Biscuit.
  local boostLuck=LuckRules.Bonus(p,now);local biscuit=(p.Supplies.GoldenBiscuit or 0)>now
  local itemCapacity=I.Capacity(p,I.CapacityExtra(p,now,global))
+ local hw=Halloween and Halloween.Pass(p,now) -- nil unless an event dog works or the event mutation rows are on
  local contributed=0;local ordered={}
  for _,d in pairs(p.Dogs)do table.insert(ordered,d)end
  table.sort(ordered,function(a,b)return a.DogUid<b.DogUid end)
@@ -346,6 +359,7 @@ function R.Dig(p,now,random)
   if Signatures.Active(d)and now>=(d.NextWorkAt or now+1)then
    local def=D[d.DogId]
    if not def then continue end
+   local hd=hw and Halloween.Dog(hw,p,d,def,now)
    d.WorkSequence=(d.WorkSequence or 0)+1;Stats.Dig(p,now)
    p.TotalExcavations=(p.TotalExcavations or 0)+1
    local b=Bonuses.For(p,d,now,global)
@@ -394,15 +408,18 @@ function R.Dig(p,now,random)
     yield+=math.floor(d.OrbitValue*(1+R.OrbitBonus));d.OrbitValue=0;d.OrbitCount=0
    end
    -- LastYield (mirrored to DogInventory attributes) drives the client's "+$" popups.
+   if hd then yield+=Halloween.Loot(hw,hd,p,d,produced,now,random)end
    d.LastYield=payIncome(p,yield,now)
    if ctx.TreatChance and produced>0 and random()<ctx.TreatChance then p.Supplies.LuckyTreat=math.min(now+3600,math.max(now,p.Supplies.LuckyTreat or 0)+30)end
    -- Overflow speed also brings extra item attempts: past the floor a dog earns as if it dug faster.
    for attempt=1,R.RollCount(ctx.ItemAttempts,overflow,random)do
     if not I.Free(p,itemCapacity)then break end
     local effects=R.ItemEffects(p,d,e,ctx,b,boostLuck,itemCapacity)
+    if hd then Halloween.Item(hw,hd,effects,random)end
     local found,chance=I.Pick(ctx.Depth,random,effects)
-    if found then I.Mint(p,found,chance,d.DogUid..':'..d.WorkSequence..':'..attempt,now,random,effects);R.AddXP(p,math.floor((4+2*ctx.Depth)*xpBonus))end
+    if found then local x=I.Mint(p,found,chance,d.DogUid..':'..d.WorkSequence..':'..attempt,now,random,effects);R.AddXP(p,math.floor((4+2*ctx.Depth)*xpBonus));if hd then hd.Found=true;hd.Hit=hd.Hit or effects.ForceMutation;if Halloween.Found then Halloween.Found(hw,p,x,now)end end end
    end
+   if hd then Halloween.After(hw,hd,p,d,now,cooldown,C.Work)end
    local special=C.SpecialDiscovery or {LongDogChance=1/20000,LongDogMinLayer=4}
    if produced>0 and p.CurrentLayer>=special.LongDogMinLayer and not p.DogDex.LongDog and not p.SpecialDiscoveries.LongDogPending and random()<special.LongDogChance then
     p.SpecialDiscoveries.LongDogPending=true;p.SpecialDiscoveries.LongDogFoundAt=now

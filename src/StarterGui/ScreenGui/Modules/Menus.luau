@@ -4,6 +4,7 @@ local RS=game:GetService('ReplicatedStorage')
 local UIS=game:GetService('UserInputService')
 local Http=game:GetService('HttpService')
 local ItemValue=require(RS:WaitForChild('ItemValuation'))
+local Motion=require(script.Parent:WaitForChild('Kit'):WaitForChild('Motion'));local Sound=require(script.Parent.Kit:WaitForChild('Sound'))
 local Menus={}
 function Menus.new(gui,options)
  local U=require(script.Parent.UITheme);local N=require(script.Parent.GUIIntegration)
@@ -50,8 +51,8 @@ function Menus.new(gui,options)
  function self:Show(page)N.OpenPage(page)end
  function self:Mount(page)
   if not windows[page]then
-   local panel=U.New('Frame',{Name=page..'Window',Size=UDim2.fromScale(1,1),BackgroundColor3=Color3.fromRGB(255,251,242),BorderSizePixel=0,Visible=false,ClipsDescendants=false},pages)
-   U.Round(panel,16);U.Stroke(panel,U.Colors.edge,3)
+   -- The window body draws straight on the Kit card (MainWindow); its header is U.WindowChrome.
+   local panel=U.New('Frame',{Name=page..'Window',Size=UDim2.fromScale(1,1),BackgroundTransparency=1,BorderSizePixel=0,Visible=false,ClipsDescendants=false},pages)
    U.WindowChrome(panel,page,931,function()N.Close()end)
    windows[page]={Root=panel,Canvas=U.New('Frame',{Name='WindowContent',BackgroundTransparency=1,ClipsDescendants=true},panel)}
   end
@@ -155,16 +156,29 @@ function Menus.new(gui,options)
  end
  function self:Confirm(title,message,action,args)
   self:Dismiss()
-  -- Transparent input shield: the root Backdrop remains the sole dimming surface.
-  local shield=U.New('Frame',{Name='Confirmation',Size=UDim2.fromScale(1,1),BackgroundTransparency=1,Active=true,ZIndex=80},gui);self.dialog=shield
-  local box=U.Modal(shield,'ConfirmPanel',title,600,350)
-  U.Text(box,message,24,76,552,175,22)
-  U.Button(box,'Cancel','CANCEL',24,278,270,48,function()self:Dismiss()end)
+  -- Kit dialog over the window: its own fading shade (Kit.Modal), secondary CANCEL, green CONFIRM.
+  local shield=U.New('Frame',{Name='Confirmation',Size=UDim2.fromScale(1,1),BackgroundColor3=U.Backdrop,BackgroundTransparency=1,Active=true,ZIndex=80},gui);self.dialog=shield
+  Motion.Tween(shield,.18,{BackgroundTransparency=.4});Sound.Play('Open',{Pitch=1.1})
+  -- Like the kit shade, a tap outside the dialog cancels it (the dialog sits above this catcher and,
+  -- Active like Kit.Modal's card, sinks taps on itself so they never reach the shade).
+  local outside=U.New('TextButton',{Name='Shade',Text='',AutoButtonColor=false,BackgroundTransparency=1,Selectable=false,Size=UDim2.fromScale(1,1),ZIndex=1},shield)
+  outside.Activated:Connect(function()if self.dialog==shield then self:Dismiss()end end)
+  local box=U.Modal(shield,'ConfirmPanel',title,600,350);box.Active=true
+  U.Text(box,message,24,76,552,175,19,U.Colors.muted).TextYAlignment=Enum.TextYAlignment.Top
+  U.Button(box,'Cancel','CANCEL',24,278,270,48,function()self:Dismiss()end,U.Colors.panel)
   U.Button(box,'Confirm','CONFIRM',306,278,270,48,function()self:Dismiss();self:Send(action,args)end,U.Colors.green)
  end
+ -- The window's unscaled size: MainWindow.Content (pages fill it) in design pixels. Independent of
+ -- the responsive UIScale and of the Kit open motion, so neither re-renders the page.
+ function self:DesignSize()
+  local s=gui.MainWindow.Content.Size
+  if s.X.Scale==0 and s.Y.Scale==0 and s.X.Offset>0 and s.Y.Offset>0 then return Vector2.new(s.X.Offset,s.Y.Offset)end
+  local windowScale=gui.MainWindow:FindFirstChildWhichIsA('UIScale')
+  return root.AbsoluteSize/(windowScale and math.max(.01,windowScale.Scale)or 1)
+ end
  function self:Resize(size)
-  if size.X<1 or size.Y<1 then return end
   if self.worldRewardMachine then
+   if size.X<1 or size.Y<1 then return end
    local left,top,width,height=U.SafeArea(gui)
    mobile=width<600;W=math.max(260,math.min(mobile and 380 or 760,width-28));H=W>=600 and 94 or 132
    self.layoutScale=math.min(1,(width-28)/W,(height-28)/H)
@@ -173,7 +187,7 @@ function Menus.new(gui,options)
    canvas.Position=UDim2.new();canvas.Size=UDim2.fromOffset(W,H);self.observedSize=root.AbsoluteSize
    if self.page then self:Render()end;return
   end
-  self.observedSize=size;local windowScale=gui.MainWindow:FindFirstChildWhichIsA('UIScale');size=size/(windowScale and math.max(.01,windowScale.Scale)or 1);mobile=gui:GetAttribute('CompactMenus')==true;W=math.max(280,size.X-24)
+  size=self:DesignSize();self.observedSize=size;mobile=gui:GetAttribute('CompactMenus')==true;W=math.max(280,size.X-24)
   self.layoutScale=1;H=math.max(180,size.Y-24)
   canvas.Position=UDim2.fromOffset((size.X-W*self.layoutScale)/2,12)
   canvas.Size=UDim2.fromOffset(W,H)
@@ -196,7 +210,7 @@ function Menus.new(gui,options)
    if self.page=='LuckyPad'or self.page=='LuckyOdds'then require(script.Parent.LuckyBlockUI).Build(c)
    elseif ({Collection=true,Marketplace=true,Records=true,Inspect=true,Listing=true,CreateListing=true})[self.page]then require(script.Parent.DiscoveryScreens).Build(c)
    else require(script.Parent.EconomyScreens).Build(c)end
-  else U.Center(content,self.message or'Loading saved progress…',20,60,W-56,100,24,U.Colors.gold,true)end
+  else U.Center(content,self.message or'Loading saved progress…',20,60,W-56,100,22,U.Colors.muted,true)end
   if hasStatus then U.Text(canvas,self.message,6,H-27,W-12,24,16,U.Colors.muted)end
   for _,v in ipairs(canvas:GetDescendants())do if v:IsA('ScrollingFrame')and scrolls[v.Name]then v.CanvasPosition=scrolls[v.Name]end end
  end
@@ -205,7 +219,7 @@ function Menus.new(gui,options)
    if N.Owner=='HUD'and game.Players.LocalPlayer:GetAttribute('EconomyReady')and os.clock()-idleLastPoll>=15 then idleLastPoll=os.clock();self:Fetch(false)end
    return
   end
-  if root.AbsoluteSize~=self.observedSize then self:Resize(root.AbsoluteSize)end
+  if(self.worldRewardMachine and root.AbsoluteSize or self:DesignSize())~=self.observedSize then self:Resize(root.AbsoluteSize)end
   local offer=self.page=='LuckyOdds'and self.state.LuckyOffer
   if type(offer)=='table'and offer.ExpiresAt and offer.ExpiresAt<=((self.serverClock or os.time())+os.clock()-(self.clockAt or os.clock()))and not offer.ExpiryDrawn then offer.ExpiryDrawn=true;self:Render()end
   for _,v in ipairs(canvas:GetDescendants())do

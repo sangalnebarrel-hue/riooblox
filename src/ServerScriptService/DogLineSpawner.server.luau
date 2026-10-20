@@ -188,7 +188,7 @@ local function billboard(dog,data,variant)
 	local bb=Instance.new("BillboardGui"); bb.Name="DogBillboard"; bb.Adornee=dog:FindFirstChild("DogLabelAnchor",true) or a; bb.Parent=dog; bb.AlwaysOnTop=true; bb.LightInfluence=0; bb.MaxDistance=80; bb.Size=UDim2.fromOffset(180,mutated and 96 or 72); bb.StudsOffsetWorldSpace=Vector3.zero
 	local row=mutated and .25 or .34
 	local function label(n,text,y,color,size)
-		local l=Instance.new("TextLabel"); l.Name=n; l.BackgroundTransparency=1; l.Size=UDim2.new(1,0,mutated and .24 or .32,0); l.Position=UDim2.new(0,0,y,0); l.Text=text; l.TextColor3=color; l.TextStrokeTransparency=.3; l.Font=Enum.Font.GothamBold; l.TextSize=size; l.Parent=bb
+		local l=Instance.new("TextLabel"); l.Name=n; l.BackgroundTransparency=1; l.Size=UDim2.new(1,0,mutated and .24 or .32,0); l.Position=UDim2.new(0,0,y,0); l.Text=text; l.TextColor3=color; l.TextStrokeTransparency=.3; l.Font=Enum.Font.FredokaOne; l.TextSize=size; l.Parent=bb
 		return l
 	end
 	local top=0

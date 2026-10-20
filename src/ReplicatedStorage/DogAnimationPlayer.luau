@@ -327,6 +327,7 @@ function Player:RefreshRig()
         end
     end
     self.LookNeck = self.Bones.Neck or self.Bones.neck
+    self:CollectParts()
     self:RefreshScale()
     -- Bones can stream in after the first measurement; measure again with the full rig
     -- (the lift cache is keyed by the bone count, so a partial rig never poisons it).
@@ -336,6 +337,192 @@ function Player:RefreshRig()
         self.Gait=WalkGait.new(self)
         if self.Gait and previous then
             for _,key in ipairs({"Phase","LastTime","FitSpeed","FitFrequency","RollDistance"}) do self.Gait[key]=previous[key] end
+        end
+    end
+end
+
+-- Part-built dogs (DogPartRig, e.g. the NIGHT OF THE BURIED MOON event dogs): bones only deform skinned meshes,
+-- so every BasePart with the attributes DogBone (bone name) and DogBoneOffset (its CFrame in that bone's rest space,
+-- template units) is moved with its bone by ApplyParts (anchored copies: kennels, previews, reveals, cinematics).
+-- Models without the DogPartRig attribute keep the plain bones-only path at no cost.
+-- Level of detail (client, Step only; Sample / Stop / viewports / no camera always move every part):
+--   * parts follow their bones every frame within PART_FULL studs of the camera, at PART_NEAR_HZ up to PART_NEAR, at
+--     PART_MID_HZ up to PART_MID, at PART_FAR_HZ beyond, and not at all while the dog is behind the camera; throttled
+--     rigs start out of step, and beyond PART_NEAR they share a per-frame part budget (a rig over
+--     budget waits a frame);
+--   * tiny DogDetail trims are hidden (LocalTransparencyModifier) and not moved beyond PART_DETAIL_RANGE or on Low;
+--   * baked DogLight lights (their parent carries SelfManagedFX, so WorldDetailQuality leaves them alone; saved
+--     Enabled = false) shine only within PART_LIGHT_RANGE and never on Low quality.
+-- Low quality = the base rule of WorldDetailQuality: WorldEventFX "Low", or unset on a touch device, or LowFX.
+local PART_FULL, PART_NEAR, PART_MID, PART_NEAR_HZ, PART_MID_HZ, PART_FAR_HZ = 20, 40, 90, 30, 15, 5
+local PART_DETAIL_RANGE, PART_LIGHT_RANGE, PART_BUDGET = 50, 40, 1600
+Player.PartLOD = {Full = PART_FULL, Near = PART_NEAR, Mid = PART_MID, NearHz = PART_NEAR_HZ, MidHz = PART_MID_HZ,
+    FarHz = PART_FAR_HZ, Detail = PART_DETAIL_RANGE,
+    Light = PART_LIGHT_RANGE, Budget = PART_BUDGET}
+Player.PartStats = {Moved = 0, Applies = 0, Skipped = 0} -- running totals (tests / profiling)
+local partFrame = {Now = nil, Moved = 0}
+local partQuality = {At = -math.huge, Low = false}
+local function partLow()
+    local t = os.clock()
+    if t - partQuality.At > 1 then
+        partQuality.At = t
+        local ok, low = pcall(function()
+            local player = game:GetService("Players").LocalPlayer
+            if not player then return false end
+            local choice = player:GetAttribute("WorldEventFX")
+            return choice == "Low" or (choice == nil and game:GetService("UserInputService").TouchEnabled)
+                or player:GetAttribute("LowFX") == true
+        end)
+        partQuality.Low = ok and low == true
+    end
+    return partQuality.Low
+end
+Player.PartLow = partLow
+
+function Player:CollectParts()
+    if self.Model:GetAttribute("DogPartRig") ~= true then
+        self.RigParts = nil
+        return
+    end
+    local list = self.RigParts or {}
+    table.clear(list)
+    local lights = {}
+    for _, part in ipairs(self.Model:GetDescendants()) do
+        if part:IsA("BasePart") then
+            local name = part:GetAttribute("DogBone")
+            local bone = type(name) == "string" and self.Bones[name] or nil
+            local offset = bone and part:GetAttribute("DogBoneOffset")
+            if typeof(offset) == "CFrame" then
+                table.insert(list, {Part = part, Bone = bone, Name = name, Offset = offset, Anchored = part.Anchored,
+                    Detail = part:GetAttribute("DogDetail") == true})
+            end
+        elseif part:IsA("Light") and part:GetAttribute("DogLight") then
+            table.insert(lights, part)
+        end
+    end
+    self.RigParts = list
+    self.RigLights = lights
+    self.PartScale = nil -- scaled offsets are rebuilt on the next apply
+    self.DetailShown, self.LightsOn = nil, nil
+    -- Parts that stream in later join on the next frame; parts that leave drop out.
+    if not self.PartWatch then
+        local function recollect(child)
+            if self.PartsPending or not child:IsA("BasePart") or child:GetAttribute("DogBone") == nil then return end
+            self.PartsPending = true
+            task.defer(function()
+                self.PartsPending = false
+                if self.RigParts and self.Model.Parent then self:CollectParts() end
+            end)
+        end
+        self.PartWatch = self.Model.DescendantAdded:Connect(recollect)
+        self.PartLeave = self.Model.DescendantRemoving:Connect(recollect)
+    end
+end
+
+-- LOD toggles: tiny trims shown / hidden, baked lights on / off (only on a change)
+function Player:SetPartDetail(shown)
+    if self.DetailShown == shown then return end
+    self.DetailShown = shown
+    local modifier = if shown then 0 else 1
+    for _, r in ipairs(self.RigParts or {}) do
+        if r.Detail then pcall(function() r.Part.LocalTransparencyModifier = modifier end) end
+    end
+end
+function Player:SetPartLights(on)
+    if self.LightsOn == on then return end
+    self.LightsOn = on
+    for _, light in ipairs(self.RigLights or {}) do
+        if light.Parent then light.Enabled = on end
+    end
+end
+
+-- now = the Step time (seconds); force = move every part now (Sample outside Step, Stop).
+function Player:ApplyParts(now, force)
+    local list = self.RigParts
+    if not list or #list == 0 then return end
+    local detail = true
+    local far, lod = false, false
+    local inWorld = self.Model:IsDescendantOf(workspace)
+    if not force and now and inWorld then
+        local camera = workspace.CurrentCamera
+        local root = self.Model.PrimaryPart
+        if camera and root then
+            local eye = camera.CFrame
+            local offset = root.CFrame.Position - eye.Position
+            local dist = offset.Magnitude
+            local low = Player.PartLow() -- (a field, so tests / settings can override it)
+            self:SetPartLights(not low and dist <= PART_LIGHT_RANGE)
+            detail = not low and dist <= PART_DETAIL_RANGE
+            if dist > 12 and eye.LookVector:Dot(offset / dist) < .2 then
+                Player.PartStats.Skipped += 1
+                return -- behind the camera: the pose catches up when it comes back into view
+            end
+            local interval = if dist <= PART_FULL then 0 elseif dist <= PART_NEAR then 1 / PART_NEAR_HZ
+                elseif dist <= PART_MID then 1 / PART_MID_HZ else 1 / PART_FAR_HZ
+            local last = self.PartsAt
+            if interval > 0 and last and now >= last and now - last < interval then
+                Player.PartStats.Skipped += 1
+                return
+            end
+            if partFrame.Now ~= now then partFrame.Now, partFrame.Moved = now, 0 end
+            lod = true
+            far = dist > PART_NEAR
+            if far and partFrame.Moved >= PART_BUDGET then
+                Player.PartStats.Skipped += 1
+                return
+            end
+        end
+    end
+    self:SetPartDetail(detail)
+    -- a random phase on the first throttled apply keeps rigs out of step (no frame where every far dog moves at once)
+    self.PartsAt = if lod and far and not self.PartsAt then now - math.random() / PART_MID_HZ else now
+    local scale = self:GetScaleFactor()
+    if self.PartScale ~= scale then
+        -- offsets in the rig's current scale, rebuilt only when the scale changes
+        self.PartScale = scale
+        for _, r in ipairs(list) do
+            local o = r.Offset
+            r.Scaled = if scale == 1 then o else CFrame.new(o.Position * scale) * o.Rotation
+        end
+    end
+    local world = self.PartWorld or {}
+    self.PartWorld = world
+    table.clear(world)
+    -- AllBones is sorted by depth: every parent is solved before its children (part rigs have unique bone names).
+    for _, bone in ipairs(self.AllBones) do
+        local parent = bone.Parent
+        if parent then
+            local base = if parent:IsA("Bone") then world[parent.Name] elseif parent:IsA("BasePart") then parent.CFrame else nil
+            if base then world[bone.Name] = base * bone.CFrame * bone.Transform end
+        end
+    end
+    local parts, frames = self.MoveParts or {}, self.MoveFrames or {}
+    self.MoveParts, self.MoveFrames = parts, frames
+    local n = 0
+    for _, r in ipairs(list) do
+        local frame = world[r.Name]
+        if frame and r.Anchored and (detail or not r.Detail) then
+            n += 1
+            parts[n] = r.Part
+            frames[n] = frame * r.Scaled
+        end
+    end
+    for i = n + 1, #parts do parts[i] = nil; frames[i] = nil end
+    if n == 0 then return end
+    Player.PartStats.Moved += n
+    Player.PartStats.Applies += 1
+    if lod then partFrame.Moved += n end
+    local moved = false
+    if inWorld then
+        self.BulkMove = self.BulkMove or function()
+            workspace:BulkMoveTo(self.MoveParts, self.MoveFrames, Enum.BulkMoveMode.FireCFrameChanged)
+        end
+        moved = pcall(self.BulkMove)
+    end
+    if not moved then
+        for i = 1, n do
+            local part = parts[i]
+            if part.Parent then part.CFrame = frames[i] end
         end
     end
 end
@@ -361,6 +548,7 @@ function Player:Stop()
     for _, bone in ipairs(self.AllBones) do
         if bone.Parent then bone.Transform = CFrame.identity end
     end
+    self:ApplyParts(nil, true)
 end
 
 function Player:SetOptions(options)
@@ -719,6 +907,7 @@ function Player:Sample(seconds, blendAlpha)
             end
         end
     end
+    if self.RigParts and not self.InStep then self:ApplyParts(nil, true) end
 end
 
 local UP = Vector3.yAxis
@@ -778,6 +967,7 @@ function Player:Step(now)
     -- Before PreLook is cleared: a queued clip blends from the last animated pose.
     if self.Queue then self:Advance(now) end
     table.clear(self.PreLook)
+    self.InStep = true
     local blend = if self.BlendFrom then smooth((now - self.BlendStartedAt) / math.max(.001, self.BlendDuration)) else 1
     local locomotion = self.Gait and self.Model:GetAttribute("LocomotionSpeed")
     if self.Gait and finite(locomotion) then
@@ -790,6 +980,8 @@ function Player:Step(now)
     self:ApplyEventHead(now)
     -- After the gait IK and the event head bob: the solved pose turns rigidly.
     if self.Look then self:ApplyLook() end
+    self.InStep = false
+    if self.RigParts then self:ApplyParts(now) end
 end
 
 -- The world-event state is resolved once per frame (per distinct `now`), not per dog.
@@ -1028,6 +1220,9 @@ end
 
 function Player:Destroy()
     self:Stop()
+    if self.PartWatch then self.PartWatch:Disconnect(); self.PartWatch = nil end
+    if self.PartLeave then self.PartLeave:Disconnect(); self.PartLeave = nil end
+    self.RigParts = nil
     table.clear(self.Bones); table.clear(self.BoneGroups); table.clear(self.AllBones)
 end
 return Player

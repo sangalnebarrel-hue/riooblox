@@ -32,7 +32,7 @@ local function pose(e)
 end
 
 return function(ctx)
- ctx.WhisperStyle={Font=Enum.Font.Michroma,Color=C(200,242,255),Glitch=0,Chroma=false,Shake=false,Type=.035}
+ ctx.WhisperStyle={Font=Enum.Font.FredokaOne,Color=C(200,242,255),Glitch=0,Chroma=false,Shake=false,Type=.035}
  local Kit,scope,model,config=ctx.Kit,ctx.Scope,ctx.Model,ctx.Config
  local low,hold,origin=ctx.Low,config.Hold,ctx.Origin
  local CYAN=config.Color
@@ -350,7 +350,7 @@ return function(ctx)
  for _,g in ipairs(guides)do g.Beam:Destroy()end
  if motes then motes.Rate=0 end
  if coreLight then Kit.Tween(coreLight,.5,{Brightness=0})end
- ctx:Title({Font=Enum.Font.Michroma})
+ ctx:Title({Font=Enum.Font.FredokaOne})
 
  if not ctx:Wait(3.2)then return end
  -- The flip: voxel confetti pops off the top.

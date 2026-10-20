@@ -201,7 +201,7 @@ return function(m)
  end
  if m:Fresh(SLAM,1.2)then
   m:Banner(m.Config.Title,{Kicker='✦   B E   N O T   A F R A I D   ✦',Sub=m.VenueText..(m.By and ('  ·  '..string.upper(m.By))or''),
-   Font=Enum.Font.Antique,Color=GOLD,Hold=5.5,Shake=.08})
+   Font=Enum.Font.FredokaOne,Color=GOLD,Hold=5.5,Shake=.08})
  end
 
  -- Every player wears a halo: a gold ring on an anchor that follows their head each frame.

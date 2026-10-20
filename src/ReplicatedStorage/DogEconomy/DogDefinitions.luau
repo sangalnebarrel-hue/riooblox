@@ -102,6 +102,17 @@ local rows = {
  {Index=99,Id="UnfinishedDog",DisplayName="The Unfinished Dog",Rank=6,Ability="MissingOrTriple",Signature="An unfinished result may disappear or duplicate x3.",Tags={"Explorers"},VisualAsset="UnfinishedDog",LayerAffinity=5,Acquisition="Standard"},
  {Index=100,Id="TheDog",DisplayName="THE DOG",Rank=6,Ability="EndgameArrival",Signature="Walks the tongue once in a blue moon; every dog stops to watch. Endgame team ability.",Tags={"Explorers"},VisualAsset="TheDog",LayerAffinity=5,Acquisition="ServerArrival"},
  {Index=101,Id="Aurion",DisplayName="Aurion",Rank=6,Ability="PrismEcho",Signature="Every tenth completed dig makes an extra independent discovery roll.",Tags={"Cosmic"},VisualAsset="Aurion",LayerAffinity=1,Acquisition="RouletteOnly",MuseumExcluded=true},
+ -- NIGHT OF THE BURIED MOON 2026 event dogs (WP4). Permanent definitions: never delete them (Rules.Validate needs D[DogId]
+ -- for every owned dog). MuseumExcluded (not part of the 100, MuseumCatalog skips them), own dex tab (EventDex/EventIndex);
+ -- event-only sources and abilities: see the post-loop block below and ServerScriptService.Economy.HalloweenHooks.
+ {Index=201,Id="HW_PumpkinPup",DisplayName="Pumpkin Pup",Rank=2,Ability="PumpkinPatch",Signature="+20% Candy from Pumpkin Patch dig spots.",Tags={"Halloween","Food"},VisualAsset="HW_PumpkinPup",LayerAffinity=1,Acquisition="Event",MuseumExcluded=true,EventDex="BuriedMoon2026",EventIndex=1,EventCode="H01"},
+ {Index=202,Id="HW_SheetShiba",DisplayName="Sheet Shiba",Rank=3,Ability="GhostLoot",Signature="Can find Ghost Loot: haunted finds at Ghost Soil and in the yard.",Tags={"Halloween","Undead"},VisualAsset="HW_SheetShiba",LayerAffinity=2,Acquisition="Event",MuseumExcluded=true,EventDex="BuriedMoon2026",EventIndex=2,EventCode="H02"},
+ {Index=203,Id="HW_BoneCorgi",DisplayName="Bone Corgi",Rank=3,Ability="BoneHoard",Signature="+35% Bones from digs and Bone Graves. Falls apart and rebuilds itself.",Tags={"Halloween","Undead"},VisualAsset="HW_BoneCorgi",LayerAffinity=2,Acquisition="Event",MuseumExcluded=true,EventDex="BuriedMoon2026",EventIndex=3,EventCode="H03"},
+ {Index=204,Id="HW_Frankenpug",DisplayName="Frankenpug",Rank=4,Ability="Overcharge",Signature="OVERCHARGE: every 5 digs it supercharges and digs 60% faster for 40 s.",Tags={"Halloween","Mechanical"},VisualAsset="HW_Frankenpug",LayerAffinity=3,Acquisition="Event",MuseumExcluded=true,EventDex="BuriedMoon2026",EventIndex=4,EventCode="H04"},
+ {Index=205,Id="HW_BatDachshund",DisplayName="Bat Dachshund",Rank=4,Ability="NightFlight",Signature="After a find it flies straight to the next dig: +40% speed on the next dig and dig spots start damaged.",Tags={"Halloween","Night","Dachshund"},VisualAsset="HW_BatDachshund",LayerAffinity=3,Acquisition="Event",MuseumExcluded=true,EventDex="BuriedMoon2026",EventIndex=5,EventCode="H05"},
+ {Index=206,Id="HW_PlaguePug",DisplayName="Plague Pug",Rank=5,Ability="Plague",Signature="Strongly raises the mutation chance of its finds and slightly for the whole team.",Tags={"Halloween","Arcane"},VisualAsset="HW_PlaguePug",LayerAffinity=4,Acquisition="Event",MuseumExcluded=true,EventDex="BuriedMoon2026",EventIndex=6,EventCode="H06"},
+ {Index=207,Id="HW_HeadlessHound",DisplayName="Headless Hound",Rank=5,Ability="HeadlessTreasure",Signature="Finds Headless Treasure: bonus coin caches on digs, double Cursed Treasure chance.",Tags={"Halloween","Undead","Demonic"},VisualAsset="HW_HeadlessHound",LayerAffinity=4,Acquisition="Event",MuseumExcluded=true,EventDex="BuriedMoon2026",EventIndex=7,EventCode="H07"},
+ {Index=208,Id="HW_EclipseDog",DisplayName="Eclipse Dog",Rank=6,Ability="Eclipse",Signature="Rarely turns a find into ECLIPSED (x20 value).",Tags={"Halloween","Night","Space"},VisualAsset="HW_EclipseDog",LayerAffinity=5,Acquisition="Event",MuseumExcluded=true,EventDex="BuriedMoon2026",EventIndex=8,EventCode="H08"},
 }
 local Definitions = {}
 for _,d in ipairs(rows) do
@@ -131,4 +142,15 @@ local synergies={
  Glitchiba={NULL_HOUR={Recovery=.06,Duplicate=.03}},BooHound={CURSED_FOG={Protection=.07}},DemonDoggo={CURSED_FOG={EventWeightLuck=.05}},
  Necrohound={CURSED_FOG={TreasureMap=.07}},FrostHusky={BLIZZARD={DigSpeed=.08}},Firepup={METEOR={Luck=.06}}}
 for id,def in pairs(Definitions)do def.EventSynergies=synergies[id]or{}end
+-- Event dogs (EventDex): only their event sources grant them (frozen-reward mints: Pumpkin Lucky Blocks, the boss, the
+-- cauldron, Halloween rewards). Never on the DOG LINE, in ordinary Lucky Blocks, the DOG-O-MATIC or EventRoll; no First
+-- Edition run; BasePrice stays the rank price (shelter sale = BasePrice x .25 x Rules.Bonus, trade value = BasePrice x variant).
+for _,d in pairs(Definitions)do
+ if d.EventDex=='BuriedMoon2026'then
+  d.CanSpawnOnLine=false;d.CanDropFromLuckyBlock=false;d.CanDropFromRoulette=false
+  d.LineWeight=nil;d.LinePrice=nil;d.FirstEditionLimit=0;d.MinLayer=1
+  d.BasePrice=C.Prices[d.Rank];d.Price=d.BasePrice
+  d.EventName='NIGHT OF THE BURIED MOON';d.AcquisitionDescription='Event dog · NIGHT OF THE BURIED MOON 2026'
+ end
+end
 return Definitions

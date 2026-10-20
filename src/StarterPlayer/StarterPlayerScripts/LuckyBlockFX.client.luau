@@ -291,6 +291,7 @@ local function quickHide(row:Row)
 end
 local function register(inst:Instance)
  if not inst:IsA('Model')or rows[inst]or inst:GetAttribute('LuckyVisual')~=true then return end
+ if inst:GetAttribute('LuckyShowStyle')then return end -- pumpkins: PumpkinBlockFX has their own idle aura
  local m=inst::Model
  if m:GetAttribute('LuckyFXClone')then return end
  local fx=workspace:FindFirstChild('DOGROTS_LuckyFX')

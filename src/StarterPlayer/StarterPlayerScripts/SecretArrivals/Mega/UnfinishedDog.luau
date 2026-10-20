@@ -110,7 +110,7 @@ return function(m)
   local home=CFrame.lookAt(at,Vector3.new(m.Center.X,at.Y,m.Center.Z))*CFrame.Angles(0,0,math.rad(Kit.Random(-8,8)))
   local paper=m:Part({Name='StickyNote',Material=Enum.Material.SmoothPlastic,Color=YELLOW,Size=Vector3.one*.1,Transparency=1,CFrame=home})
   local tape=m:Part({Name='Tape',Material=Enum.Material.SmoothPlastic,Color=TAPE,Size=Vector3.one*.1,Transparency=1,CFrame=home})
-  local text,labels=m:Text3D(NOTES[(i-1)%#NOTES+1],home,Vector2.new(46,40),{Font=Enum.Font.PermanentMarker,Color=INK,Stroke=false,Alpha=1})
+  local text,labels=m:Text3D(NOTES[(i-1)%#NOTES+1],home,Vector2.new(46,40),{Font=Enum.Font.FredokaOne,Color=INK,Stroke=false,Alpha=1})
   table.insert(notes,{Paper=paper,Tape=tape,Text=text,Labels=labels,Home=home,Pop=.3+(i-1)*.22,Phase=Kit.Random(0,6),
    Fall=Vector3.new(Kit.Random(-12,12),0,Kit.Random(-12,12)),Spin=Kit.Random(-3,3)})
  end
@@ -194,7 +194,7 @@ return function(m)
     local plate=Instance.new('Frame');plate.Size=UDim2.fromScale(1,1);plate.BackgroundColor3=C(46,46,46);plate.BorderSizePixel=0;plate.Parent=tag
     local corner=Instance.new('UICorner');corner.CornerRadius=UDim.new(.15,0);corner.Parent=plate
     local edge=Instance.new('UIStroke');edge.Color=BLUE;edge.Thickness=2;edge.ApplyStrokeMode=Enum.ApplyStrokeMode.Border;edge.Parent=plate
-    local name=m.Mega.Label(plate,{Font=Enum.Font.SourceSansBold,Text='Dog ('..(i+1)..')',Size=UDim2.fromScale(.9,.8),Position=UDim2.fromScale(.05,.1)})
+    local name=m.Mega.Label(plate,{Font=Enum.Font.FredokaOne,Text='Dog ('..(i+1)..')',Size=UDim2.fromScale(.9,.8),Position=UDim2.fromScale(.05,.1)})
     table.insert(dupes,{Handle=handle,Bounds=bounds,Sel=sel,Tag=tag,Edge=edge,Name=name,Slot=slot,Row=row,
      Born=DUP+(i-1)*.15,Kill=DELETE[i]or DELETE[#DELETE],Jolt=Vector3.zero,JoltUntil=0,NextJolt=0,Dead=false})
    end
@@ -252,7 +252,7 @@ return function(m)
  local errorSign
  if m:Elapsed()<UNDO then
   local at=hub+Vector3.new(0,95,0)
-  errorSign=m:Text3D('[error] Dog:Finish() not implemented',CFrame.lookAt(at,at+facing),Vector2.new(320,40),{Font=Enum.Font.Code,Color=RED,StrokeThickness=5})
+  errorSign=m:Text3D('[error] Dog:Finish() not implemented',CFrame.lookAt(at,at+facing),Vector2.new(320,40),{Font=Enum.Font.FredokaOne,Color=RED,StrokeThickness=5})
  end
  if m:Fresh(ERROR,.4)then
   m:Flash(RED,.8,.25);m:Cue('Static',nil,.3)
@@ -266,7 +266,7 @@ return function(m)
  if sky then sky.Release()end
  m:Tween(grade,1,{Saturation=0,Contrast=0,TintColor=Color3.new(1,1,1)},Enum.EasingStyle.Sine)
  local keyAt=hub+Vector3.new(0,10,0)
- local key,keyLabels=m:Text3D('Ctrl + Z',CFrame.lookAt(keyAt,keyAt+facing),Vector2.new(180,60),{Font=Enum.Font.SourceSansBold,Color=WHITE,StrokeThickness=6})
+ local key,keyLabels=m:Text3D('Ctrl + Z',CFrame.lookAt(keyAt,keyAt+facing),Vector2.new(180,60),{Font=Enum.Font.FredokaOne,Color=WHITE,StrokeThickness=6})
  m:Every(function(_,age)
   local fade=math.clamp((age-1)/.4,0,1)
   for _,l in ipairs(keyLabels)do
@@ -302,7 +302,7 @@ return function(m)
  if not m:Wait(UNDO+.35)then return end
  if m:Fresh(UNDO+.35,1)then
   m:Banner('THE UNFINISHED DOG',{Kicker='✦   I T   S H I P P E D   A N Y W A Y   ✦',Sub=m.VenueText..(m.By and ('  ·  '..string.upper(m.By))or''),
-   Font=Enum.Font.Code,Color=MAGENTA,Hold=4.5,Shake=.1})
+   Font=Enum.Font.FredokaOne,Color=MAGENTA,Hold=4.5,Shake=.1})
  end
  m:Wait(m.Config.MegaSeconds or 26)
 end

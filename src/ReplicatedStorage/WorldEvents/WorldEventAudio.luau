@@ -1,5 +1,6 @@
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
+local LocalPlayer = game:GetService("Players").LocalPlayer -- Halloween: the MUSIC setting (nil on the server)
 
 local IDs = require(script.Parent.AudioAssetIds)
 
@@ -10,12 +11,19 @@ local eventGroup = audioFolder:WaitForChild("WorldEvents")
 local Audio = {
 	Current = nil,
 	Token = 0,
+	Suppressed = {}, -- Halloween (WP10a): reasons that keep the main music silent, see Audio.SetSuppressed
 }
 
 local FADE_TIME = 1.5
 
 local MAIN_VOLUME = 0.35
 local EVENT_VOLUME = 0.45
+
+-- Halloween: Settings MUSIC: OFF (player attribute Music == false, session-only) silences both tracks here, with or
+-- without the event. The event track keeps playing at volume 0 (its position stays in sync with the world event).
+local function musicOff()
+	return LocalPlayer ~= nil and LocalPlayer:GetAttribute("Music") == false
+end
 
 
 local function getSoundId(data)
@@ -86,6 +94,9 @@ end
 
 
 local function playMainMusic(immediate)
+	if next(Audio.Suppressed) or musicOff() then -- Halloween: another music owner (the Halloween OST) has the main slot / MUSIC: OFF
+		return
+	end
 	local data = IDs["MAIN/music"]
 	local soundId = getSoundId(data)
 
@@ -125,6 +136,9 @@ local function stopMainMusic(token)
 
 	task.delay(FADE_TIME + 0.1, function()
 		if token ~= Audio.Token then
+			return
+		end
+		if Audio.Current == nil and next(Audio.Suppressed) == nil and not musicOff() then -- Halloween: un-suppressed meanwhile
 			return
 		end
 
@@ -193,7 +207,7 @@ function Audio.Begin(id, late, startTimestamp)
 		eventMusic.Loaded:Once(syncPosition)
 	end
 
-	tweenVolume(eventMusic, EVENT_VOLUME)
+	tweenVolume(eventMusic, musicOff() and 0 or EVENT_VOLUME) -- Halloween: MUSIC: OFF plays it silently
 end
 
 
@@ -231,10 +245,44 @@ function Audio.Stop(immediate)
 end
 
 
+-- Halloween (WP10a): Audio.SetSuppressed(reason, on) — while any reason is set the main track stays silent (fades
+-- out now, Audio.Stop/Begin never restart it); clearing the last reason fades it back in. Event music is untouched.
+function Audio.SetSuppressed(reason, on)
+	local was = next(Audio.Suppressed) ~= nil
+	Audio.Suppressed[tostring(reason)] = on and true or nil
+	local now = next(Audio.Suppressed) ~= nil
+	if was == now or Audio.Current ~= nil then
+		return
+	end
+	if now then
+		stopMainMusic(Audio.Token)
+	else
+		playMainMusic(false)
+	end
+end
+
+
 -- Старые скрипты ивентов вызывают Audio.Cue().
 -- Оставляем функцию пустой, чтобы они не выдавали ошибок.
 function Audio.Cue()
 	-- Нам нужны только музыкальные треки.
+end
+
+
+-- Halloween: the MUSIC setting fades the track that belongs to this moment out / back in (event track if one runs).
+-- Deferred: a music owner reacting to the same change (the Halloween Soundscape) claims the main slot first.
+if LocalPlayer then
+	LocalPlayer:GetAttributeChangedSignal("Music"):Connect(function()
+		task.defer(function()
+			if Audio.Current ~= nil then
+				tweenVolume(eventMusic, musicOff() and 0 or EVENT_VOLUME)
+			elseif musicOff() then
+				stopMainMusic(Audio.Token)
+			else
+				playMainMusic(false)
+			end
+		end)
+	end)
 end
 
 

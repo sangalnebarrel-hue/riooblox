@@ -33,6 +33,13 @@ local function dogIdOf(model)
  return id
 end
 local function isSecret(id)local def=id and Definitions[id];return def~=nil and def.Rank==6 end
+-- A mutated secret dog wears its mutation outline (ReplicatedStorage.MutationGlow's 'EconomyVariant'
+-- Highlight) instead of this one while MutationGlow's budget shows it (Enabled); outside that budget
+-- (Low FX, many nearer mutated dogs) it gets this outline again. Its rings, pillar, sparks and
+-- nameplate stay either way. MutationGlow toggles its outline at most every 0.35 s and this runs every
+-- frame, so the hand-over takes one frame.
+local function mutated(model)local v=model:GetAttribute('Variant');local h=model:FindFirstChild('EconomyVariant')
+ return type(v)=='string'and v~='Normal'and h~=nil and h:IsA('Highlight')and h.Enabled==true end
 local function colorOf(id,t)
  if id=='Aurion'then
   local k=(t*.6)%#PRISM;local i=math.floor(k)+1
@@ -305,9 +312,13 @@ Run.RenderStepped:Connect(function()
  -- outline budget is one list, not one per frame parity.
  for _,a in pairs(auras)do if a.Row then table.insert(nearest,a.Row)end end
  table.sort(nearest,function(x,y)return x.Distance<y.Distance end)
- for i,row in ipairs(nearest)do
+ -- Only the outlines this script draws count against MAX_HIGHLIGHTS: a dog that wears MutationGlow's
+ -- outline (or is too far / not shown yet) does not take a slot from the next one.
+ local given=0
+ for _,row in ipairs(nearest)do
   local a=row.Aura
-  local want=i<=MAX_HIGHLIGHTS and row.Distance<160 and row.Show>.5
+  local want=given<MAX_HIGHLIGHTS and row.Distance<160 and row.Show>.5 and not mutated(a.Model)
+  if want then given+=1 end
   if want and not a.Highlight then
    local h=Instance.new('Highlight');h.Name='DOGROTS_SecretAura';h.DepthMode=Enum.HighlightDepthMode.Occluded;h.Adornee=a.Model
    h.FillTransparency=.88;h.OutlineTransparency=.15;h.Parent=a.Folder;a.Highlight=h

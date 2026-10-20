@@ -85,7 +85,7 @@ function W.Say(text,options)
  token+=1;local mine=token
  gui.Enabled=true
  stopFades({line,red,cyan})
- local font=options.Font or Enum.Font.SpecialElite
+ local font=options.Font or Enum.Font.FredokaOne
  for _,l in ipairs({line,red,cyan})do l.Font=font;l.Text=text;l.MaxVisibleGraphemes=0 end
  line.TextColor3=options.Color or Color3.fromRGB(236,230,246)
  line.TextTransparency=0;line.TextStrokeTransparency=.35

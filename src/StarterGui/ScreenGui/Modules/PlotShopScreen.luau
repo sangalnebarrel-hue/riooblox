@@ -15,18 +15,19 @@ function Screen.Build(c)
   U.Cycle(root,'SkinPicker',d.Name,C.Order,selected,0,0,W,function(id)choose(id)end)
  else
   local list=U.Scroll(root,'PlotSkinCatalog',0,0,listW,H)
-  U.Text(list,'PLOT COLLECTION',8,0,listW-16,31,20,P.gold,true)
+  U.Text(list,'PLOT COLLECTION',8,0,listW-16,31,21,P.text,true)
   U.Text(list,count..' / '..#C.Order..' OWNED',8,33,listW-16,23,14,P.muted)
   for i,id in ipairs(C.Order)do
    local entry=C.Skins[id];local status=id==p.EquippedPlotSkin and 'EQUIPPED'or owned[id]and 'OWNED'or C.Earned(p,id)and 'CLAIM FREE'or entry.Rarity:upper()
-   local b=U.Button(list,'Skin_'..id,entry.Name..'\n'..status,5,66+(i-1)*68,listW-16,59,function()choose(id)end,id==selected and C.Color(entry.Glow):Lerp(P.navy,.35)or P.nav)
-   b.Caption.TextSize=19
+   U.Tab(list,'Skin_'..id,entry.Name..'\n'..status,5,66+(i-1)*68,listW-16,59,function()choose(id)end,id==selected)
   end
  end
- U.Text(body,d.Name,8,0,bodyW-16,38,27,accent,true)
+ U.Text(body,d.Name,8,0,bodyW-16,38,27,P.text,true)
+ -- The skin's glow colour as a small accent bar under its name.
+ local swatch=U.Frame(body,'SkinAccent',8,62,56,5,accent);U.New('UICorner',{CornerRadius=UDim.new(.5,0)},swatch)
  U.Text(body,d.Rarity:upper()..'  /  YARD LEVEL '..level,8,38,bodyW-16,24,15,P.muted,true)
  local viewport=Instance.new('ViewportFrame');viewport.Name='LivePlotPreview';viewport.Position=UDim2.fromOffset(8,70);viewport.Size=UDim2.fromOffset(bodyW-16,mobile and 200 or 255)
- viewport.BackgroundColor3=Color3.fromRGB(23,29,39);viewport.BorderSizePixel=0;viewport.Ambient=Color3.fromRGB(175,175,185);viewport.LightColor=Color3.new(1,1,.94);viewport.LightDirection=Vector3.new(-1,-1,-.5);viewport.Parent=body
+ viewport.BackgroundColor3=Color3.fromRGB(23,29,39);viewport.BorderSizePixel=0;U.Round(viewport,12);U.Stroke(viewport,P.edge,2);viewport.Ambient=Color3.fromRGB(175,175,185);viewport.LightColor=Color3.new(1,1,.94);viewport.LightDirection=Vector3.new(-1,-1,-.5);viewport.Parent=body
  local map=workspace:FindFirstChild('DOGROTS_District');local yards=map and map:FindFirstChild('04_PlayerYards');local source
  if yards then for _,yard in ipairs(yards:GetChildren())do if yard:GetAttribute('OwnerUserId')==game.Players.LocalPlayer.UserId then source=yard;break end end
   if not source then for _,yard in ipairs(yards:GetChildren())do if yard:GetAttribute('YardId')then source=yard;break end end end
@@ -56,7 +57,7 @@ function Screen.Build(c)
  -- Estate stages are bought in the UPGRADE TREE (node Plot); price, level gate and bonus come from its
  -- definitions (DogEconomy.UpgradeTree), the same numbers the server charges and applies.
  local Tree=require(RS.DogEconomy.UpgradeTree);local plot=Tree.Level(p,'Plot');local last=#C.Stages
- U.Text(body,'YOUR ESTATE / '..C.Stages[level].Name,8,y,bodyW-16,30,19,P.gold,true);y+=34
+ U.Section(body,'YOUR ESTATE / '..C.Stages[level].Name,8,y,bodyW-16,36);y+=44
  U.Text(body,C.Stages[level].Feature..'\n'..C.Slots(p)..' / '..C.Stages[last].Slots..' kennels · '..Tree.FormatValue('percent',Tree.Nodes.Plot.PerLevel*plot)..' dug value',8,y,bodyW-16,58,16,P.text);y+=66
  if level<last then
   local price=Tree.Cost('Plot',plot);local gate=Tree.Gate('Plot',plot)
@@ -69,7 +70,7 @@ function Screen.Build(c)
  for id,isOwned in pairs(p.Cosmetics or {})do if isOwned and not legacy[id]then table.insert(titles,id)end end
  table.sort(titles)
  if #titles>0 then
-  U.Text(body,'YOUR COLLECTION TITLES',8,y,bodyW-16,30,19,P.gold,true);y+=37
+  U.Section(body,'YOUR COLLECTION TITLES',8,y,bodyW-16,36);y+=44
   for _,id in ipairs(titles)do
    U.Button(body,'Title_'..id,(require(RS.DogEconomy.DexRewards).TitleName(id)or id)..(p.EquippedCosmetic==id and ' / EQUIPPED'or ''),8,y,bodyW-16,38,function()c.Send('Cosmetic',{Kind=id})end,P.nav);y+=46
   end

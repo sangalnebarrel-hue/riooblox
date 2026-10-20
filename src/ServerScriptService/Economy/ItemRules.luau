@@ -136,6 +136,34 @@ function I.Pick(depth,random,e)
  end
  return nil
 end
+-- NIGHT OF THE BURIED MOON natural event rows (e.EventMutations = {{Name, Chance}}, set by Rules.Dig while the event
+-- is on): appended after GLITCHED (index 5 stays GLITCHED), their chance taken from NORMAL. Never edits the shared
+-- MutationDefinitions rows (WorldModifiers.MutationRows returns that very table when no world event runs): a new
+-- array, a new NORMAL row. Only known mutation names (ItemValueConfig.Mutation) count; a name already in the table
+-- grows that row; the total never exceeds NORMAL's chance (scaled down proportionally), so the rows still sum to 1.
+function I.EventRows(base,event)
+ if type(event)~='table'or #base==0 then return base end
+ local extra,order,take={},{},0
+ for _,m in ipairs(event)do
+  local name=type(m)=='table'and type(m.Name)=='string'and string.upper(m.Name)or nil
+  local chance=type(m)=='table'and tonumber(m.Chance)or 0
+  if name and name~='NORMAL'and ValueConfig.Mutation[name]and chance==chance and chance>0 then
+   if not extra[name]then table.insert(order,name)end
+   extra[name]=(extra[name]or 0)+math.min(chance,1);take+=math.min(chance,1)
+  end
+ end
+ if take<=0 then return base end
+ local room=math.max(0,base[1].Chance);local k=take>room and room/take or 1
+ local rows=table.clone(base)
+ rows[1]={Name=base[1].Name,Chance=math.max(0,base[1].Chance-take*k),ValueMultiplier=base[1].ValueMultiplier}
+ for name,chance in pairs(extra)do
+  for i=2,#rows do if rows[i].Name==name then rows[i]={Name=name,Chance=rows[i].Chance+chance*k,ValueMultiplier=rows[i].ValueMultiplier};extra[name]=nil;break end end
+ end
+ for _,name in ipairs(order)do
+  if extra[name]then table.insert(rows,{Name=name,Chance=extra[name]*k,ValueMultiplier=ValueConfig.Mutation[name]or 1})end
+ end
+ return rows
+end
 -- The mutation table one discovery rolls on (row order kept: NORMAL first, GLITCHED fifth).
 -- e.ItemMutation (Bonuses pipeline) grows every mutated row by (1+bonus); NORMAL stays the
 -- remainder and keeps at least half of all finds. The dog's signature mutation procs on top.
@@ -144,7 +172,7 @@ function I.MutationRows(e)
  local rows={};local signature=string.upper(e.SignatureMutation or '')
  local proc=signature~='' and math.clamp(e.SignatureMutationChance or 0,0,.3)or 0
  local extra=math.min(.0005,(e.Duplicate or 0)*.001+(e.Enchant or 0)*.001)
- local base=WorldModifiers.MutationRows(Mutations,'Name','Chance',os.time())
+ local base=I.EventRows(WorldModifiers.MutationRows(Mutations,'Name','Chance',os.time()),e.EventMutations)
  local boost=math.max(0,tonumber(e.ItemMutation)or 0);local scale=1;local mutated=0
  for i,m in ipairs(base)do if i>1 then mutated+=m.Chance end end
  if boost>0 and mutated>0 then scale=math.max(1,math.min(1+boost,.5/mutated))end
@@ -158,7 +186,19 @@ function I.MutationRows(e)
  if proc>0 and not matched then table.insert(rows,{Name=signature,Chance=proc,ValueMultiplier=e.SignatureMutationValue or 1})end
  return rows
 end
+-- A forced mutation (e.ForceMutation: Halloween grants, the Eclipse Dog's conversion decided before I.Mint) wins
+-- over the roll; e.ForceMutationChance is the probability it happened with (MutationChance / CombinedOdds).
+function I.Forced(e)
+ local name=type(e)=='table'and type(e.ForceMutation)=='string'and string.upper(e.ForceMutation)or nil
+ if not name or name==''or not ValueConfig.Mutation[name]then return nil end
+ local chance=tonumber(e.ForceMutationChance)or 1
+ if chance~=chance or chance<=0 then chance=1 end
+ chance=math.clamp(chance,1e-9,1)
+ return {Name=name,Chance=chance,ValueMultiplier=ValueConfig.Mutation[name]or 1},chance
+end
 function I.Mutation(random,e)
+ local forced,fp=I.Forced(e)
+ if forced then return forced,fp end
  local rows=I.MutationRows(e)
  local r=random();local sum=0
  for _,m in ipairs(rows)do sum+=m.Chance;if r<sum then return m,m.Chance end end
@@ -246,11 +286,18 @@ function I.WeightFactor(profile,luck,maxMultiplier,eventLuck)
  weightCache[key]=total
  return total
 end
--- Mean ItemValuation mutation factor of one find with effects e.
+-- Mean ItemValuation mutation factor of one find with effects e: the pre-cap factor and (second value) the mean
+-- post-cap factor of the event rows (ItemValueConfig.PostCapMutation), which ItemValuation applies after the soft cap.
 function I.MutationFactor(e)
- local sum=0
- for _,m in ipairs(I.MutationRows(e))do sum+=m.Chance*(ValueConfig.Mutation[string.upper(m.Name)]or 1)end
- return sum
+ local forced=I.Forced(e)
+ local rows=forced and {{Name=forced.Name,Chance=1}}or I.MutationRows(e)
+ local sum,post=0,1
+ for _,m in ipairs(rows)do
+  local key=string.upper(m.Name);local mult=ValueConfig.Mutation[key]or 1
+  if ValueConfig.PostCapMutation and ValueConfig.PostCapMutation[key]then sum+=m.Chance;post+=m.Chance*(mult-1)
+  else sum+=m.Chance*mult end
+ end
+ return sum,post
 end
 -- One item attempt at `depth` with effects e (the per-dog copy Rules.ItemEffects builds):
 -- chance that it finds something, and the expected sale value of the attempt (coins).
@@ -264,13 +311,13 @@ function I.ExpectedFind(depth,e)
  end
  local over=total-.98
  local scale=over>0 and common>0 and math.max(0,(common-over)/common)or 1
- local mutation=I.MutationFactor(e)
+ local mutation,postMutation=I.MutationFactor(e)
  local found,value=0,0
  for _,row in ipairs(rows)do
   local def=row[1];local p=row[2]*(def.BaseDropChance>=.01 and scale or 1)
   found+=p
   value+=p*Valuation.Expected(def,{Weight=I.WeightFactor(def.WeightProfile,e.WeightLuck,def.MaxWeightMultiplier,e.EventWeightLuck),
-   Mutation=mutation,SellBonus=e.SellValue,IncomeMult=e.IncomeMult,EventTag=e.EventId})
+   Mutation=mutation,PostMutation=postMutation,SellBonus=e.SellValue,IncomeMult=e.IncomeMult,EventTag=e.EventId})
  end
  return math.min(1,found),value
 end

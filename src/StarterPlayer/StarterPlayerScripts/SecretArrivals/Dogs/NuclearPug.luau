@@ -35,7 +35,7 @@ local function rate(t)
 end
 
 return function(ctx)
- ctx.WhisperStyle={Font=Enum.Font.RobotoMono,Color=C(196,255,150),Glitch=.05,Chroma=false,Shake=false,Type=.04}
+ ctx.WhisperStyle={Font=Enum.Font.FredokaOne,Color=C(196,255,150),Glitch=.05,Chroma=false,Shake=false,Type=.04}
  local Kit,scope,model,config=ctx.Kit,ctx.Scope,ctx.Model,ctx.Config
  local low,calm,hold,origin=ctx.Low,Kit.ReducedMotion(),config.Hold,ctx.Origin
  local GREEN=config.Color
@@ -526,8 +526,8 @@ return function(ctx)
 
  -- 4.2 Result_Success: the cloud lets go, the rings drop, puddles splash down, the card.
  if not ctx:Wait(CLEAR)then return end
- ctx.WhisperStyle={Font=Enum.Font.RobotoMono,Color=C(228,255,206),Glitch=.015,Chroma=false,Shake=false,Type=.035}
- ctx:Title({Font=Enum.Font.Bangers,Hold=3.6})
+ ctx.WhisperStyle={Font=Enum.Font.FredokaOne,Color=C(228,255,206),Glitch=.015,Chroma=false,Shake=false,Type=.035}
+ ctx:Title({Font=Enum.Font.FredokaOne,Hold=3.6})
  vent(low and 1 or 3)
  Kit.Tween(grade,1.4,{Brightness=0,Contrast=0,Saturation=0,TintColor=WHITE},Enum.EasingStyle.Sine)
  if drone then Kit.Tween(drone,1.6,{Volume=0})end

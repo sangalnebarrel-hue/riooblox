@@ -116,6 +116,8 @@ function S.Start()
     if not runtime.Allow(player,1)then return false,'Please wait'end
     local p=runtime.Engine:Get(player.UserId);normalize(p);local odds={}
     for _,tier in ipairs(C.Rarities)do odds[tier]=S.Pool(p,tier)end
+    -- Event tiers (never sold here): their disclosed chances, so an odds page never waits for a missing tier.
+    for tier in pairs(C.EventTiers or{})do local good,rows=pcall(function()return require(script.Parent.EventBlocks).Odds(tier)end);if good then odds[tier]=rows end end
     return true,{Odds=odds,Credits=p.LuckyCredits,Opened=p.LuckyOpened,History=p.RewardHistory,PaidAllowed=S.Policy(player),Variants=require(RS.WorldEvents.WorldEventModifiers).MutationRows(require(script.Parent.Config).Variants,'Name','Weight',os.time()),OddsVersion=S.OddsVersion(p)}
    elseif action=='CancelBlockOffer'then
     R.Check(type(a.BlockUid)=='string'and #a.BlockUid==32,'Invalid block');S.CancelOffer(player,a.BlockUid);return true,{Message='Offer closed'}

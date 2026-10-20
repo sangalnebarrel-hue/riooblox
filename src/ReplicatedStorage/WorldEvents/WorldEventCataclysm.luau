@@ -3,6 +3,8 @@ local Run=game:GetService('RunService')
 local Players=game:GetService('Players')
 local Tween=game:GetService('TweenService')
 local V=require(script.Parent.WorldEventObjects)
+-- DOG RUSH set pieces happen where the stampede is (world space), never around the player.
+local Stampede=require(script.Parent.WorldEventStampede)
 local M={}
 local C=Color3.fromRGB
 local player=Players.LocalPlayer
@@ -168,17 +170,17 @@ local function banner(surge)
  phaseLabel:SetAttribute('HideAt',os.clock()+2.6)
 end
 local function setupUI()
- gui=Instance.new('ScreenGui');gui.Name='DOGROTS_EventCinema';gui.ResetOnSpawn=false;gui.DisplayOrder=95;gui.IgnoreGuiInset=true;gui.Parent=player:WaitForChild('PlayerGui')
+ gui=Instance.new('ScreenGui');gui.Name='DOGROTS_EventCinema';gui.ResetOnSpawn=false;gui.DisplayOrder=95;gui.IgnoreGuiInset=true;gui:SetAttribute('HideWithUI',true);gui.Parent=player:WaitForChild('PlayerGui')
  gui.Enabled=false
  local main=player.PlayerGui:FindFirstChild('ScreenGui')
  if main then menuConnection=main:GetAttributeChangedSignal('OpenMenu'):Connect(function()
   if gui and main:GetAttribute('OpenMenu')~=nil then gui.Enabled=false end
  end)end
  phaseLabel=Instance.new('TextLabel');phaseLabel.Name='EventTitle';phaseLabel.BackgroundTransparency=1;phaseLabel.AnchorPoint=Vector2.new(.5,0)
- phaseLabel.Position=UDim2.new(.5,0,.16,0);phaseLabel.Size=UDim2.new(.84,0,0,70);phaseLabel.Font=Enum.Font.GothamBlack;phaseLabel.TextScaled=true;phaseLabel.TextStrokeTransparency=.2;phaseLabel.TextStrokeColor3=C(22,16,36);phaseLabel.Parent=gui
+ phaseLabel.Position=UDim2.new(.5,0,.16,0);phaseLabel.Size=UDim2.new(.84,0,0,70);phaseLabel.Font=Enum.Font.FredokaOne;phaseLabel.TextScaled=true;phaseLabel.TextStrokeTransparency=.2;phaseLabel.TextStrokeColor3=C(22,16,36);phaseLabel.Parent=gui
  local limit=Instance.new('UITextSizeConstraint');limit.MaxTextSize=34;limit.MinTextSize=16;limit.Parent=phaseLabel
  local sub=Instance.new('TextLabel');sub.Name='Subtitle';sub.BackgroundTransparency=1;sub.Position=UDim2.fromScale(0,1);sub.Size=UDim2.new(1,0,0,26)
- sub.Font=Enum.Font.GothamBold;sub.TextSize=16;sub.TextColor3=C(255,255,255);sub.TextStrokeTransparency=.3;sub.Parent=phaseLabel
+ sub.Font=Enum.Font.FredokaOne;sub.TextSize=16;sub.TextColor3=C(255,255,255);sub.TextStrokeTransparency=.3;sub.Parent=phaseLabel
 end
 local function surge()
  if not root or finish or os.clock()-lastSurge<5 then return end
@@ -228,12 +230,15 @@ local function surge()
   end
   for i=1,4 do ring(center+Vector3.new(0,.2*i,0),15+i*10,Color3.fromHSV(i/5,.8,1),3.5)end
  elseif id=='DOG_RUSH' then
-  for i=1,count+2 do
-   local at=ground(center+basis:VectorToWorldSpace(Vector3.new((i-(count+3)/2)*10,0,-40)))
+  -- ALPHA STAMPEDE: golden light and rings burst up where the nearest pack leader runs (the packs
+  -- sprint by the clock, WorldEvents.DogRush). Nothing happens around the player.
+  local lead=Stampede.LeaderPosition()
+  if lead and (lead-position()).Magnitude<260 then
+   local at=ground(lead)
    beam(at,C(255,190,55),8,3);burst(at,c,low and 10 or 30,2)
+   for i=1,3 do ring(at+Vector3.new(0,.25*i,0),i*9,c,3)end
+   if (lead-position()).Magnitude<60 then shake=os.clock()+.8 end
   end
-  for i=1,3 do ring(center+Vector3.new(0,.25*i,0),i*15,c,3)end
-  shake=os.clock()+1.5
  elseif id=='CURSED_FOG' then
   for i=1,count do local a=i*math.pi*2/count;local at=center+Vector3.new(math.cos(a)*100,35+math.sin(a)*10,math.sin(a)*100)
    local m=model('EyesInTheMist')
@@ -391,11 +396,8 @@ local function beat()
   local col=Color3.fromHSV((t*.035)%1,.75,1)
   ring(at+Vector3.new(0,18,0),14,col,3.8,true);burst(at,col,low and 6 or 18,1.5)
  elseif id=='DOG_RUSH' then
-  local lane=basis:VectorToWorldSpace(Vector3.new((beatIndex%4-1.5)*16,0,0))
-  local m=model('StampedeWake');local start=ground(center+lane+basis:VectorToWorldSpace(Vector3.new(0,0,85)))+Vector3.new(0,.3,0)
-  local direction=basis:VectorToWorldSpace(Vector3.new(0,0,-1))
-  for i=1,3 do line(m,start+Vector3.new(i*1.5,0,0),start+Vector3.new(i*1.5,0,0)+direction*18,.5,c,.45)end
-  track(m,3,function(age)m:PivotTo(CFrame.new(direction*age*175));for _,p in ipairs(m:GetChildren())do p.Transparency=.3+age*.7 end end)
+  -- The stampede itself (WorldEventStampede) is the continuous action of DOG RUSH.
+  return
  else
   local focus=position()+basis:VectorToWorldSpace(Vector3.new(0,65,-120))
   local m=projectile('error',crest and 3 or 1.8);trail(m,c,1)
@@ -414,7 +416,9 @@ function M.Begin(event,state,quality)
  basis=CFrame.lookAt(Vector3.zero,look.Unit)
  root=Instance.new('Folder');root.Name='DOGROTS_Cataclysm';root.Parent=workspace
  root:SetAttribute('Event',def.Id);root:SetAttribute('Version',3);root:SetAttribute('SustainedBeats',0)
- setupUI();banner(false)
+ setupUI()
+ -- DOG RUSH shows its own big localized banner (WorldEventGameplayFX).
+ if def.Id~='DOG_RUSH' then banner(false)end
  setupSustained();nextBeat=born+1.5;beatIndex=0
  local id=def.Id
  local kind=id=='BONE_RAIN' and 'bone' or id=='CRYSTAL_STORM' and 'crystal' or (id=='GOLDEN_HOUR' or id=='TREASURE_FEVER') and 'coin' or (id=='EARTHQUAKE' or id=='UFO_INVASION') and 'rock' or 'error'

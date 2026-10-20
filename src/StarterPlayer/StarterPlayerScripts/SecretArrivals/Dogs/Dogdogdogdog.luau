@@ -16,7 +16,7 @@ local TYPE=.055
 local function number(parent:Instance,text:string,thickness:number)
  local l=Instance.new('TextLabel');l.Name='Number';l:SetAttribute('KeepFont',true)
  l.BackgroundTransparency=1;l.AnchorPoint=Vector2.new(.5,.5);l.Position=UDim2.fromScale(.5,.5);l.Size=UDim2.fromScale(0,0)
- l.Font=Enum.Font.LuckiestGuy;l.Text=text;l.TextScaled=true;l.TextColor3=WHITE;l.TextStrokeTransparency=1
+ l.Font=Enum.Font.FredokaOne;l.Text=text;l.TextScaled=true;l.TextColor3=WHITE;l.TextStrokeTransparency=1
  local s=Instance.new('UIStroke');s.Color=DEEP;s.Thickness=thickness;s.LineJoinMode=Enum.LineJoinMode.Round;s.Parent=l
  l.Parent=parent
  return l,s
@@ -28,7 +28,7 @@ local function billboard(adornee:BasePart,size:UDim2,lift:number)
 end
 
 return function(ctx)
- ctx.WhisperStyle={Font=Enum.Font.PermanentMarker,Color=CREAM,Type=TYPE,Glitch=.025}
+ ctx.WhisperStyle={Font=Enum.Font.FredokaOne,Color=CREAM,Type=TYPE,Glitch=.025}
  local Kit,scope,model,config=ctx.Kit,ctx.Scope,ctx.Model,ctx.Config
  local low,calm,origin,hold=ctx.Low,Kit.ReducedMotion(),ctx.Origin,config.Hold
  local size=Kit.Size(model)
@@ -201,7 +201,7 @@ return function(ctx)
  local one,oneStroke=number(oneGui,'1',4)
  oneGui.Parent=top
  Kit.Tween(one,.4,{Size=UDim2.fromScale(1,1)},Enum.EasingStyle.Back)
- ctx:Title({Font=Enum.Font.LuckiestGuy,Hold=3.6})
+ ctx:Title({Font=Enum.Font.FredokaOne,Hold=3.6})
  if live(4.7)then
   Kit.Cue('Chime',nil,.6);Kit.Cue('Impact',nil,.35)
   local n=near()

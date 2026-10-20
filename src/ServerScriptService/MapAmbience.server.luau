@@ -74,7 +74,7 @@ local function ensureOwnerBillboard(yard)
   name.Position=UDim2.new(.5,0,0,78)
   name.Size=UDim2.new(1,0,0,34)
   name.BackgroundTransparency=1
-  name.Font=Enum.Font.GothamBold
+  name.Font=Enum.Font.FredokaOne
   name.Text=""
   name.TextColor3=Color3.new(1,1,1)
   name.TextSize=24

@@ -7,6 +7,7 @@ local Prompts=game:GetService('ProximityPromptService')
 local player=Players.LocalPlayer
 local gui=script.Parent.Parent
 local Theme=require(script.Parent.UITheme);Theme.ApplyShell(gui);Theme.ApplyStandalone(gui)
+local Sound=require(script.Parent.Kit.Sound)
 local N={Owner='HUD',ModalOwnerCount=0,WorldRewardHandlers={},Pending={},RewardEpoch=0,SeenRewards={}}
 local screens,switchPage,serviceOpen,inventoryReward,pageDialog
 local main=gui:WaitForChild('MainWindow');local pages=main.Content.PageContainer
@@ -45,6 +46,7 @@ task.spawn(function()
  if ok and controls then playerControls=controls;menuControls(N.ModalOwnerCount>0)end
 end)
 function N.Acquire(owner,page)
+ local previousOwner=N.Owner
 	N.Owner=owner
  -- Navigation owns one window family; nested dialogs borrow that owner.
  N.ModalOwnerCount=owner=='HUD'and 0 or 1
@@ -75,7 +77,11 @@ function N.Acquire(owner,page)
 		reward:Destroy()
 	end
  local map=mapOverlay();if map and owner~='Map'then map.Visible=false end
- main.Visible=false;gui.ServiceMenus.Visible=false;gui.Backdrop.Visible=owner~='HUD';gui.HUD.Visible=owner=='HUD'
+ -- Hide UI (StarterPlayerScripts.HideUI): any menu brings the interface back.
+ if owner~='HUD'and gui:GetAttribute('UIHidden')then gui:SetAttribute('UIHidden',nil)end
+ -- One open / close sound for every menu family (kit windows play the same cue; Kit.Sound drops the repeat).
+ if previousOwner=='HUD'and owner~='HUD'then Sound.Play('Open')elseif previousOwner~='HUD'and owner=='HUD'then Sound.Play('Close')end
+ main.Visible=false;gui.ServiceMenus.Visible=false;gui.Backdrop.Visible=owner~='HUD';gui.HUD.Visible=owner=='HUD'and not gui:GetAttribute('UIHidden')
  gui.InventoryToast.Visible=false
  for _,p in ipairs(pages:GetChildren())do if p:IsA('GuiObject')then p.Visible=false end end
  local keyboard=pages:FindFirstChild('SearchKeyboard');if keyboard then keyboard.Visible=false end
@@ -94,8 +100,9 @@ function N.Back()
  if N.DismissDialog()then return end
  N.Close()
 end
--- The genetics lab is a kit window (Modules.LabScreen), not a Menus page (it needs no registered screens).
-local function openLab()local ok,err=pcall(function()require(script.Parent.LabScreen).Open()end);if not ok then warn('Lab window: '..tostring(err))end end
+-- The genetics lab is a kit window, not a Menus page (it needs no registered screens): the mutation machine
+-- (Modules.MutationLabScreen) while LabConfig.SimpleMode is on, else the old five-procedure Modules.LabScreen.
+local function openLab()local ok,err=pcall(function()local simple=require(game:GetService('ReplicatedStorage'):WaitForChild('LabConfig')).SimpleMode==true;require(script.Parent:WaitForChild(simple and'MutationLabScreen'or'LabScreen')).Open()end);if not ok then warn('Lab window: '..tostring(err))end end
 function N.OpenPage(page,message)
  if page=='Roulette'then page='RewardMachine'end -- Pre-refactor navigation alias.
  page=aliases[page]or page
@@ -241,6 +248,31 @@ do
  end
  function N.OpenScreen(page,state)
   if dogScreens(page,state)then return end
+  return openScreen(page,state)
+ end
+end
+-- Kit windows of the big overhaul (docs/OVERHAUL.md). Every N.OpenPage / N.OpenScreen route for
+-- these keys opens Modules.<module>.Open(arg) (arg: the page message or the screen state). A module
+-- that is missing or fails to load leaves the legacy route in place.
+local kitScreens={Inventory='InventoryScreen',Trade='TradeScreen',Navigate='NavigatorScreen',Titles='TitlesScreen',
+ Showcase='ShowcaseScreen',Decor='DecorScreen',Mine='MineScreen',Halloween='HalloweenScreen'}
+N.KitScreens=kitScreens
+local function kitScreen(page,arg)
+ local name=kitScreens[aliases[page]or page];if not name then return false end
+ local module=script.Parent:FindFirstChild(name);if not module then return false end
+ local ok,screen=pcall(require,module)
+ if not ok or type(screen)~='table'or type(screen.Open)~='function'then warn('DOGROTS '..name..': '..tostring(screen));return false end
+ local opened,err=pcall(screen.Open,arg,page);if not opened then warn('DOGROTS '..name..' open: '..tostring(err))end
+ return true
+end
+do
+ local openPage,openScreen=N.OpenPage,N.OpenScreen
+ function N.OpenPage(page,message)
+  if kitScreen(page,message)then return end
+  return openPage(page,message)
+ end
+ function N.OpenScreen(page,state)
+  if kitScreen(page,state)then return end
   return openScreen(page,state)
  end
 end

@@ -201,7 +201,7 @@ return function(m)
  m:Tween(wash,.6,{BackgroundTransparency=1})
  if m:Fresh(RELEASE,1)then
   m:Banner('THE WRONG DOG',{Kicker='✦   I T   I S   L O O K I N G   A T   Y O U   ✦',Sub=m.VenueText..(m.By and ('  ·  '..string.upper(m.By))or''),
-   Font=Enum.Font.Garamond,Color=RED,Glitch=true,Hold=4.5})
+   Font=Enum.Font.FredokaOne,Color=RED,Glitch=true,Hold=4.5})
  end
 
  -- The eyes close one by one; the dusk lifts as the dog walks.

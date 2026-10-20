@@ -187,7 +187,7 @@ return function(m)
   m:Cue('Impact',nil,.7);m:Cue('Sting',nil,.4)
   m:Flash(EMBER,.8,.35)
   m:Banner('SPIDERDOG',{Kicker='✦   T H E   W E B   ✦',Sub=m.VenueText..(m.By and ('  ·  '..string.upper(m.By))or''),
-   Font=Enum.Font.Creepster,Color=ORANGE,Hold=4.8,Shake=.2})
+   Font=Enum.Font.FredokaOne,Color=ORANGE,Hold=4.8,Shake=.2})
  end
  local stage=onTongue and m.Stage or m:Ground(m.Origin)
  m:Shockwave(Vector3.new(stage.X,stage.Y,stage.Z),DUST,{Speed=280,Height=12,Thickness=1.2,Alpha=.3,Segments=40,OnPass=function()

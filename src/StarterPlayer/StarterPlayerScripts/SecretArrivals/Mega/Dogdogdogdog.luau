@@ -72,7 +72,7 @@ return function(m)
  if N==8 then
   for i,row in ipairs(pack)do
    local sign,labels=m:Text3D(tostring(row.Index),CFrame.new(ringAt(row.Angle)),Vector2.new(48,48),
-    {Font=Enum.Font.LuckiestGuy,Color=WHITE,StrokeColor=DEEP,StrokeThickness=6})
+    {Font=Enum.Font.FredokaOne,Color=WHITE,StrokeColor=DEEP,StrokeThickness=6})
    numbers[i]={Part=sign,Labels=labels,Index=row.Index,At=call+(4*row.Index-1)*TYPE}
    for _,l in ipairs(labels)do l.TextTransparency=1 end
   end
@@ -167,7 +167,7 @@ return function(m)
     local a=Kit.Random(0,math.pi*2);local r=Kit.Random(180,R*.95)
     local at=center+Vector3.new(math.cos(a)*r,Kit.Random(120,300),math.sin(a)*r)
     local sign,labels=m:Text3D(WORDS[(k-1)%#WORDS+1],CFrame.new(at),Vector2.new(96,40),
-     {Font=Enum.Font.LuckiestGuy,Color=k%3==0 and WHITE or (k%2==0 and GOLD or CREAM),StrokeColor=DEEP,StrokeThickness=5})
+     {Font=Enum.Font.FredokaOne,Color=k%3==0 and WHITE or (k%2==0 and GOLD or CREAM),StrokeColor=DEEP,StrokeThickness=5})
     local born=os.clock()
     pip(1.6+k*.09,.12)
     m:Every(function()
@@ -191,7 +191,7 @@ return function(m)
   m:Flash(C(255,232,160),.55,.5)
   grade.Brightness=.16;m:Tween(grade,.8,{Brightness=0})
   m:Banner('DOGDOGDOGDOG',{Kicker='✦   D O G   D O G   D O G   D O G   ✦',Sub=m.VenueText..(m.By and ('  ·  '..string.upper(m.By))or''),
-   Font=Enum.Font.LuckiestGuy,Color=GOLD,Hold=4.6,Shake=.2})
+   Font=Enum.Font.FredokaOne,Color=GOLD,Hold=4.6,Shake=.2})
   m:Ring(merge+Vector3.new(0,6,0),GOLD,10,260,1.1,{Thickness=3,Alpha=.25,Segments=48})
  end
  m:Shockwave(ground,GOLD,{Speed=320,Height=20,Thickness=1.4,Alpha=.2,OnPass=function()

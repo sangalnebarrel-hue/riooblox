@@ -228,7 +228,7 @@ return function(m)
   m:Cue('Sting',nil,.4)
   m:Flash(WHITE,.55+.3*m:Near(200),.5)
   m:Banner('AURION',{Kicker='✦   T H E   L I G H T   S P L I T   I N T O   N I N E   ✦',Sub=m.VenueText..(m.By and ('  ·  '..string.upper(m.By))or''),
-   Font=Enum.Font.JosefinSans,Color=m.Color,Hold=5,Shake=.1})
+   Font=Enum.Font.FredokaOne,Color=m.Color,Hold=5,Shake=.1})
  end
 
  -- The sparkles thin out, night lifts, and the curtains fade last.

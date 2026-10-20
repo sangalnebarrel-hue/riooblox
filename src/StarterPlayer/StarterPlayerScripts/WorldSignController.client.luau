@@ -45,7 +45,7 @@ local function getDebug(entry)
  local g=entry.debug
  if not g then
   g=Instance.new("BillboardGui");g.Name="WorldSignDebug";g.Size=UDim2.fromOffset(230,42);g.StudsOffset=Vector3.new(0,4,0);g.AlwaysOnTop=true;g.MaxDistance=1200;g.Adornee=part;g.Parent=pg
-  local t=Instance.new("TextLabel");t.Name="Info";t.Size=UDim2.fromScale(1,1);t.BackgroundColor3=Color3.fromRGB(15,18,25);t.BackgroundTransparency=0.2;t.TextColor3=Color3.new(1,1,1);t.TextStrokeTransparency=0.35;t.TextScaled=true;t.Font=Enum.Font.Gotham;t.Parent=g
+  local t=Instance.new("TextLabel");t.Name="Info";t.Size=UDim2.fromScale(1,1);t.BackgroundColor3=Color3.fromRGB(15,18,25);t.BackgroundTransparency=0.2;t.TextColor3=Color3.new(1,1,1);t.TextStrokeTransparency=0.35;t.TextScaled=true;t.Font=Enum.Font.FredokaOne;t.Parent=g
   entry.debug=g;entry.debugText=t
  end
  return entry.debugText

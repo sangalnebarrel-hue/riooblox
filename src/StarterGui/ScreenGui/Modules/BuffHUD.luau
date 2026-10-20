@@ -10,10 +10,13 @@ function B.Start(gui)
  local detail=U.Panel(hud,'SupplyTooltip',0,0,252,86);detail.Visible=false;detail.ZIndex=30
  local tip=U.Text(detail,'',10,6,232,74,16,P.text,true);tip.ZIndex=31
  local function row(key,name,icon,color,text,open)
+  -- HUD glass, like the currency pills: navy, white-to-steel sheen, the boost's colour as the rim.
   local card=U.Panel(holder,key,0,0,226,52);card.Visible=false
-  U.Stroke(card,color,2);local glyph=U.Icon(card,icon,6,7,38,color)
-  local title=U.Text(card,name,51,4,168,19,14,P.text,true)
-  local timer=U.Text(card,'',51,24,168,23,20,P.text,true);timer.Name='Remaining'
+  card.BackgroundColor3=P.edge;card.BackgroundTransparency=.25;U.Stroke(card,color,2,.1)
+  U.New('UIGradient',{Color=ColorSequence.new(Color3.new(1,1,1),Color3.fromRGB(165,175,195)),Rotation=90},card)
+  local glyph=U.Icon(card,icon,6,7,38,color)
+  local title=U.Text(card,name,51,4,168,19,14,Color3.fromRGB(214,230,248),true);title.TextStrokeColor3=P.edge;title.TextStrokeTransparency=.4
+  local timer=U.Text(card,'',51,24,168,23,20,Color3.new(1,1,1),true);timer.Name='Remaining';timer.TextStrokeColor3=P.edge;timer.TextStrokeTransparency=.2
   local hit=U.New('TextButton',{Name='Details',Text='',BackgroundTransparency=1,Size=UDim2.fromScale(1,1)},card)
   local function show()tip.Text=title.Text..'\n'..text();detail.Visible=true end
   hit.MouseEnter:Connect(show);hit.MouseLeave:Connect(function()detail.Visible=false end)
@@ -30,6 +33,8 @@ function B.Start(gui)
   row(key,def.Name,key,colors[key]or P.green,function()return def.EffectText end)
  end
  row('Luck','LUCK','Luck',P.green,function()return 'Rare loot and rare finds'end,'Luck')
+ -- NIGHT OF THE BURIED MOON: the personal Candy Rush (its timer only runs while the player is active).
+ if U.HalloweenEnabled then row('MoonRush','CANDY RUSH x2','Halloween',Color3.fromRGB(255,128,24),function()return 'Double candy in the Dead Yard. The timer pauses while you idle.'end,'Halloween')end
  row('ServerLuck','SERVER LUCK','Luck',P.purple,function()return 'Rarer dogs on the tongue for everyone'end,'Luck')
  -- What each row shows right now: expiry (0 = hidden) and its title.
  local function status(key,now)
@@ -40,6 +45,10 @@ function B.Start(gui)
    -- Donut Corgi's treats (and old Lucky Treat time) still give a little luck.
    local treat=tonumber(p:GetAttribute('SupplyExpires_LuckyTreat'))or 0
    if treat>now then return treat,'LUCKY TREAT'end
+   return 0
+  elseif key=='MoonRush'then
+   local left=tonumber(p:GetAttribute('HwRushRemaining'))or 0
+   if p:GetAttribute('HwRushActive')==true and left>0 then return now+left end
    return 0
   elseif key=='ServerLuck'then
    -- Never wait for it here: Start runs while the navigation module loads.
@@ -71,6 +80,8 @@ function B.Start(gui)
    local y=m and m.BuffTop or top+8;local limit=m and m.BuffBottom or top+h-8
    local notice=hud:FindFirstChild('OfflineEarningsNotice')
    if notice and notice.Visible then y=math.max(y,notice.AbsolutePosition.Y-gui.AbsolutePosition.Y+notice.AbsoluteSize.Y+8)end
+   -- Halloween event strip and boss bar (top centre of the free zone): the cards stack below them
+   for _,name in ipairs({'HalloweenStrip','HalloweenBossBar'})do local o=hud:FindFirstChild(name);if o and o.Visible then y=math.max(y,o.AbsolutePosition.Y-gui.AbsolutePosition.Y+o.AbsoluteSize.Y+8)end end
    stackH=math.ceil(index/3)*74-6;stackTop=math.max(m and m.BuffTop or top+8,math.min(y,limit-stackH))
    holder.AnchorPoint=Vector2.new(1,0);holder.Position=UDim2.fromOffset(right,stackTop);holder.Size=UDim2.fromOffset(width,math.max(1,stackH))
    for i,r in ipairs(shown)do

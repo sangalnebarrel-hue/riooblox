@@ -26,10 +26,17 @@ remote.OnServerInvoke=function(player,action)
   local m=MiningRules.Normalize(p.Mining,M);p.Mining=m
   if action=='cash'then p.Cash=math.min(Config.MaxCash,p.Cash+1000000);return'+1M Coins'
   elseif action=='cash100'then p.Cash=math.min(Config.MaxCash,p.Cash+100000000);return'+100M Coins'
-  elseif action=='strength'then m.Strength=math.min(M.MaxStrength,m.Strength+100);return'Strength '..m.Strength
+  elseif action=='strength'then
+   -- Strength lives in the UPGRADE TREE now: max the cheapest unfinished STRENGTH node.
+   p.Upgrades=type(p.Upgrades)=='table'and p.Upgrades or{}
+   for _,id in ipairs({'IronGrip','HeavyLifter','TitanBack','Colossus','MountainBreaker'})do
+    local node=require(RS.DogEconomy.UpgradeTree).Nodes[id]
+    if (p.Upgrades[id]or 0)<node.Max then p.Upgrades[id]=node.Max;return'Maxed '..node.Name end
+   end
+   return'All STRENGTH nodes are maxed'
   elseif action=='all'then
-   m.PickaxeOwned=#M.Pickaxes;m.PickaxeLevel=#M.Pickaxes;m.WeightOwned=#M.Weights;m.WeightLevel=#M.Weights;m.Strength=M.MaxStrength
-   return'All pickaxes, weights and max Strength'
+   m.PickaxeOwned=#M.Pickaxes;m.PickaxeLevel=#M.Pickaxes;m.Strength=M.MaxStrength
+   return'All pickaxes and max Strength'
   elseif action=='rare'then
    local ore,index=MiningRules.OreById(M,'VoidCrystal')
    m.OreId=ore.Id;m.OreIndex=index;m.OreMaxHP=ore.HP;m.OreHP=ore.HP;m.OreValue=ore.ValueMax;m.OreEarned=0;m.OreSerial+=1
