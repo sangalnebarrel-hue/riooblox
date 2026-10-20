@@ -70,7 +70,8 @@ local function boundsCentre(model)
 	local minV, maxV
 	for _, d in model:GetDescendants() do
 		if d:IsA("BasePart") then
-			local p = d.Position
+			-- Lune parts have no Position property; the CFrame carries it
+			local p = d.CFrame.Position
 			local h = d.Size / 2
 			local lo, hi = p - h, p + h
 			if not minV then
