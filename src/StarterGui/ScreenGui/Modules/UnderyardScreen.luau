@@ -32,7 +32,7 @@ local TweenService = game:GetService("TweenService")
 local Kit = require(script.Parent.Kit)
 local Theme, Format, Motion = Kit.Theme, Kit.Format, Kit.Motion
 
-local S = {}
+local S: any = {}
 S.Tabs = { "seals", "contracts", "coffin", "dex", "collection", "journal" }
 
 local player = Players.LocalPlayer
@@ -293,7 +293,7 @@ local function chipRow(holder: any, rows: { any }, maxW: number, height: number?
 		local f = Kit.New("Frame", { Name = "Reward" .. i, BorderSizePixel = 0, BackgroundColor3 = color, ZIndex = Z + 3 }, holder)
 		Kit.Corner(f, "pill")
 		Kit.Stroke(f, INK, 1.5, 0.25)
-		local kind, o = "Star", {}
+		local kind, o: any = "Star", {}
 		if UIcons then
 			kind, o = UIcons.ForReward(row)
 		end
@@ -914,7 +914,7 @@ local ACTION_TEXT = {
 local STATE_TEXT = { Waiting = "SEALED", Previous = "SEALED", Offer = "OFFERING", Trial = "READY", Cleared = "CLEARED", Gold = "GOLD" }
 
 pages.seals = function(page: Frame)
-	local P = { Cards = {}, Links = {}, Wide = false }
+	local P: any = { Cards = {}, Links = {}, Wide = false }
 	local scroll = scrollPage(page)
 	P.Scroll = scroll
 
@@ -1398,7 +1398,7 @@ local CONTRACT_ICON = { Perfect = { "Star", MOON }, Trial = { "Seal", MOON }, Ec
 	Spirit = { "Ghost", VIOLET_HI } }
 
 pages.contracts = function(page: Frame)
-	local P = {}
+	local P: any = {}
 	local scroll = scrollPage(page)
 	local head = panel(scroll, "Header", C(70, 46, 128), C(22, 14, 50))
 	local headIcon = icon(head, "Icon", "Scroll", { Size = 48, Glow = VIOLET })
@@ -1724,7 +1724,7 @@ end
 
 ---------------------------------------------------------------------------- COFFIN
 pages.coffin = function(page: Frame)
-	local P = { Results = {} }
+	local P: any = { Results = {} }
 	local scroll = scrollPage(page)
 	local price = (Cfg.Coffin and Cfg.Coffin.Price) or { Shards = 150, Keys = 1 }
 	-- hero
@@ -2028,7 +2028,7 @@ pages.coffin = function(page: Frame)
 				changed = true
 			end
 			if row then
-				local kind, o = "Star", {}
+				local kind, o: any = "Star", {}
 				if UIcons then
 					kind, o = UIcons.ForReward(row)
 				end
@@ -2074,7 +2074,7 @@ end
 
 ---------------------------------------------------------------------------- DEX II
 pages.dex = function(page: Frame)
-	local P = {}
+	local P: any = {}
 	local scroll = scrollPage(page)
 	local order = (Cfg.Dogs and Cfg.Dogs.Order) or {}
 	local defs = (Cfg.Dogs and Cfg.Dogs.Defs) or {}
@@ -2305,7 +2305,7 @@ end
 
 ---------------------------------------------------------------------------- COLLECTION
 pages.collection = function(page: Frame)
-	local P = { Sections = {}, Built = {} }
+	local P: any = { Sections = {}, Built = {} }
 	local scroll = scrollPage(page)
 	local head = panel(scroll, "Tailor", C(80, 50, 120), C(26, 14, 48))
 	local headIcon = icon(head, "Icon", "Fragment", { Size = 56 })
@@ -2594,7 +2594,7 @@ end
 
 ---------------------------------------------------------------------------- JOURNAL
 pages.journal = function(page: Frame)
-	local P = { Entries = {} }
+	local P: any = { Entries = {} }
 	local scroll = scrollPage(page)
 	local head = panel(scroll, "Header", C(70, 46, 128), C(22, 14, 50))
 	local headIcon = icon(head, "Icon", "Eye", { Size = 52 })
@@ -2632,7 +2632,7 @@ pages.journal = function(page: Frame)
 		if r.Bus == "CauldronClaimLocal" then
 			-- the brew finale plays at the Haunted Cauldron (CauldronFX); empty rows = no reward card (A04 §11.A)
 			local level = math.clamp(tonumber(hview().Cauldron and hview().Cauldron.Level) or 5, 1, 5)
-			local d = { Level = level, Rows = {}, Reveal = function() end, FromWindow = true, Replay = true }
+			local d: any = { Level = level, Rows = {}, Reveal = function() end, FromWindow = true, Replay = true }
 			Bus.Fire("CauldronClaimLocal", d)
 			if d.Handled then
 				if win and win.IsOpen then

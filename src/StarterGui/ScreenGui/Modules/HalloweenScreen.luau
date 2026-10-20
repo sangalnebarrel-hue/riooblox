@@ -1180,7 +1180,7 @@ end
 
 ---------------------------------------------------------------------------- EVENT
 pages.event = function(page: Frame)
-	local P = { Cards = {} }
+	local P: any = { Cards = {} }
 	local scroll = scrollPage(page)
 	P.Scroll = scroll
 
@@ -2177,7 +2177,7 @@ local function dexSets(): { any }
 			return F("%d EVENT DOGS FOUND", n)
 		end,
 		OpenDex = function()
-			S.OpenDogDex()
+			(S :: any).OpenDogDex()
 		end,
 	}
 	local c2 = UV and UV.Config
@@ -2215,7 +2215,7 @@ local function dexSets(): { any }
 				if ok and type(U) == "table" and U.OpenDogDex then
 					U.OpenDogDex()
 				else
-					S.OpenDogDex()
+					(S :: any).OpenDogDex()
 				end
 			end,
 		}
@@ -2224,7 +2224,7 @@ local function dexSets(): { any }
 end
 
 pages.dex = function(page: Frame)
-	local P = { Chapter = 1 }
+	local P: any = { Chapter = 1 }
 	local scroll = scrollPage(page)
 	local kind = registerDogPreview()
 	local defsList = dexSets()

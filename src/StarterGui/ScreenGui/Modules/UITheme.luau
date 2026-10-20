@@ -515,8 +515,8 @@ U.PillSpecs={
 -- Halloween pills (built by StarterPlayerScripts.HalloweenClient.HUD); before LEVEL: the tooltips above index 1..3.
 if U.HalloweenEnabled then table.insert(U.PillSpecs,4,{key='MoonCandy',name='MoonCandyPill',units=3,always=true,title='MOON CANDY'});table.insert(U.PillSpecs,5,{key='MoonCurse',name='MoonCursePill',units=3.6,title='CURSE'})end
 -- Chapter II pills before LEVEL (WP-L): Bell Shards (in the Underyard or when > 0), Lucky Dust (when > 0)
-if U.Chapter2Enabled then table.insert(U.PillSpecs,#U.PillSpecs,{key='BellShards',name='QuickShards',units=3,title='BELL SHARDS',tip='Earned in THE UNDERYARD. Offer them at the Bell Seal altars and open the Black Coffin.'})end
-table.insert(U.PillSpecs,#U.PillSpecs,{key='LuckyDust',name='QuickDust',units=3,title='LUCKY DUST',tip='Dismantle Lucky Blocks for it in your bag and forge new Lucky Blocks with it.'})
+if U.Chapter2Enabled then table.insert(U.PillSpecs,(#U.PillSpecs),{key='BellShards',name='QuickShards',units=3,title='BELL SHARDS',tip='Earned in THE UNDERYARD. Offer them at the Bell Seal altars and open the Black Coffin.'})end
+table.insert(U.PillSpecs,(#U.PillSpecs),{key='LuckyDust',name='QuickDust',units=3,title='LUCKY DUST',tip='Dismantle Lucky Blocks for it in your bag and forge new Lucky Blocks with it.'})
 local queuedLayout=setmetatable({},{__mode='k'})
 -- Coalesced U.LayoutHUD (several changes in one frame lay out once).
 function U.RequestHUDLayout(screen:any)

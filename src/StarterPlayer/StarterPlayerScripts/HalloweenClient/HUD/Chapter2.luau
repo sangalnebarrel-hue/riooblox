@@ -14,7 +14,7 @@
 local RS = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
-local M = {}
+local M: any = { Started = false }
 
 local C = Color3.fromRGB
 local WHITE = Color3.new(1, 1, 1)
@@ -241,7 +241,7 @@ function M.Start(H: any, env: any)
 		end
 	end
 	if not hasKeys then
-		table.insert(U.PillSpecs, #U.PillSpecs, { key = "CoffinKeys", name = "QuickKeys", units = 2.6, title = "COFFIN KEYS",
+		table.insert(U.PillSpecs, (#U.PillSpecs), { key = "CoffinKeys", name = "QuickKeys", units = 2.6, title = "COFFIN KEYS",
 			tip = "Open the Black Coffin in Bell Square with one. Never sold." })
 	end
 	local keysRoot, keysValue, keysIcon = env.Pill("QuickKeys", "🗝️", MOON, C(206, 228, 255))
