@@ -90,20 +90,33 @@ local function safe(key: string, fn: (...any) -> ...any, ...: any)
 	return ok
 end
 
-local loc: any = nil
+-- Russian: Localization.Reveal first, then Localization.Underyard (server replies such as "Watch the church first")
+local locs: { any }? = nil
 local function T(en: string): string
 	if not Shared.IsRussian() then
 		return en
 	end
-	if loc == nil then
-		local ok, m = pcall(function()
-			local folder = RS:FindFirstChild("Localization")
-			local inst = folder and folder:FindFirstChild("Reveal")
-			return inst and require(inst :: any)
-		end)
-		loc = ok and type(m) == "table" and m or false
+	if locs == nil then
+		local list = {}
+		for _, name in ipairs({ "Reveal", "Underyard" }) do
+			local ok, m = pcall(function()
+				local folder = RS:FindFirstChild("Localization")
+				local inst = folder and folder:FindFirstChild(name)
+				return inst and require(inst :: any)
+			end)
+			if ok and type(m) == "table" and type(m.Translate) == "function" then
+				table.insert(list, m)
+			end
+		end
+		locs = list
 	end
-	return loc and loc.Translate(en, "ru") or en
+	for _, m in ipairs(locs :: { any }) do
+		local ok, ru = pcall(m.Translate, en, "ru")
+		if ok and type(ru) == "string" then
+			return ru
+		end
+	end
+	return en
 end
 local function Lp(pair: any): string
 	if type(pair) == "table" then
@@ -128,6 +141,21 @@ local function tween(inst: Instance, seconds: number, goals: { [string]: any }, 
 	local tw = TweenService:Create(inst, TweenInfo.new(math.max(0, seconds), style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), goals)
 	tw:Play()
 	return tw
+end
+
+-- one write for many anchored parts (absolute CFrames, so nothing drifts however often it runs)
+local function moveParts(parts: { BasePart }, cfs: { CFrame })
+	if #parts == 0 then
+		return
+	end
+	local ok = pcall(function()
+		workspace:BulkMoveTo(parts, cfs, Enum.BulkMoveMode.FireCFrameChanged)
+	end)
+	if not ok then
+		for i, p in ipairs(parts) do
+			p.CFrame = cfs[i]
+		end
+	end
 end
 
 local function module(name: string): any
@@ -421,12 +449,20 @@ local function buildCache(churchRoot: Instance): any
 			if typeof(closed) ~= "CFrame" then
 				closed = m:GetPivot()
 			end
-			table.insert(c.Doors, { Model = m, Closed = closed, Angle = tonumber(m:GetAttribute("OpenAngle")) or 0 })
+			-- every part's offset from the hinge (a rigid model: valid whatever the doors' state is now)
+			local primary = m.PrimaryPart
+			local base = primary and primary.CFrame or m:GetPivot()
+			local rec = { Model = m, Closed = closed, Angle = tonumber(m:GetAttribute("OpenAngle")) or 0, Parts = {}, Rel = {} }
 			for _, d in ipairs(m:GetDescendants()) do
-				if d:IsA("BasePart") and d:GetAttribute("SealRune") then
-					table.insert(c.SealRunes, { Part = d, Color = d.Color })
+				if d:IsA("BasePart") then
+					table.insert(rec.Parts, d)
+					table.insert(rec.Rel, base:ToObjectSpace(d.CFrame))
+					if d:GetAttribute("SealRune") then
+						table.insert(c.SealRunes, { Part = d, Color = d.Color })
+					end
 				end
 			end
+			table.insert(c.Doors, rec)
 		end
 	end
 	local portal = churchRoot:FindFirstChild("ChurchPortal")
@@ -520,13 +556,19 @@ end
 
 local function setDoors(f: number)
 	local c = church()
+	local parts, cfs = {}, {}
 	for _, d in ipairs(c.Doors or {}) do
 		if d.Model.Parent then
-			safe("doors", function()
-				d.Model:PivotTo(Rules.DoorPivot(d.Closed, d.Angle, f))
-			end)
+			local pivot = Rules.DoorPivot(d.Closed, d.Angle, f)
+			for i, p in ipairs(d.Parts) do
+				if p.Parent then
+					table.insert(parts, p)
+					table.insert(cfs, pivot * d.Rel[i])
+				end
+			end
 		end
 	end
+	safe("doors", moveParts, parts, cfs)
 	State.Church.Doors = f
 end
 
@@ -648,11 +690,7 @@ local function restoreRings()
 			end
 		end
 	end
-	if #parts > 0 then
-		safe("rings", function()
-			workspace:BulkMoveTo(parts, cfs, Enum.BulkMoveMode.FireCFrameChanged)
-		end)
-	end
+	safe("rings", moveParts, parts, cfs)
 end
 
 local function stepLife(now: number)
@@ -712,9 +750,7 @@ local function stepLife(now: number)
 	end
 	if #parts > 0 then
 		life.Moved = true
-		safe("spin", function()
-			workspace:BulkMoveTo(parts, cfs, Enum.BulkMoveMode.FireCFrameChanged)
-		end)
+		safe("spin", moveParts, parts, cfs)
 	end
 	-- the pupil blinks now and then
 	local pupil = c.Pupil
@@ -764,47 +800,112 @@ local function notifyTeardown(n: any)
 	State.Note.Current = nil
 end
 
--- the eye behind the text: a lid capsule, the iris with the moon-blue rim, the slit pupil; it opens from its middle line
+-- an almond eye outline from neon strokes (upper + lower lid arcs, each a glow and a core line): Set(open 0..1, alpha)
+-- moves the lids apart from the middle line; lashes stand on the upper lid
+local ALMOND_SEGMENTS = 14
+local function almond(parent: Instance, w: number, h: number, color: Color3, core: Color3, thick: number, z: number, lashes: number?): any
+	local holder = frame(parent, "Almond", { AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(w, h),
+		ZIndex = z })
+	local segs = {}
+	for side = -1, 1, 2 do
+		for i = 1, ALMOND_SEGMENTS do
+			local glow = frame(holder, "LidGlow", { AnchorPoint = Vector2.new(.5, .5), BackgroundColor3 = color, BackgroundTransparency = 1, ZIndex = z })
+			round(glow, 1)
+			local line = frame(holder, "Lid", { AnchorPoint = Vector2.new(.5, .5), BackgroundColor3 = core, BackgroundTransparency = 1, ZIndex = z + 1 })
+			round(line, 1)
+			table.insert(segs, { Side = side, I = i, Glow = glow, Line = line })
+		end
+	end
+	local rays = {}
+	for i = 1, lashes or 0 do
+		local ray = frame(holder, "Lash", { AnchorPoint = Vector2.new(.5, .5), BackgroundColor3 = color, BackgroundTransparency = 1, ZIndex = z })
+		round(ray, 1)
+		table.insert(rays, ray)
+	end
+	local function lid(x: number, open: number, side: number): number
+		local u = math.clamp(2 * x / w, -1, 1)
+		return h / 2 + side * (h / 2) * open * (1 - u * u) ^ .85
+	end
+	local eye: any = { Holder = holder, Segs = segs, Rays = rays }
+	function eye.Set(open: number, alpha: number)
+		local a = math.clamp(alpha, 0, 1)
+		for _, sg in ipairs(segs) do
+			local x0 = -w / 2 + w * (sg.I - 1) / ALMOND_SEGMENTS
+			local x1 = -w / 2 + w * sg.I / ALMOND_SEGMENTS
+			local p0 = Vector2.new(x0 + w / 2, lid(x0, open, sg.Side))
+			local p1 = Vector2.new(x1 + w / 2, lid(x1, open, sg.Side))
+			local d = p1 - p0
+			local mid = (p0 + p1) / 2
+			local rot = math.deg(math.atan2(d.Y, d.X))
+			local len = d.Magnitude + thick
+			sg.Line.Position = UDim2.fromOffset(mid.X, mid.Y)
+			sg.Line.Size = UDim2.fromOffset(len, thick)
+			sg.Line.Rotation = rot
+			sg.Line.BackgroundTransparency = 1 - .85 * a
+			sg.Glow.Position = UDim2.fromOffset(mid.X, mid.Y)
+			sg.Glow.Size = UDim2.fromOffset(len + thick * 2, thick * 4)
+			sg.Glow.Rotation = rot
+			sg.Glow.BackgroundTransparency = 1 - .3 * a
+		end
+		local n = #rays
+		for i, ray in ipairs(rays) do
+			-- lashes along the middle of the upper lid, along its outward normal
+			local x = (i - (n + 1) / 2) / n * w * .62
+			local y = lid(x, open, -1)
+			local dx = 1
+			local dy = lid(x + 1, open, -1) - y
+			local nx, ny = dy, -dx
+			local m = math.sqrt(nx * nx + ny * ny)
+			nx, ny = nx / m, ny / m
+			if ny > 0 then
+				nx, ny = -nx, -ny
+			end
+			local len = h * (.16 + .05 * (1 - math.abs(i - (n + 1) / 2) / n)) * open
+			local cx, cy = w / 2 + x + nx * (len / 2 + thick), y + ny * (len / 2 + thick)
+			ray.Position = UDim2.fromOffset(cx, cy)
+			ray.Size = UDim2.fromOffset(math.max(2, thick * .8), math.max(1, len))
+			ray.Rotation = math.deg(math.atan2(nx, -ny))
+			ray.BackgroundTransparency = 1 - .55 * a * math.clamp((open - .6) / .4, 0, 1)
+		end
+	end
+	eye.Set(0, 0)
+	return eye
+end
+
+-- the eye behind the text (faint): the almond outline, an iris with the moon-blue rim, the slit pupil, a glint; the
+-- iris is clipped by a box that opens with the lids
 local function buildEye(parent: Instance, w: number, h: number): any
+	local outline = almond(parent, w, h, VIOLET, VIOLET_HOT, math.max(2, math.floor(h / 70)), 2, 7)
+	outline.Holder.Position = UDim2.fromScale(.5, .45)
 	local box = frame(parent, "Eye", { AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .45), Size = UDim2.fromOffset(w, 0),
 		ClipsDescendants = true, ZIndex = 2 })
-	local lid = frame(box, "Lid", { AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(w, h),
-		BackgroundColor3 = C3(30, 12, 52), BackgroundTransparency = .55, ZIndex = 2 })
-	round(lid, 1)
-	local lidStroke = stroke(lid, VIOLET, 3, .35)
-	local irisD = math.floor(h * .9)
+	local irisD = math.floor(h * .78)
 	local iris = frame(box, "Iris", { AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(irisD, irisD),
-		BackgroundColor3 = C3(74, 34, 128), BackgroundTransparency = .45, ZIndex = 3 })
+		BackgroundColor3 = C3(74, 34, 128), BackgroundTransparency = .74, ZIndex = 2 })
 	round(iris, 1)
-	local irisStroke = stroke(iris, MOON, 2, .45)
+	stroke(iris, MOON, 2, .6)
 	local ring = frame(box, "IrisRing", { AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
-		Size = UDim2.fromOffset(math.floor(irisD * .66), math.floor(irisD * .66)), BackgroundTransparency = 1, ZIndex = 3 })
+		Size = UDim2.fromOffset(math.floor(irisD * .66), math.floor(irisD * .66)), BackgroundTransparency = 1, ZIndex = 2 })
 	round(ring, 1)
-	local ringStroke = stroke(ring, VIOLET_HOT, 2, .55)
+	stroke(ring, VIOLET_HOT, 2, .7)
 	local pupil = frame(box, "Pupil", { AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
-		Size = UDim2.fromOffset(math.max(6, math.floor(irisD * .2)), math.floor(irisD * .84)), BackgroundColor3 = C3(6, 2, 12),
-		BackgroundTransparency = .15, ZIndex = 4 })
+		Size = UDim2.fromOffset(math.max(6, math.floor(irisD * .18)), math.floor(irisD * .82)), BackgroundColor3 = C3(6, 2, 12),
+		BackgroundTransparency = .5, ZIndex = 3 })
 	round(pupil, 1)
 	local glint = frame(box, "Glint", { AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new(.5, math.floor(irisD * .2), .5, -math.floor(irisD * .22)),
-		Size = UDim2.fromOffset(math.max(4, math.floor(irisD * .09)), math.max(4, math.floor(irisD * .09))), BackgroundColor3 = BONE,
-		BackgroundTransparency = .4, ZIndex = 5 })
+		Size = UDim2.fromOffset(math.max(4, math.floor(irisD * .08)), math.max(4, math.floor(irisD * .08))), BackgroundColor3 = BONE,
+		BackgroundTransparency = .65, ZIndex = 3 })
 	round(glint, 1)
-	-- lashes over the lid: thin rays that fade in once it is open
-	local lashes = frame(parent, "Lashes", { AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .45), Size = UDim2.fromOffset(w, h),
-		ZIndex = 2 })
-	local lashParts = {}
-	for i = -3, 3 do
-		local a = math.rad(i * 17)
-		local len = h * (.3 + .06 * (3 - math.abs(i)))
-		local cx = w / 2 + math.sin(a) * w * .36
-		local cy = h / 2 - math.cos(a) * h * .62 - len / 2
-		local l = frame(lashes, "Lash", { AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromOffset(cx, cy), Size = UDim2.fromOffset(3, len),
-			Rotation = i * 17, BackgroundColor3 = VIOLET, BackgroundTransparency = 1, ZIndex = 2 })
-		round(l, 1)
-		table.insert(lashParts, l)
+	local eye: any = { Box = box, H = h, W = w, Outline = outline, Last = -1 }
+	function eye.Set(open: number)
+		if math.abs(open - eye.Last) < .002 then
+			return
+		end
+		eye.Last = open
+		box.Size = UDim2.fromOffset(w, math.floor(h * open))
+		outline.Set(open, math.clamp(open * 3, 0, 1) * .55) -- faint: the words stay in front
 	end
-	return { Box = box, H = h, W = w, Lid = lid, Lashes = lashParts, Strokes = { lidStroke, irisStroke, ringStroke },
-		Parts = { lid, iris, pupil, glint } }
+	return eye
 end
 
 -- light cracks from the screen edges (RevealRules.EdgeCracks): every segment a core line + a soft glow, grown in order
@@ -904,9 +1005,8 @@ function Reveal.Notify(opts: { [string]: any }?): boolean
 		end
 		local g = newGui("DOGROTS_Reveal", C.Notify.DisplayOrder)
 		n.Gui = g
-		local size = (g :: any).AbsoluteSize
 		g.Parent = pg
-		size = g.AbsoluteSize
+		local size = g.AbsoluteSize
 		if size.X < 10 or size.Y < 10 then
 			local cam = workspace.CurrentCamera
 			size = cam and cam.ViewportSize or Vector2.new(1280, 720)
@@ -924,6 +1024,7 @@ function Reveal.Notify(opts: { [string]: any }?): boolean
 		shade.BackgroundTransparency = 1
 		shade.Size = UDim2.fromScale(1, 1)
 		shade.Selectable = false
+		shade.Active = true
 		shade.ZIndex = 1
 		shade:SetAttribute("NoTranslate", true)
 		shade.Parent = rootF
@@ -945,9 +1046,10 @@ function Reveal.Notify(opts: { [string]: any }?): boolean
 		-- the line: three copies (violet / blue offsets for the chromatic jitter)
 		local main = Rules.Typewriter(T("IS THAT ALL?"))
 		n.Type = main
-		local big = phone and 64 or 124
+		local big = phone and 76 or 124
+		n.Shrink = phone and .24 or .38 -- the big line shrinks less on a small screen
 		local function line(name: string, color: Color3, transparency: number, z: number): TextLabel
-			return text(rootF, name, { AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .45), Size = UDim2.fromScale(.92, phone and .14 or .2),
+			return text(rootF, name, { AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .45), Size = UDim2.fromScale(.92, phone and .22 or .2),
 				Text = T("IS THAT ALL?"), TextColor3 = color, TextTransparency = transparency, MaxVisibleGraphemes = 0, ZIndex = z,
 				TextStrokeTransparency = 1 }, big)
 		end
@@ -956,8 +1058,13 @@ function Reveal.Notify(opts: { [string]: any }?): boolean
 		n.Word = line("Word", BONE, 0, 6)
 		local wordStroke = stroke(n.Word, INK, phone and 2 or 3, .2)
 		wordStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
-		n.WordScale = Instance.new("UIScale")
-		n.WordScale.Parent = n.Word
+		-- one scale for the line and its two chromatic copies
+		n.Scales = {}
+		for _, l in ipairs({ n.Word, n.ShadowA, n.ShadowB }) do
+			local sc = Instance.new("UIScale")
+			sc.Parent = l
+			table.insert(n.Scales, sc)
+		end
 		n.Sub = text(rootF, "Line", { AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, phone and .58 or .6),
 			Size = UDim2.fromScale(phone and .9 or .78, phone and .12 or .1), Text = T("Did you really think it would be that easy?"),
 			TextColor3 = C3(214, 204, 240), TextTransparency = 1, ZIndex = 6 }, phone and 26 or 44)
@@ -982,6 +1089,7 @@ function Reveal.Notify(opts: { [string]: any }?): boolean
 		button.TextColor3 = C3(242, 234, 255)
 		button.TextScaled = true
 		button.Selectable = true
+		button.Active = true
 		button.ZIndex = 8
 		button:SetAttribute("NoTranslate", true)
 		local pad = Instance.new("UIPadding")
@@ -1118,7 +1226,9 @@ function Reveal._Step(n: any)
 	n.Word.Position = UDim2.fromScale(.5, y)
 	n.ShadowA.Position = UDim2.new(.5, -jx - 2, y, -jy)
 	n.ShadowB.Position = UDim2.new(.5, jx + 2, y, jy)
-	n.WordScale.Scale = 1 - .38 * lineK
+	for _, sc in ipairs(n.Scales) do
+		sc.Scale = 1 - n.Shrink * lineK
+	end
 	-- 4. the second line, the light cracks, the eye
 	if t >= n.LineAt then
 		n.Stage = math.max(n.Stage, 2)
@@ -1127,10 +1237,7 @@ function Reveal._Step(n: any)
 		growCracks(n.Cracks, (t - n.LineAt) * (.7 / N.CrackTime) / .7 * 1.2, 1)
 	end
 	local eyeK = still and (t >= n.LineAt - .4 and 1 or 0) or smooth((t - (n.LineAt - .4)) / N.EyeOpen)
-	n.Eye.Box.Size = UDim2.fromOffset(n.Eye.W, math.floor(n.Eye.H * eyeK))
-	for _, l in ipairs(n.Eye.Lashes) do
-		l.BackgroundTransparency = 1 - .55 * math.clamp((eyeK - .7) / .3, 0, 1)
-	end
+	n.Eye.Set(eyeK)
 	-- 5. FIND OUT (pulsing)
 	if t >= n.ButtonAt then
 		if n.Stage < 3 then
@@ -1150,8 +1257,8 @@ function Reveal._Press(n: any, escape: boolean?)
 		return
 	end
 	local t = os.clock() - n.T0 + n.Offset
-	if t < C.Notify.InputAfter and not (escape and t >= C.Notify.InputAfter) then
-		return
+	if t < C.Notify.InputAfter then
+		return -- nothing (not even Esc) acts in the first seconds: no accidental skip of the reveal
 	end
 	if not escape and n.Stage < 3 and t < C.Notify.AutoPress then
 		Reveal._Skip(n)
@@ -1195,12 +1302,14 @@ function Reveal._Press(n: any, escape: boolean?)
 		if not wasReplay then
 			State.Note.Sent = true
 			task.spawn(function()
-				for _ = 1, 3 do
+				for attempt = 1, 3 do
 					local okReq = request("C2Notified")
 					if okReq then
 						break
 					end
-					task.wait(2)
+					if attempt < 3 then
+						task.wait(2)
+					end
 				end
 			end)
 			if not revealSeen() and enabled() then
@@ -1575,11 +1684,7 @@ local function stepTower(tw: any, now: number): boolean
 			table.insert(cfs, bellCF * tw.BellBase[i])
 		end
 	end
-	if #parts > 0 then
-		safe("tower", function()
-			workspace:BulkMoveTo(parts, cfs, Enum.BulkMoveMode.FireCFrameChanged)
-		end)
-	end
+	safe("tower", moveParts, parts, cfs)
 	return active
 end
 local function restoreTower(tw: any)
@@ -1599,11 +1704,7 @@ local function restoreTower(tw: any)
 			table.insert(cfs, tw.BellBase[i])
 		end
 	end
-	if #parts > 0 then
-		safe("towerback", function()
-			workspace:BulkMoveTo(parts, cfs, Enum.BulkMoveMode.FireCFrameChanged)
-		end)
-	end
+	safe("towerback", moveParts, parts, cfs)
 end
 
 local function dustEmitters(att: Attachment): (ParticleEmitter, ParticleEmitter)
@@ -1942,13 +2043,15 @@ function Reveal.PlayChurch(opts: { [string]: any }?): (boolean, string?)
 					scene.Pending = true
 					task.spawn(function()
 						local sent = false
-						for _ = 1, 3 do
+						for attempt = 1, 3 do
 							local okReq = request("C2RevealSeen", {})
 							if okReq then
 								sent = true
 								break
 							end
-							task.wait(1.5)
+							if attempt < 3 then
+								task.wait(1.5)
+							end
 						end
 						if not sent and not revealSeen() then
 							scene.Pending = false
@@ -2023,13 +2126,13 @@ local function playTeaser()
 			conn:Disconnect()
 			conn = nil
 		end
+		teaser.Playing = false
 		pcall(function()
 			anchor:Destroy()
 		end)
 		if State.Church.Slit > 0 then
-			setSlit(1)
+			safe("teaserend", setSlit, 1)
 		end
-		teaser.Playing = false
 	end
 	conn = RunService.Heartbeat:Connect(function()
 		local ok = pcall(function()
@@ -2087,27 +2190,29 @@ local function transitionGui(): any
 		BackgroundTransparency = 0, ZIndex = 2 })
 	local bottom = frame(g, "Bottom", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.fromScale(1, 0),
 		BackgroundColor3 = C3(0, 0, 0), BackgroundTransparency = 0, ZIndex = 2 })
-	-- the giant eye / moon
+	-- the giant eye / moon: an almond outline whose lids part over the moon iris and its slit pupil
 	local d = math.floor(math.min(size.X * .95, size.Y * 2))
-	local eyeBox = frame(g, "Eye", { AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(d, math.floor(d * .42)),
+	local eh = math.floor(d * .42)
+	local eyeBox = frame(g, "Eye", { AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(d, eh),
 		ZIndex = 3, Visible = false })
-	local lid = frame(eyeBox, "Lid", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C3(16, 6, 30), BackgroundTransparency = .15, ZIndex = 3 })
-	round(lid, 1)
-	stroke(lid, VIOLET_HOT, 4, 0)
-	local moonD = math.floor(d * .38)
-	local moon = frame(eyeBox, "Moon", { AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(moonD, moonD),
-		BackgroundColor3 = C3(206, 226, 255), ZIndex = 4 })
+	local outline = almond(eyeBox, d, eh, VIOLET, VIOLET_HOT, math.max(3, math.floor(eh / 48)), 4, 9)
+	local open = frame(eyeBox, "Open", { AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(d, 0),
+		ClipsDescendants = true, ZIndex = 3 })
+	local moonD = math.floor(eh * .84)
+	local moon = frame(open, "Moon", { AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(moonD, moonD),
+		BackgroundColor3 = C3(206, 226, 255), ZIndex = 3 })
 	round(moon, 1)
 	stroke(moon, MOON, 3, .2)
-	local pupil = frame(eyeBox, "Pupil", { AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
-		Size = UDim2.fromOffset(math.floor(moonD * .16), math.floor(moonD * .9)), BackgroundColor3 = C3(4, 0, 10), ZIndex = 5 })
+	local pupil = frame(open, "Pupil", { AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5),
+		Size = UDim2.fromOffset(math.floor(moonD * .16), math.floor(moonD * .9)), BackgroundColor3 = C3(4, 0, 10), ZIndex = 4 })
 	round(pupil, 1)
 	local scale = Instance.new("UIScale")
 	scale.Parent = eyeBox
 	local black = frame(g, "Black", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C3(0, 0, 0), BackgroundTransparency = 1, ZIndex = 6 })
 	local flash = frame(g, "Flash", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C3(232, 240, 255), BackgroundTransparency = 1, ZIndex = 7 })
 	g.Parent = pg
-	return { Gui = g, Top = top, Bottom = bottom, Eye = eyeBox, EyeScale = scale, Black = black, Flash = flash, Lid = lid, Moon = moon, Pupil = pupil }
+	return { Gui = g, Top = top, Bottom = bottom, Eye = eyeBox, EyeScale = scale, Black = black, Flash = flash, Outline = outline, Open = open,
+		D = d, H = eh, Moon = moon, Pupil = pupil }
 end
 
 local function transitionTeardown(p: any)
@@ -2205,7 +2310,10 @@ function Reveal.Transition(dir: string, opts: { [string]: any }?): boolean
 					grade.TintColor = C3(255, 255, 255):Lerp(C3(196, 176, 255), -s.Saturation * .6)
 					ui.Eye.Visible = s.Eye > 0
 					ui.EyeScale.Scale = 1.35 - .35 * s.Eye
-					ui.Lid.BackgroundTransparency = 1 - .85 * s.Eye
+					if s.Eye > 0 then
+						ui.Open.Size = UDim2.fromOffset(ui.D, math.floor(ui.H * s.Eye))
+						ui.Outline.Set(s.Eye, 1)
+					end
 					ui.Moon.BackgroundTransparency = 1 - s.Eye
 					ui.Pupil.BackgroundTransparency = 1 - s.Eye
 					ui.Flash.BackgroundTransparency = 1 - .9 * s.Flash
@@ -2339,7 +2447,7 @@ function Reveal.Tick()
 		end
 	end
 	-- the teaser
-	if Rules.TeaserWanted({ Enabled = on, State = wanted, Distance = dist, Playing = scene.Playing }) and c.Root then
+	if Rules.TeaserWanted({ Enabled = on, Eligible = isEligible, State = wanted, Distance = dist, Playing = scene.Playing }) and c.Root then
 		if not teaser.NextAt then
 			teaser.NextAt = now + Rules.TeaserDelay(rng, true)
 		elseif now >= teaser.NextAt and not teaser.Playing then

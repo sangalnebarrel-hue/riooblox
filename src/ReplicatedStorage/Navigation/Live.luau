@@ -37,7 +37,10 @@ local function stateAttr(name: string): any
 		local state = folder and folder:FindFirstChild("State")
 		return state and state:GetAttribute(name)
 	end)
-	return ok and value or nil
+	if ok then
+		return value -- false must survive: `ok and value or nil` would turn a switched-off flag into nil
+	end
+	return nil
 end
 
 function Live.Configured(): boolean

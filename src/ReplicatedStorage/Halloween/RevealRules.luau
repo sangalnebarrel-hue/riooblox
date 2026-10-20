@@ -7,7 +7,7 @@
 --   R.ChurchState(s) -> "Open" | "Closed"   the per-player church end state (doors, portal, cracks, slit)
 --   R.PromptVisible(s) -> bool              the DESCEND prompt, shown client-side to eligible players only
 --   R.CinematicDue(s) -> bool               the church cinematic should start (first approach)
---   R.TeaserWanted(s) -> bool ; R.TeaserDelay(rng, first) -> seconds
+--   R.TeaserWanted(s) -> bool (not eligible, near the closed church) ; R.TeaserDelay(rng, first) -> seconds
 --   R.Objective(s) -> "Church" | "Descend" | nil
 --   R.Graphemes(text) -> {string} ; R.Typewriter(text, cfg?) -> {Steps = {{At, Count, Thud}}, Duration}
 --   R.DoorOpen(t) -> 0..1 (eased swing of the doors over Config.Church.DoorTime) ; R.DoorPivot(closed, angleDeg, f)
@@ -179,9 +179,10 @@ function R.CinematicDue(s: { [string]: any }): boolean
 	return type(s.Distance) == "number" and s.Distance <= R.Config.Church.TriggerRadius
 end
 
--- s = {Enabled, State, Distance, Playing}: the church is closed for this player and they stand near it
+-- s = {Enabled, Eligible, State, Distance, Playing}: a player who has not finished Chapter I stands near the closed
+-- church (§6.5; an eligible player gets the cinematic instead)
 function R.TeaserWanted(s: { [string]: any }): boolean
-	return s.Enabled == true and s.State == "Closed" and not s.Playing and type(s.Distance) == "number"
+	return s.Enabled == true and s.Eligible ~= true and s.State == "Closed" and not s.Playing and type(s.Distance) == "number"
 		and s.Distance <= R.Config.Teaser.Radius
 end
 

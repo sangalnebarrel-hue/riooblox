@@ -4,6 +4,10 @@
 -- With Config.HalloweenEventEnabled = false the server restores the cube (opaque, solid, COMING SOON faces), removes the
 -- event geometry and restores every existing part the build changed (attributes Halloween_Original*). Player data is
 -- never touched.
+-- [WP-F] Chapter II: 40_Underyard and 41_HalloweenCalendar go with the event too; the church edit (38_DeadYard.Church:
+-- doors, slit, portal, cracks, FX rails) lives inside 38_DeadYard, so it and the GrandCrypt parts it replaced go with
+-- the yard. World.Enable puts the church in its baseline (doors closed, portal and cracks hidden): the open church
+-- is per player, drawn client-side by HalloweenClient.Reveal from the Chapter2RevealSeen flag.
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local Halloween = RS:WaitForChild("Halloween")
@@ -73,7 +77,7 @@ function World.Disable()
 	end
 	local d = district()
 	if d then
-		for _, name in ipairs({ "38_DeadYard", "39_HalloweenLayer" }) do
+		for _, name in ipairs({ "38_DeadYard", "39_HalloweenLayer", "40_Underyard", "41_HalloweenCalendar" }) do -- [WP-F] + Chapter II
 			local m = d:FindFirstChild(name)
 			if m then
 				m:Destroy()
@@ -89,6 +93,37 @@ function World.Disable()
 	if state then
 		state:SetAttribute("Enabled", false)
 	end
+end
+
+-- [WP-F] the church's shared baseline (38_DeadYard.Church, built by tools/edits/38_church.luau): both doors at their
+-- ClosedPivot, every portal part and crack hidden, portal lights dark, the slit at its sealed glow. Nothing here is per
+-- player: HalloweenClient.Reveal opens the church locally for players whose Chapter2RevealSeen flag is set.
+function World.ResetChurch(): boolean
+	local yard = World.DeadYard()
+	local church = yard and yard:FindFirstChild("Church")
+	if not church then
+		return false
+	end
+	for _, inst in ipairs(church:GetDescendants()) do
+		if inst:IsA("Model") and inst:GetAttribute("ChurchDoor") then
+			local closed = inst:GetAttribute("ClosedPivot")
+			if typeof(closed) == "CFrame" and inst.PrimaryPart then
+				inst:PivotTo(closed)
+			end
+		elseif inst:IsA("BasePart") then
+			local inPortal = inst:FindFirstAncestor("ChurchPortal") ~= nil
+			local inCracks = inst:FindFirstAncestor("ChurchCracks") ~= nil
+			if inPortal or inCracks then
+				inst.Transparency = 1
+			elseif inst:GetAttribute("ChurchSlit") then
+				local t = inst:GetAttribute("RevealT")
+				inst.Transparency = type(t) == "number" and t or .25
+			end
+		elseif inst:IsA("Light") and inst:GetAttribute("RevealBrightness") ~= nil then
+			inst.Brightness = 0
+		end
+	end
+	return true
 end
 
 function World.Enable()
@@ -109,6 +144,7 @@ function World.Enable()
 		state:SetAttribute("Enabled", true)
 		state:SetAttribute("Season", Config.Season)
 	end
+	pcall(World.ResetChurch) -- [WP-F]
 	if not Config.MainMapDecorations then
 		local d = district()
 		local layer = d and d:FindFirstChild("39_HalloweenLayer")

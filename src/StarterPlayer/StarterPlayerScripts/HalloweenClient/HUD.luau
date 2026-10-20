@@ -1475,6 +1475,10 @@ function H.Start(ctx)
 		if not prompt:IsA("ProximityPrompt") or not ru() then
 			return
 		end
+		-- [WP-F] Chapter II prompts (the church DESCEND, the Underyard) carry their own Russian: Chapter2State owns them
+		if prompt:GetAttribute("ActionTextRU") ~= nil or prompt:GetAttribute("ObjectTextRU") ~= nil then
+			return
+		end
 		for _, prop in ipairs({ "ActionText", "ObjectText" }) do
 			local key = "HwEnglish" .. prop
 			local en = prompt:GetAttribute(key) or prompt[prop]
