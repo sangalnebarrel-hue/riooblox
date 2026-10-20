@@ -813,6 +813,17 @@ for i = 1, 6 do
 	p.Transparency = 1
 	table.insert(crackParts, p)
 end
+local moonTower = CE.Model("MoonTower", yard)
+local shaft = CE.Part("TowerShaft", V(128, 20, 737.5), V(8, 26, 8), moonTower)
+CE.Part("BellYoke", V(128, 37.65, 737.5), V(4, .5, .5), moonTower)
+local bell = CE.Part("Bell", V(128, 36.3, 737.5), V(3, 3, 3), moonTower)
+local SHAFT0, BELL0 = shaft.CFrame, bell.CFrame
+local crypts = CE.Model("Crypts", yard)
+local grand = CE.Model("GrandCrypt", crypts)
+local lancet = CE.Part("LancetGlass", V(122, 9, 727.9), V(1, 3, .2), grand)
+lancet.Material = Enum.Material.Neon
+lancet.Color = roblox.Color3.fromRGB(150, 200, 255)
+lancet:SetAttribute("HwLantern", true)
 local anchors = CE.Model("Anchors", yard)
 local anchorPart = CE.Part("Portal", V(128, 3, 729), V(1, 1, 1), anchors)
 local prompt = CE.Instance.new("ProximityPrompt")
@@ -1061,10 +1072,24 @@ test("client: the church cinematic on the first approach", function()
 	local o = run.Opts
 	check(o.Skippable and o.SkipAfter == 3 and o.LockControls and o.Letterbox and o.HideUI and o.Duration == Ch.Duration, "cinema options")
 	check(St.Scene.Playing, "scene")
-	CE.Advance(Ch.DoorsAt + .9 - .6, .05)
+	local function sceneTo(t)
+		while cin.Active == run and CE.Now - run.T0 < t do
+			CE.Step(.05)
+		end
+	end
+	sceneTo(Ch.Booms[1] + .2)
+	check((shaft.CFrame.Position - SHAFT0.Position).Magnitude > .01, "BOOM #1 shakes the tower")
+	check((bell.CFrame.Position - BELL0.Position).Magnitude > .01 or not (bell.CFrame == BELL0), "the bell swings")
+	sceneTo(Ch.Booms[1] + Ch.TowerShake + .3)
+	check((shaft.CFrame.Position - SHAFT0.Position).Magnitude < 1e-4, "the shake settles")
+	sceneTo(Ch.Booms[2] + Ch.Windows + .5)
+	check(lancet.Material == Enum.Material.SmoothPlastic and lancet:GetAttribute("HwLocalDim") == .02, "BOOM #2: the windows die")
+	sceneTo(Ch.DoorsAt + .9)
 	check(St.Church.Doors > 0 and St.Church.Doors < 1, "doors swinging " .. St.Church.Doors)
 	CE.Advance(Ch.Duration - Ch.DoorsAt, .05)
 	check(cin.Active == nil and not St.Scene.Playing, "ended")
+	check(lancet.Material == Enum.Material.Neon and lancet:GetAttribute("HwLocalDim") == nil, "the windows relit")
+	check(shaft.CFrame == SHAFT0 and bell.CFrame == BELL0, "the tower and the bell exactly back")
 	check(countOf(log.Cues, "BellTollHuge") >= 3 and countOf(log.Cues, "ChurchCreak") == 1 and countOf(log.Cues, "PortalOpen") == 1
 		and countOf(log.Cues, "GroundCrack") == 1, "three tolls, the creak, the portal, the cracks")
 	local title = cin.Titles[#cin.Titles]
@@ -1218,6 +1243,55 @@ test("client: Russian", function()
 	CE.Advance(1.5)
 	check(revealGui() == nil, "done")
 	CE.Player:SetAttribute("DOGROTS_Language", nil)
+end)
+
+test("client: the real PathGuide leads to the church without its own label, and out of the Underyard", function()
+	CE.Overrides["ReplicatedStorage/Navigation/PathGuide"] = nil
+	local Guide = CE.Require(RS.Navigation.PathGuide)
+	check(Guide ~= PG and type(Guide.Ahead) == "function", "real module")
+	CE.MoveTo(SPAWN + V(0, 2.4, 0))
+	local ok, why = Guide.Show("Church", { Label = false })
+	check(ok, "Show: " .. tostring(why))
+	CE.Advance(.5)
+	local st = Guide.Active()
+	check(st and st.Key == "Church" and not st.Underyard, "active")
+	check(st.Length > 300, "a real route (" .. tostring(st.Length) .. ")")
+	local label = CE.Workspace:FindFirstChild("DOGROTS_PathGuide", true)
+	label = label and label:FindFirstChild("GoalLabel", true)
+	check(label and label.Enabled == false, "Label = false: no name card over the goal")
+	Guide.Show("Church")
+	check(label.Enabled == true, "the default route keeps its card")
+	Guide.Show("Church", { Label = false })
+	CE.Advance(.3)
+	check(label.Enabled == false, "and loses it again")
+	local pts = Guide.Ahead(18, 12, 10)
+	check(#pts == 12, "12 ghost-light points (" .. #pts .. ")")
+	local feet = SPAWN
+	check((V(pts[1].X, 0, pts[1].Z) - V(feet.X, 0, feet.Z)).Magnitude < 14, "the first one leads by ~10 studs")
+	for i = 2, #pts do
+		local gap = (pts[i] - pts[i - 1]).Magnitude
+		check(gap <= 18.5 and gap > 6, "spaced along the route (" .. gap .. ")")
+	end
+	Guide.Clear("test")
+	check(Guide.Active() == nil and #Guide.Ahead(18, 12, 10) == 0, "cleared")
+	-- in the Underyard every route first climbs to the arch
+	CE.MoveTo(V(150, 2.4, 2240))
+	ok, why = Guide.Show("Church")
+	check(ok, "Show in the Underyard: " .. tostring(why))
+	CE.Advance(.5)
+	st = Guide.Active()
+	check(st and st.Underyard, "routes to the ASCEND arch")
+	local last = Guide.Ahead(10, 200, 0)
+	check(#last > 3 and (V(last[#last].X, 0, last[#last].Z) - V(0, 0, 2348)).Magnitude < 12, "ends at the arch")
+	Guide.Clear("test")
+	CE.Overrides["ReplicatedStorage/Navigation/PathGuide"] = PG
+	CE.MoveTo(FAR)
+	-- the fake workspace has no BulkMoveTo (PathGuide draws its arrows with it): not this test's subject
+	for i = #CE.Errors, 1, -1 do
+		if string.find(CE.Errors[i], "missing method 'BulkMoveTo'", 1, true) and string.find(CE.Errors[i], "PathGuide", 1, true) then
+			table.remove(CE.Errors, i)
+		end
+	end
 end)
 
 test("client: nothing left behind, no errors", function()

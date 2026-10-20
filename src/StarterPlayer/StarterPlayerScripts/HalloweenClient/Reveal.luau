@@ -1657,27 +1657,39 @@ local function tower(): any
 	return rec
 end
 
--- one writer for the tower: the shake (decaying wobble round its base) and the bell's swing (round its yoke)
+-- one writer for the tower: the shake (decaying wobble round its base) and the bell's swing (round its yoke). Parts
+-- are only written while something moves (plus one settling write after it stops), never every frame of the scene.
 local function stepTower(tw: any, now: number): boolean
 	local shakeK = tw.ShakeAt and (now - tw.ShakeAt) / C.Church.TowerShake or 2
 	local swingT = tw.SwingAt and (now - tw.SwingAt) or 1e9
-	local swing = tw.SwingAt and tw.SwingAmp * math.exp(-swingT / 2.4) * math.sin(swingT * 2 * math.pi / 1.7) or 0
-	local active = shakeK < 1 or math.abs(swing) > .002
+	local envelope = tw.SwingAt and tw.SwingAmp * math.exp(-swingT / 2.4) or 0
+	local swing = envelope * math.sin(swingT * 2 * math.pi / 1.7)
+	local shaking = shakeK < 1
+	local swinging = envelope > .002
+	local writeTower = shaking or tw.ShakeDirty
+	local writeBell = writeTower or swinging or tw.SwingDirty
+	tw.ShakeDirty = shaking
+	tw.SwingDirty = swinging
+	if not writeBell then
+		return false
+	end
 	local offset = CFrame.new()
-	if shakeK < 1 then
+	if shaking then
 		local a = (1 - shakeK) ^ 2
 		offset = CFrame.new(math.sin(now * 53) * .28 * a, 0, math.cos(now * 47) * .28 * a)
 			* CFrame.Angles(math.sin(now * 41) * .006 * a, 0, math.cos(now * 37) * .006 * a)
 	end
 	local towerCF = tw.Pivot * offset * tw.Pivot:Inverse()
 	local parts, cfs = {}, {}
-	for i, p in ipairs(tw.Parts) do
-		if p.Parent then
-			table.insert(parts, p)
-			table.insert(cfs, towerCF * tw.Base[i])
+	if writeTower then
+		for i, p in ipairs(tw.Parts) do
+			if p.Parent then
+				table.insert(parts, p)
+				table.insert(cfs, towerCF * tw.Base[i])
+			end
 		end
 	end
-	local bellCF = towerCF * tw.BellPivot * CFrame.Angles(swing, 0, 0) * tw.BellPivot:Inverse()
+	local bellCF = towerCF * tw.BellPivot * CFrame.Angles(swinging and swing or 0, 0, 0) * tw.BellPivot:Inverse()
 	for i, p in ipairs(tw.Bell) do
 		if p.Parent then
 			table.insert(parts, p)
@@ -1685,7 +1697,7 @@ local function stepTower(tw: any, now: number): boolean
 		end
 	end
 	safe("tower", moveParts, parts, cfs)
-	return active
+	return shaking or swinging
 end
 local function restoreTower(tw: any)
 	if not tw then
