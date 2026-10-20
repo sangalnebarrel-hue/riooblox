@@ -288,7 +288,11 @@ L.Overrides["ReplicatedStorage/DogEconomy/DecorCatalog"] = {
 }
 local C2 = L.Require("ServerScriptService.Halloween.Chapter2")
 local HConfig = L.Require("ReplicatedStorage.Halloween.Config")
-HConfig.Skins.Names.UY_TVHead = "TV-Head" -- (WP-K2 adds the Chapter II skins; here one exists, the others do not)
+-- the place registers every Chapter II skin (WP-K2); the "unregistered skin" paths are exercised by taking one out
+for _, id in ipairs({ "UY_TVHead", "UY_Laughsaw", "UY_BellReaper" }) do
+	assert(HConfig.Skins.Names[id] ~= nil, "Chapter II skin " .. id .. " is registered in Config.Skins")
+end
+HConfig.Skins.Names.UY_Laughsaw = nil
 
 local function fakePlayer(uid)
 	local attrs = {}
