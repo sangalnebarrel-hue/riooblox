@@ -9,7 +9,8 @@
 --     binding, paws lowest, sizes, lights, FX hooks), every clip (shape, seams, joins, serialisation, posed sanity);
 --   * the baked assets of a built place (DOGROTS_PLACE, else build/DOGROTS_HALLOWEEN_PART2_THE_UNDERYARD.rbxl when
 --     check.sh just built it, else the base place baked here by tools/edits/30_dogs2.luau, twice: idempotent), and the
---     real ReplicatedStorage.DogAnimationPlayer resolving and decoding their dig chains from that place.
+--     real ReplicatedStorage.DogAnimationPlayer resolving and decoding their dig chains from that place, and playing
+--     every clip on a table mirror of each baked template (parts must land where the generated clips put them).
 local fs = require("@lune/fs")
 local roblox = require("@lune/roblox")
 local luau = require("@lune/luau")
@@ -684,12 +685,13 @@ local replicated = {
 	end,
 }
 local warnings = {}
+local clock = { Now = 1000 } -- the player's server clock (Play reads it; Step gets explicit times)
 local Player = luau.load(fs.readFile("src/ReplicatedStorage/DogAnimationPlayer.luau"), { debugName = "DogAnimationPlayer", environment = setmetatable({
 	game = { GetService = function()
 		return replicated
 	end },
 	workspace = { GetServerTimeNow = function()
-		return 1000
+		return clock.Now
 	end },
 	require = function(x)
 		if x == marker.Gait then
@@ -762,6 +764,182 @@ test("the accent returns to the loop and the loop ends into DigEnd without a pop
 		local g2 = gap(Player.CoreNames(stop), pose(loop, loop.Frames), pose(stop, 1))
 		truthy(g2 <= 12, string.format("%s loop>end %.0f deg", id, g2))
 	end
+end)
+
+-- A table mirror of a baked template that the real player can drive in Lune (Lune instances have no Transform
+-- solving or signals): bones keep CFrame + Transform, parts CFrame + Anchored, the model answers the few methods
+-- DogAnimationPlayer calls on a rig outside the world (GetDescendants, GetAttribute, GetScale, GetPivot, ...).
+local FakeMethods = {}
+function FakeMethods:IsA(class)
+	if class == "BasePart" then
+		return self.IsPart
+	elseif class == "Light" then
+		return self.IsLight
+	end
+	return self.ClassName == class
+end
+function FakeMethods:GetAttribute(name)
+	return self.Attributes[name]
+end
+function FakeMethods:GetDescendants()
+	return self.Descendants
+end
+function FakeMethods:GetScale()
+	return 1
+end
+function FakeMethods:GetPivot()
+	return self.PrimaryPart.CFrame
+end
+function FakeMethods:IsDescendantOf()
+	return false
+end
+local fakeSignal = { Connect = function()
+	return { Disconnect = function() end }
+end }
+local FakeMeta = { __index = function(self, key)
+	if key == "TransformedWorldCFrame" or key == "WorldCFrame" then
+		local parent = rawget(self, "Parent")
+		local base = if parent.ClassName == "Bone" then parent.TransformedWorldCFrame else parent.CFrame
+		return base * rawget(self, "CFrame") * (if key == "WorldCFrame" then CFrame.identity else rawget(self, "Transform"))
+	elseif key == "DescendantAdded" or key == "DescendantRemoving" then
+		return fakeSignal
+	end
+	return FakeMethods[key]
+end }
+
+local function fakeRig(template)
+	local model = setmetatable({ Name = template.Name, ClassName = "Model", Attributes = template:GetAttributes(), Descendants = {},
+		Parts = {}, Bones = {}, Rest = {} }, FakeMeta)
+	local function mirror(source, parent)
+		for _, child in ipairs(source:GetChildren()) do
+			local node = setmetatable({ Name = child.Name, ClassName = child.ClassName, Attributes = child:GetAttributes(), Parent = parent,
+				IsPart = child:IsA("BasePart"), IsLight = child:IsA("Light") }, FakeMeta)
+			if node.IsPart then
+				node.CFrame, node.Anchored = child.CFrame, child.Anchored
+				model.Rest[node] = child.CFrame
+				if child.Name == "RootPart" then
+					model.PrimaryPart = node
+				else
+					table.insert(model.Parts, node)
+				end
+			elseif child:IsA("Bone") then
+				node.CFrame, node.Transform = child.CFrame, CFrame.identity
+				model.Bones[child.Name] = node
+			end
+			table.insert(model.Descendants, node)
+			mirror(child, node)
+		end
+	end
+	mirror(template, model)
+	return model
+end
+
+-- every part where the generated clip puts it at `frame` (+ a vertical rig lift)
+local function expectedFrames(model, clip, frame, lift)
+	local world = {}
+	local function w(bone)
+		if world[bone.Name] then
+			return world[bone.Name]
+		end
+		local parent = bone.Parent
+		local base = if parent.ClassName == "Bone" then w(parent) else parent.CFrame + Vector3.new(0, lift, 0)
+		local rows = clip.tracks[bone.Name]
+		world[bone.Name] = base * bone.CFrame * (if rows then rowCF(rows[math.min(frame, #rows)]) else CFrame.identity)
+		return world[bone.Name]
+	end
+	local out = {}
+	for _, part in ipairs(model.Parts) do
+		out[part] = w(model.Bones[part.Attributes.DogBone]) * part.Attributes.DogBoneOffset
+	end
+	return out
+end
+
+local function worstGap(model, want)
+	local pos, rot = 0, 0
+	for _, part in ipairs(model.Parts) do
+		local a, b = part.CFrame, want[part]
+		pos = math.max(pos, (a.Position - b.Position).Magnitude)
+		rot = math.max(rot, (a.LookVector - b.LookVector).Magnitude, (a.UpVector - b.UpVector).Magnitude)
+	end
+	return pos, rot
+end
+
+test("DogAnimationPlayer plays every clip on a baked rig: parts land where the generated clips put them", function()
+	for _, id in ipairs(IDS) do
+		local template = placeSS.DogTemplates[Defs[id].VisualAsset]
+		local model = fakeRig(template)
+		local player = Player.new(model)
+		eq(player.DogId, id, id .. " player id")
+		eq(#player.RigParts, #model.Parts, id .. " every part follows a bone")
+		eq(#player.RigParts, template:GetAttribute("Parts"), id .. " Parts attribute")
+		local lights = 0
+		for _, d in ipairs(model.Descendants) do
+			if d.IsLight then
+				lights += 1
+			end
+		end
+		eq(#player.RigLights, lights, id .. " baked lights collected")
+		local size = template:GetAttribute("VisualSize")
+		local height = if typeof(size) == "Vector3" then size.Y else 5
+		for _, name in ipairs(E2.ClipNamesFor(id)) do
+			local clip = E2.Clip(id, name)
+			local frames = 0
+			for _, rows in pairs(clip.tracks) do
+				frames = math.max(frames, #rows)
+			end
+			clock.Now += 10
+			local start = clock.Now
+			truthy(player:Play(name, { FadeTime = 0 }), id .. " plays " .. name)
+			eq(player.Name, name, id .. " playing " .. name)
+			eq(player.Looped, clip.loop, id .. "." .. name .. " looped")
+			if player.Lift then
+				-- only the dig chain may lift the rig, and never by more than a quarter of its height
+				truthy(name:match("^Dig"), id .. "." .. name .. " is lifted")
+				for _, v in ipairs(player.Lift) do
+					truthy(v >= 0 and v <= height * 0.25 + 1e-6, id .. "." .. name .. " lift " .. v)
+				end
+			end
+			local function check(k, at)
+				player:Step(at)
+				local lift = player.Lift and player.Lift[math.min(k, #player.Lift)] or 0
+				local pos, rot = worstGap(model, expectedFrames(model, clip, k, lift))
+				truthy(pos < 5e-3 and rot < 5e-3, string.format("%s.%s frame %d: parts off by %.4f studs / %.4f", id, name, k, pos, rot))
+			end
+			for k = 1, frames, 5 do
+				check(k, start + (k - 1) / clip.fps)
+			end
+			check(frames, start + (frames - 1) / clip.fps)
+			if clip.loop then
+				-- a loop wraps onto its own frames (no recovery blend: the seam is closed)
+				eq(player.Recovery, 0, id .. "." .. name .. " recovery")
+				check(4, start + clip.duration + 3 / clip.fps)
+				truthy(not player:IsDone(start + clip.duration * 3), id .. "." .. name .. " loop never ends")
+			else
+				truthy(not player:IsDone(start + clip.duration - 0.02), id .. "." .. name .. " ends early")
+				truthy(player:IsDone(start + clip.duration + 0.02), id .. "." .. name .. " never ends")
+				-- a finished one-shot holds its authored last frame
+				check(frames, start + clip.duration + 1)
+			end
+		end
+		-- the kennel chain queues through DigStart into the DigLoop at the authored join
+		clock.Now += 10
+		local start = clock.Now
+		truthy(player:Play("DigStart", { FadeTime = 0, Next = { "DigLoop", { FadeTime = 0 } } }), id .. " DigStart")
+		local d = E2.Duration(id, "DigStart")
+		player:Step(start + d * 0.5)
+		eq(player.Name, "DigStart", id .. " still starting")
+		player:Step(start + d + 0.001)
+		eq(player.Name, "DigLoop", id .. " queued DigLoop")
+		-- Stop puts every part back on its bind pose (the baked template)
+		player:Stop()
+		local worst = 0
+		for _, part in ipairs(model.Parts) do
+			worst = math.max(worst, (part.CFrame.Position - model.Rest[part].Position).Magnitude)
+		end
+		truthy(worst < 1e-3, string.format("%s rest pose off by %.4f", id, worst))
+		player:Destroy()
+	end
+	eq(#warnings, 0, "player warnings: " .. table.concat(warnings, "; "))
 end)
 
 print(string.format("event_dogs2: %d passed, %d failed", passed, failed))
