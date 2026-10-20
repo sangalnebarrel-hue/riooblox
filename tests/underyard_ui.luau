@@ -82,11 +82,14 @@ local function profile(kind)
 	u.Tutorial.Step, u.Tutorial.Done = #Cfg.Tutorial.Steps, true
 	p.Resources.BellShards, p.Resources.LuckyDust = 640, 1250
 	u.Keys, u.Fragments = 2, 60
-	if kind == "mid" then
+	if kind == "mid" or kind == "mid3" then
 		local s1 = u.Seals["1"]
 		s1.Offered, s1.Cleared, s1.Gold, s1.At, s1.Best = true, true, true, NOW - DAY, 1840
 		u.Seals["2"].Offered, u.Seals["2"].Cleared, u.Seals["2"].At = true, true, NOW - 3600
 		u.Seals["3"].Offered = true
+		if kind == "mid3" then -- seal III broken too: seal IV waits for its offering
+			u.Seals["3"].Cleared, u.Seals["3"].At = true, NOW - 600
+		end
 		p.DogDex.HW_BellPup, p.DogDex.HW_CandleCorgi, p.DogDex.HW_MourningShiba = true, true, true
 		local list = u.Daily.Contracts.List
 		list[1].Progress = list[1].Goal
@@ -242,7 +245,7 @@ local function setAttributes(cv, hv)
 	P:SetAttribute("BellShards", cv.Shards)
 	P:SetAttribute("CoffinKeys", cv.Keys)
 	P:SetAttribute("LuckyDust", cv.Dust)
-	P:SetAttribute("MoonCandy", hv.Candy or 900)
+	P:SetAttribute("MoonCandy", math.max(tonumber(hv.Candy) or 0, 900)) -- the Toll Box needs candy
 	P:SetAttribute("UySealMask", cv.Mask)
 end
 
@@ -261,6 +264,232 @@ local function load(kind)
 	Bus.Fire("StateChanged", { View = hv })
 	return hv, cv
 end
+
+---------------------------------------------------------------------------------------------------------------------
+-- Pure rules (ReplicatedStorage.Halloween.UnderyardView)
+---------------------------------------------------------------------------------------------------------------------
+local function ctxOf(c)
+	return { Eligible = c.Eligible ~= false, InZone = c.InZone == true, InTrial = c.InTrial == true, Shards = c.Shards or 0, Keys = c.Keys or 0,
+		Near = function(anchor)
+			return c.Near == anchor
+		end }
+end
+test("drop rates: every chance is Chapter2Rules.CoffinChance and the table sums to exactly 100%", function()
+	local t = UV.DropTable()
+	local sum, rows, weight = 0, 0, 0
+	for _, g in ipairs(t.Groups) do
+		local gs = 0
+		for _, r in ipairs(g.Rows) do
+			rows += 1
+			weight += r.Weight
+			gs += r.Chance
+			eq(r.Chance, r.Weight / Rules.CoffinTotal(Cfg), "chance of " .. tostring(r.Key))
+		end
+		truthy(math.abs(gs - g.Chance) < 1e-12, "group " .. g.Id .. " sums its rows")
+		if g.Tiers then
+			local ts = 0
+			for _, tier in ipairs(g.Tiers) do
+				ts += tier.Chance
+			end
+			truthy(math.abs(ts - g.Chance) < 1e-12, "find tiers sum to the group")
+		end
+		sum += g.Chance
+	end
+	eq(rows, #Cfg.Coffin.Table, "every table row is listed")
+	eq(weight, Cfg.Coffin.TotalWeight, "weights")
+	truthy(math.abs(sum - 1) < 1e-12 and math.abs(t.Total - 1) < 1e-12, "sum " .. sum)
+	-- the shown percentages (three decimals, exact for a 100 000 table) add up to 100
+	local shown = 0
+	for _, g in ipairs(t.Groups) do
+		for _, r in ipairs(g.Rows) do
+			shown += tonumber((string.gsub(UV.Percent(r.Chance), "%%", ""))) or 0
+		end
+	end
+	truthy(math.abs(shown - 100) < 1e-6, "percent strings add up to 100: " .. shown)
+	eq(UV.Percent(0.27682), "27.682%")
+	eq(UV.Percent(0.15), "15%")
+	eq(UV.Percent(0.00004), "0.004%")
+	eq(UV.Odds(0.00004), "25,000")
+end)
+
+test("seal states: date lock, previous seal, offering (catch-up discount, the guide pays), trial, doors, gold", function()
+	local _, cv = views("mid")
+	local s4 = UV.SealState(cv, 4, NOW, ctxOf({ InZone = true, Shards = 640 }))
+	eq(s4.State, "Previous", "IV waits for III")
+	local s6 = UV.SealState(cv, 6, NOW, ctxOf({ InZone = true, Shards = 640 }))
+	eq(s6.State, "Waiting", "VI opens tomorrow")
+	eq(s6.Action, "Opens")
+	truthy(s6.OpensIn > 0 and s6.OpensIn <= DAY, "countdown")
+	local s3 = UV.SealState(cv, 3, NOW, ctxOf({ InZone = true, Near = UV.StartAnchor(3) }))
+	eq(s3.State, "Trial")
+	eq(s3.Action, "Begin", "at the start point")
+	eq(UV.SealState(cv, 3, NOW, ctxOf({ InZone = true })).Action, "WayTrial", "elsewhere: the way")
+	eq(UV.SealState(cv, 3, NOW, ctxOf({ InZone = false })).Action, "Descend", "outside: descend")
+	eq(UV.SealState(cv, 3, NOW, ctxOf({ InZone = true, InTrial = true })).Action, "InTrial")
+	local _, cv3 = views("mid3")
+	local o4 = UV.SealState(cv3, 4, NOW, ctxOf({ InZone = true, Shards = 640, Near = "SealAltar_4" }))
+	eq(o4.State, "Offer")
+	eq(o4.Action, "Offer")
+	eq(o4.Cost, cv3.Seals[4].Cost)
+	local poor = UV.SealState(cv3, 4, NOW, ctxOf({ InZone = true, Shards = 10, Near = "SealAltar_4" }))
+	eq(poor.Action, "Need")
+	eq(poor.Missing, cv3.Seals[4].Cost - 10)
+	-- seal I opened 3 days ago: the catch-up discount
+	local _, fresh = views("locked")
+	local s1 = UV.SealState(fresh, 1, NOW, ctxOf({ Eligible = false }))
+	eq(s1.Action, "Locked", "Chapter I first")
+	truthy(cv.Seals[1].Discount and cv.Seals[1].Cost < Cfg.Seals[1].Offering, "seal I discounted")
+	-- Gold / cleared
+	eq(UV.SealState(cv, 1, NOW, ctxOf({ InZone = true })).State, "Gold")
+	eq(UV.SealState(cv, 2, NOW, ctxOf({ InZone = true })).State, "Cleared")
+	eq(UV.StartAnchor(2), "RunStart")
+	eq(UV.StartAnchor(5), "DoorCourt")
+	eq(UV.StartAnchor(1), "SealAltar_1")
+end)
+
+test("objective line and badges", function()
+	local _, locked = views("locked")
+	local o = UV.Objective(locked, NOW, ctxOf({ Eligible = false }))
+	eq(o.Kind, "Chapter1")
+	local title, line = UV.ObjectiveText(o, "en", NOW)
+	eq(title, "CHAPTER II")
+	eq(line, "Finish Chapter I: 2 / 5")
+	local _, cv = views("mid")
+	o = UV.Objective(cv, NOW, ctxOf({ InZone = true }))
+	eq(o.Kind, "Trial")
+	eq(o.Seal, 3)
+	title, line = UV.ObjectiveText(o, "ru", NOW)
+	truthy(cyrillic(title) and cyrillic(line), "Russian objective: " .. title .. " / " .. line)
+	local b = UV.Badges(cv, nil, NOW, ctxOf({ InZone = true, Shards = 640, Keys = 2 }))
+	truthy(b.contracts >= 1, "a finished contract to claim")
+	truthy(b.dex >= 1, "a Dex II milestone to claim")
+	truthy(b.journal >= 1, "unread journal entries")
+	eq(b.Total, b.seals + b.contracts + b.coffin + b.dex + b.journal)
+	local _, done = views("done")
+	eq(UV.Objective(done, NOW, ctxOf({ InZone = true })).Kind, "Done")
+end)
+
+test("journal replays are Bus events only (§24.3)", function()
+	for _, key in ipairs(Cfg.Journal.Order) do
+		for _, r in ipairs(UV.JournalReplays(key)) do
+			truthy(r.Bus == "C2Replay" or r.Bus == "Onboarding" or r.Bus == "CauldronClaimLocal", key .. ": " .. tostring(r.Bus))
+			truthy(r.Request == nil and r.Action == nil, "no request")
+			truthy(type(r.Label) == "table" and cyrillic(r.Label[2]), "label pair")
+		end
+	end
+	eq(UV.JournalReplays("seal4")[1].Data.Seal, 4)
+	eq(UV.JournalReplays("reveal")[1].Data.Id, "Reveal")
+	eq(UV.JournalReplays("finale")[1].Data.Id, "Finale")
+end)
+
+---------------------------------------------------------------------------------------------------------------------
+-- Localization: every self-localized string has Russian, no key is repeated
+---------------------------------------------------------------------------------------------------------------------
+local Own = E.Require("ReplicatedStorage.Localization.UnderyardUI")
+local Base = E.Require("ReplicatedStorage.Localization.Underyard")
+test("localization: every T / F literal of the Chapter II UI has Russian with the same placeholders", function()
+	local files = {
+		{ "src/StarterGui/ScreenGui/Modules/UnderyardScreen.luau", "[^%w_.:]([TF])%(\"(.-)\"" },
+		{ "src/ReplicatedStorage/Halloween/UnderyardView.luau", "UV%.([TF])%(\"(.-)\"" },
+		{ "src/StarterPlayer/StarterPlayerScripts/HalloweenClient/HUD/Chapter2.luau", "[^%w_.:]([TF])%(\"(.-)\"" },
+		{ "src/StarterGui/ScreenGui/Modules/HalloweenScreen.luau", "U([TF])%(\"(.-)\"" },
+		{ "src/StarterGui/ScreenGui/Modules/DogdexScreen.luau", "U([TF])%(\"(.-)\"" },
+	}
+	local missing, total = {}, 0
+	for _, f in ipairs(files) do
+		local source = fs.readFile(f[1])
+		for kind, en in string.gmatch(source, f[2]) do
+			total += 1
+			local ru
+			if kind == "T" then
+				ru = Own.UI[en] or Base.UI[en] or Own.Exact[en] or Base.Exact[en]
+			else
+				ru = Own.Templates[en] or Base.Templates[en]
+			end
+			if not ru then
+				table.insert(missing, f[1]:match("[^/]+$") .. " " .. kind .. ": " .. en)
+			else
+				for _, form in ipairs(type(ru) == "table" and ru or { ru }) do
+					local bare = string.gsub(en, "%%[%d%.]*[dsf]", "")
+					truthy(cyrillic(form) or not string.find(bare, "%a"), "Russian for " .. en)
+					local _, a = string.gsub(en, "%%[%d%.]*[dsf]", "")
+					local _, b = string.gsub(form, "%%[%d%.]*[dsf]", "")
+					eq(b, a, "placeholders of " .. en)
+				end
+			end
+		end
+	end
+	-- tips / tile / pills shown through UITheme.U.L and the HUD tooltips
+	for _, en in ipairs({ "UNDERYARD", "Below the church: Bell Seals, daily contracts, the Black Coffin and the Dex II",
+		"Earned in THE UNDERYARD. Offer them at the Bell Seal altars and open the Black Coffin.",
+		"Dismantle Lucky Blocks for it in your bag and forge new Lucky Blocks with it.", "BELL SHARDS", "LUCKY DUST", "COFFIN KEYS",
+		"Open the Black Coffin in Bell Square with one. Never sold.", "PUMPKIN BLOCK FOR EXORCISTS", "A PUMPKIN BLOCK FOR THE EXORCISTS" }) do
+		total += 1
+		if not (Own.UI[en] or Base.UI[en]) then
+			table.insert(missing, "UI: " .. en)
+		end
+	end
+	truthy(total > 150, "strings found: " .. total)
+	eq(#missing, 0, table.concat(missing, " | "))
+end)
+
+test("localization: UnderyardUI repeats no key of Localization.Underyard, no Exact key of any dictionary or the base table", function()
+	for _, section in ipairs({ "UI", "Templates", "Exact" }) do
+		for en in pairs(Own[section]) do
+			truthy(Base[section][en] == nil, "UnderyardUI." .. section .. " repeats Underyard: " .. en)
+		end
+	end
+	for en in pairs(Own.UI) do
+		truthy(Base.Exact[en] == nil, "UI key is an Underyard Exact key: " .. en)
+	end
+	local base = {}
+	local auto = fs.readFile("src/StarterPlayer/StarterPlayerScripts/DOGROTS_AutoTranslateUI.client.luau")
+	for en in string.gmatch(auto, '%["([^"]+)"%]%s*=%s*"') do
+		base[en] = true
+	end
+	for _, name in ipairs(fs.readDir("src/ReplicatedStorage/Localization")) do
+		if name ~= "UnderyardUI.luau" then
+			local other = E.Require("ReplicatedStorage.Localization." .. name:gsub("%.luau$", ""))
+			for en in pairs(Own.Exact) do
+				truthy(not (type(other) == "table" and other.Exact and other.Exact[en]), "Exact key also in " .. name .. ": " .. en)
+				truthy(not base[en], "Exact repeats the base dictionary: " .. en)
+			end
+		end
+	end
+	-- every Underyard dog has its ability in both languages
+	for _, id in ipairs(Cfg.Dogs.Order) do
+		local d = Own.Dogs[id]
+		truthy(d and cyrillic(d.Ability[2]) and cyrillic(d.Text[2]) and d.Ability[1] ~= "" and d.Text[1] ~= "", "ability of " .. id)
+	end
+	-- Format / Translate
+	eq(Own.Format("%d UNDERYARD DOGS FOUND", "ru", 3), "НАЙДЕНО 3 СОБАКИ ПОДДВОРЬЯ")
+	eq(Own.Format("%d UNDERYARD DOGS FOUND", "ru", 5), "НАЙДЕНО 5 СОБАК ПОДДВОРЬЯ")
+	eq(Own.Format("%d UNDERYARD DOGS FOUND", "ru", 1), "НАЙДЕНА 1 СОБАКА ПОДДВОРЬЯ")
+	eq(Own.Translate("SHOW THE WAY", "ru"), "ПОКАЗАТЬ ПУТЬ")
+	eq(Own.Translate("SHOW THE WAY", "en"), nil)
+end)
+
+test("wiring: kit route, UITheme tile and pills, HALLOWEEN / HUD relabels", function()
+	local gi = fs.readFile("src/StarterGui/ScreenGui/Modules/GUIIntegration.luau")
+	truthy(string.find(gi, "kitScreens.Underyard='UnderyardScreen' -- [WP-L]", 1, true), "GUIIntegration kitScreens.Underyard")
+	local theme = fs.readFile("src/StarterGui/ScreenGui/Modules/UITheme.luau")
+	truthy(string.find(theme, "key='Underyard',label='UNDERYARD'", 1, true) and string.find(theme, "when='HalloweenChapter1Complete'", 1, true), "UNDERYARD tile")
+	truthy(string.find(theme, "key='BellShards',name='QuickShards'", 1, true), "Bell Shards pill")
+	truthy(string.find(theme, "key='LuckyDust',name='QuickDust'", 1, true), "Lucky Dust pill")
+	truthy(string.find(theme, "lp:GetAttribute(t.spec.when)==true", 1, true), "LayoutHUD hides tiles until their attribute is true")
+	local hs = fs.readFile("src/StarterGui/ScreenGui/Modules/HalloweenScreen.luau")
+	truthy(string.find(hs, 'Block = "PUMPKIN BLOCK FOR EXORCISTS"', 1, true), "HALLOWEEN exorcism milestone relabel")
+	local hud = fs.readFile("src/StarterPlayer/StarterPlayerScripts/HalloweenClient/HUD.luau")
+	truthy(string.find(hud, 'Block = "A PUMPKIN BLOCK FOR THE EXORCISTS"', 1, true), "HUD milestone relabel")
+	-- presentation code never writes ProximityPromptService and uses Activated
+	for _, file in ipairs({ "src/StarterGui/ScreenGui/Modules/UnderyardScreen.luau", "src/StarterGui/ScreenGui/Modules/UnderyardScreen/Waypoint.luau",
+		"src/StarterPlayer/StarterPlayerScripts/HalloweenClient/HUD/Chapter2.luau" }) do
+		local source = fs.readFile(file)
+		truthy(not string.find(source, "ProximityPromptService", 1, true), file .. " touches ProximityPromptService")
+		truthy(not string.find(source, "MouseButton1Click", 1, true), file .. " uses MouseButton1Click")
+		truthy(not string.find(source, "Modal%s*=%s*true"), file .. " sinks input")
+	end
+end)
 
 local SCREENS = {
 	{ Id = "portrait", Size = roblox.Vector2.new(390, 844), Touch = true },
@@ -536,6 +765,172 @@ test("the window opens on every tab, every screen, both languages", function()
 		end
 	end
 	Lang.Override = "en"
+end)
+
+-- buttons -> requests (the server is CE.OnInvoke: it answers ok with the same view unless a reply is set)
+local Layout = CE.Require(HW.UnderyardLayout)
+local function find(root, name)
+	for _, d in ipairs(root:GetDescendants()) do
+		if d.Name == name then
+			return d
+		end
+	end
+	return nil
+end
+local function shownButton(name)
+	for _, d in ipairs(CE.PlayerGui:GetDescendants()) do
+		if d.Name == name and d:IsA("GuiButton") and CE.Shown(d) then
+			return d
+		end
+	end
+	return nil
+end
+local function openOn(tab)
+	if not Screen.IsOpen() then
+		Screen.Open(tab)
+	else
+		Screen.Open(tab)
+	end
+	CE.Advance(0.6)
+	return Screen.Window:Page(tab)
+end
+local function at(anchor)
+	local pos = Layout.Anchor(anchor)
+	assert(pos, "anchor " .. anchor)
+	CE.MoveTo(pos + roblox.Vector3.new(2, 0, 0))
+end
+test("buttons send the right requests (seals, contracts, Toll Box, coffin, Dex II, tailor, journal)", function()
+	Lang.Override = "en"
+	screen(SCREENS[3])
+	local hv, cv = load("mid")
+	P:SetAttribute("UyInZone", true)
+	P:SetAttribute("UyTrial", "")
+	-- BEGIN TRIAL at the start of seal III (offered, playable)
+	at(UV.StartAnchor(3))
+	local page = openOn("seals")
+	local n0 = #calls
+	CE.Click(find(page, "Seal_3").Action)
+	CE.Advance(0.3)
+	local call = lastCall("C2TrialStart")
+	truthy(call and #calls > n0, "C2TrialStart sent")
+	eq(call.Args.Seal, 3, "trial of seal III")
+	truthy(not Screen.IsOpen(), "the window closes for the trial")
+	-- OFFER at altar IV (seal III broken, IV open and not offered, enough shards)
+	load("mid3")
+	at("SealAltar_4")
+	page = openOn("seals")
+	CE.Click(find(page, "Seal_4").Action)
+	CE.Advance(0.3)
+	call = lastCall("C2SealOffer")
+	truthy(call, "C2SealOffer sent")
+	eq(call.Args.Seal, 4)
+	-- far from the altar: SHOW THE WAY (a waypoint, no request)
+	at("CoffinShrine")
+	page = openOn("seals")
+	local before = #calls
+	CE.Click(find(page, "Seal_4").Action)
+	CE.Advance(0.3)
+	eq(#calls, before, "no request on SHOW THE WAY")
+	truthy(Screen.Waypoint and Screen.Waypoint.Active(), "a waypoint to the altar")
+	truthy(CE.Workspace:FindFirstChild("DOGROTS_UnderyardWay"), "the marker exists")
+	Screen.Waypoint.Clear("test")
+	truthy(not CE.Workspace:FindFirstChild("DOGROTS_UnderyardWay"), "the marker is torn down")
+	-- CONTRACTS: CLAIM the finished contract; the bonus stays locked
+	page = openOn("contracts")
+	local first = cv.Contracts.List[1]
+	CE.Click(find(find(page, "Contract1"), "Claim"))
+	CE.Advance(0.3)
+	call = lastCall("C2ContractClaim")
+	truthy(call, "C2ContractClaim sent")
+	eq(call.Args.Id, first.Id)
+	local bonusBtn = find(find(page, "Bonus"), "Claim")
+	eq(CE.Click(bonusBtn), false, "bonus locked until all three are claimed")
+	-- THE TOLL BOX: next to it, + then BUY
+	at("TollBox")
+	page = openOn("contracts")
+	CE.Click(find(page, "Plus"))
+	CE.Click(find(page, "Buy"))
+	CE.Advance(0.3)
+	call = lastCall("C2Exchange")
+	truthy(call, "C2Exchange sent")
+	eq(call.Args.Shards, Screen.State.Amount, "the chosen amount")
+	-- COFFIN: at the shrine with a key and shards -> the window closes and C2CoffinOpen goes out
+	at("CoffinShrine")
+	page = openOn("coffin")
+	CE.Click(find(page, "Open"))
+	CE.Advance(0.3)
+	truthy(lastCall("C2CoffinOpen"), "C2CoffinOpen sent")
+	truthy(not Screen.IsOpen(), "closed for the coffin's cinematic")
+	-- DEX II: the 3-dog milestone
+	page = openOn("dex")
+	CE.Click(find(find(page, "Milestone1"), "Claim"))
+	CE.Advance(0.3)
+	call = lastCall("C2DexClaim")
+	truthy(call, "C2DexClaim sent")
+	eq(call.Args.Count, UV.Config.Dex2Rewards[1].Count)
+	-- TAILOR: CRAFT -> confirm -> C2Craft
+	page = openOn("collection")
+	local decorId = nil
+	for _, id in ipairs(UV.Config.Decor.Order) do
+		if not cv.Owned.Decor[id] then
+			decorId = id
+			break
+		end
+	end
+	CE.Click(find(find(page, "Decor_" .. decorId), "Craft"))
+	CE.Advance(0.4)
+	local confirm = shownButton("Confirm")
+	truthy(confirm, "confirm dialog")
+	CE.Click(confirm)
+	CE.Advance(0.4)
+	call = lastCall("C2Craft")
+	truthy(call, "C2Craft sent")
+	eq(call.Args.Id, decorId)
+	-- JOURNAL: unread entries are marked read; REPLAY only fires Bus events
+	CE.Advance(1)
+	page = openOn("journal")
+	CE.Advance(4)
+	local marked = {}
+	for _, c in ipairs(calls) do
+		if c.Action == "C2Journal" then
+			marked[c.Args.Key] = true
+		end
+	end
+	truthy(marked.descend and marked.seal1 and marked.seal2, "unread entries marked read")
+	local replays = {}
+	local offs = {}
+	for _, name in ipairs({ "C2Replay", "Onboarding", "CauldronClaimLocal" }) do
+		table.insert(offs, Bus.On(name, function(d)
+			table.insert(replays, { Name = name, Data = d })
+		end))
+	end
+	local requests = #calls
+	page = openOn("journal")
+	CE.Click(find(find(page, "Entry_reveal"), "Replay1"))
+	CE.Advance(0.6)
+	page = openOn("journal")
+	CE.Click(find(find(page, "Entry_chapter1"), "Replay1"))
+	CE.Advance(0.6)
+	page = openOn("journal")
+	CE.Click(find(find(page, "Entry_seal2"), "Replay1"))
+	CE.Advance(0.6)
+	for _, off in ipairs(offs) do
+		off.Disconnect()
+	end
+	-- (reopening the window may refresh the view with C2Hello; nothing else may go out)
+	for k = requests + 1, #calls do
+		eq(calls[k].Action, "C2Hello", "replays never send requests")
+	end
+	local seen = {}
+	for _, r in ipairs(replays) do
+		seen[r.Name .. ":" .. tostring(type(r.Data) == "table" and r.Data.Id or "")] = r.Data
+	end
+	truthy(seen["C2Replay:Reveal"] and seen["C2Replay:Reveal"].Replay == true, "C2Replay Reveal")
+	truthy(seen["Onboarding:"] and seen["Onboarding:"].Replay == true, "Chapter I guide replay")
+	truthy(seen["C2Replay:Seal"] and seen["C2Replay:Seal"].Seal == 2, "seal II replay")
+	Screen.Close()
+	CE.Advance(0.5)
+	P:SetAttribute("UyInZone", false)
 end)
 
 local HS = CE.Require(gui.Modules.HalloweenScreen)
@@ -833,7 +1228,10 @@ if OUT then
 	print("layouts: " .. #dumps .. " -> " .. OUT)
 end
 for _, w in ipairs(CE.Warnings) do
-	print("warn: " .. w)
+	-- the kit's generic dog preview needs the place's UITheme (MainWindow templates), absent in this fake client
+	if not string.find(w, "^Kit%.Preview: .-UITheme") then
+		print("warn: " .. w)
+	end
 end
 print(string.format("underyard_ui: %d passed, %d failed", passed, failed))
 if failed > 0 then
