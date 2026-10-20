@@ -12,7 +12,12 @@
 --   it on re-applies Halloween_EventColor. Bus "MapDecor" {Visible} on every change. With Config.MainMapDecorations =
 --   false (the server destroys the layer) the lamps are put back locally and nothing runs.
 -- * Russian lettering: the layer's SurfaceGui labels are NoTranslate (set by the builder) and localized here (M.RU).
--- API: Start(ctx), SetVisible(on), IsVisible(), Stop(); ApplyLayer / ApplyLamps / FindLamps / Localize (test hooks too).
+-- * Halloween calendar cooperation (HalloweenClient.CalendarFX, DESIGN §13): this module stays the only writer of the
+--   lamp colours; CalendarFX hands in a tint with SetLampTint(fn(inst, eventColor) -> Color3?) and the visible lamps
+--   (streamed-in copies too) get fn's colour instead of Halloween_EventColor; nil puts the event colours back. Hidden
+--   (HwMapDecor false) the lamps keep their originals whatever the tint says.
+-- API: Start(ctx), SetVisible(on), IsVisible(), Stop(), SetLampTint(fn?), RefreshLamps(); ApplyLayer / ApplyLamps /
+--      FindLamps / Localize (test hooks too).
 -- All client parts live in workspace.DOGROTS_HalloweenFX.MainMapLayer (SelfManagedFX). Pure helpers: MainMapLayer.Pure.
 local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
@@ -254,8 +259,16 @@ function M.ApplyLayer(layer: Instance, visible: boolean)
 	end
 end
 
+local lampTint: ((Instance, Color3) -> Color3?)? = nil -- [WP-M] CalendarFX lamp tint (SetLampTint)
+
 local function applyLamp(inst: Instance, visible: boolean)
 	local col = inst:GetAttribute(visible and "Halloween_EventColor" or "Halloween_OriginalColor")
+	if visible and lampTint and typeof(col) == "Color3" then
+		local ok, tinted = pcall(lampTint, inst, col)
+		if ok and typeof(tinted) == "Color3" then
+			col = tinted
+		end
+	end
 	if typeof(col) == "Color3" then
 		pcall(function()
 			(inst :: any).Color = col
@@ -289,7 +302,7 @@ local S = {
 	District = nil, Layer = nil, Lamps = nil, Conns = {}, LayerAdded = nil, DistrictAdded = nil,
 	Folder = nil, Plan = nil, Dirty = true, NextPlan = 0, Darkness = 0, CamPos = V3(0, 0, 377),
 	Flocks = {}, Ghosts = {}, Wisps = nil, Mist = nil, NextGhost = 0, NextMist = 0, Lights = {}, Flames = {},
-	Rng = Random.new(),
+	Rng = Random.new(), LampRetries = 0,
 }
 M._State = S
 
@@ -909,6 +922,28 @@ function M.SetVisible(on: boolean)
 	refresh()
 end
 
+-- [WP-M] the Halloween calendar's lamp tint: fn(inst, eventColor) -> Color3? (nil = the plain event colours)
+function M.SetLampTint(fn: ((Instance, Color3) -> Color3?)?)
+	lampTint = fn
+	M.RefreshLamps()
+end
+
+-- re-apply the lamp colours for the current visibility (and tint)
+function M.RefreshLamps()
+	if not S.Started or S.Ctx == nil or S.Ctx.Shared.Config.MainMapDecorations == false then
+		return
+	end
+	if not S.District then
+		-- Start is still waiting for the district (up to 60 s): retry, never cache an empty lamp list
+		S.LampRetries += 1
+		if S.LampRetries <= 90 then
+			task.delay(1, M.RefreshLamps)
+		end
+		return
+	end
+	M.ApplyLamps(lampsList(), S.Visible)
+end
+
 function M.IsVisible(): boolean
 	return S.Visible
 end
@@ -1006,6 +1041,8 @@ function M.Start(ctx)
 				end
 				if not S.Visible then
 					applyLamp(d, false)
+				elseif lampTint then
+					applyLamp(d, true)
 				end
 			end
 		end))
