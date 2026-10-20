@@ -539,7 +539,8 @@ function S.RefreshBar()
 		ui.Primary:SetStyle("secondary")
 		ui.Primary:SetDisabled(true)
 		if eventLive() then
-			info ..= " · " .. T("Open Pumpkin Lucky Blocks to get it", "Открывай тыквенные блоки, чтобы получить")
+			-- [WP-K3] where the reward comes from is per event / item (Pumpkin Lucky Blocks, Black Coffins, seals...)
+			info ..= " · " .. Catalog.RewardHint(item, ru())
 		end
 	end
 	if slot and not inYard and not locked then
