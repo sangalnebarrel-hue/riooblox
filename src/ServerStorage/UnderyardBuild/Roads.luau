@@ -134,7 +134,9 @@ function Roads.Build(ctx)
 	kerbRing(rOut + 1, 5.5, function(p)
 		return nearSpoke(U.AngleOf(c, p), 12, rOut + 1)
 	end)
-	-- street lamps on the outer verge (r 85.5), clear of the spokes, hook over the road
+	-- street lamps on the outer verge (r 85.5), clear of the spokes, hook over the road; pennant strings between
+	-- neighbouring lamps (not across a spoke)
+	local lampTop = {}
 	for i = 1, 16 do
 		local a = (i - .5) / 16 * PI * 2
 		if not nearSpoke(a, 15, 86) then
@@ -143,6 +145,16 @@ function Roads.Build(ctx)
 				Kind = (i % 4 == 0) and "Green" or "Orange", Range = 22, Brightness = 1.15, Lite = true })
 			lm.Name = "RingLamp"
 			lightCount += 1
+			lampTop[i] = U.Polar(c, 85.6, a, 11.2)
+		end
+	end
+	local bunting = K.Model(lampsM, "RingBunting")
+	for i = 1, 16 do
+		local j = i % 16 + 1
+		local mid = i / 16 * PI * 2
+		if lampTop[i] and lampTop[j] and not nearSpoke(mid, 13, 86) then
+			U.Pennants(bunting, lampTop[i], lampTop[j], { Sag = .07, Spacing = 2.6, Size = 1.2, Segs = 5,
+				Colors = (i % 2 == 0) and { P.Black, P.White } or { U.GLOW.Violet:Lerp(P.Ink, .35), P.White } })
 		end
 	end
 
@@ -187,7 +199,7 @@ function Roads.Build(ctx)
 
 	------------------------------------------------------------------------------------------------ the Black Bell approach
 	local ap = K.Model(root, "ArenaApproach")
-	ap:SetAttribute("UyDistrict", "BlackBellArena")
+	ap:SetAttribute("UyApproach", "BlackBellArena") -- (UyDistrict belongs to the district builder's root model)
 	local flat = approachPath(L)
 	local total = U.Length(flat)
 	-- height profile: up to the crest, then a long spiral descent to the arena landing

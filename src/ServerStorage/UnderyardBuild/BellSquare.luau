@@ -199,6 +199,16 @@ function BellSquare.Build(ctx)
 		U.GothicWindow(tower, TA * face(i) * CF(0, 5.2, -HA), 2.8, 9.6, { Color = U.GLOW.Violet, Lantern = "Purple", Tilt = (i - 2) * .04 })
 	end
 	K.Part(tower, "StringCourse", V3(HA * 2 + 1.8, 1, HA * 2 + 1.8), TA * CF(0, A1 + .5, 0), STONE_L, M.Slate)
+	-- skull niches beside the lancets (east, south, west faces)
+	for _, i in ipairs({ 1, 2, 3 }) do
+		for _, x in ipairs({ -6.6, 6.6 }) do
+			local f = TA * face(i) * CF(x, 8.6, -HA)
+			K.Part(tower, "SkullNiche", V3(2.2, 3, .3), f * CF(0, 0, .05), P.Ink, M.SmoothPlastic)
+			Y.GableTri(tower, "SkullNicheHead", f * CF(0, 1.5, .05) * ANG(0, PI / 2, 0), 2.2, 1.3, .3, P.Ink, M.SmoothPlastic)
+			K.Part(tower, "SkullNicheSill", V3(2.8, .35, .7), f * CF(0, -1.6, -.25), STONE_L, M.Slate)
+			Y.Skull(tower, f * CF(0, -.5, -.35), 1.2, (i == 2) and U.GLOW.Green or nil, P.Bone)
+		end
+	end
 
 	-- tier B (y ~21..38): twisted 6 degrees and leaning east; twin green lancets, striped banners, gargoyles, pinnacles
 	local HB, BH = 10.6, 17
@@ -217,6 +227,11 @@ function BellSquare.Build(ctx)
 		K.Wedge(tower, "TowerBannerTail", V3(.08, 1.3, 1.3), f * CF(.65, -7.6, 0) * ANG(PI, -PI / 2, 0), P.Black, M.Fabric)
 	end
 	K.Part(tower, "TowerCornice", V3(HB * 2 + 1.8, 1.1, HB * 2 + 1.8), TB * CF(0, BH + .55, 0), STONE_L, M.Slate)
+	-- crooked slate skirts where tier A steps in to tier B
+	for i = 0, 3 do
+		local f = TB * face(i) * CF(0, .2, -HB)
+		K.Part(tower, "SlateSkirt", V3(HB * 2 + 1.2, .45, 2.6), f * CF(0, .55, -.9) * ANG(.62, 0, rng:NextNumber(-.03, .03)), C(46, 42, 60), M.Slate)
+	end
 	for k = 0, 3 do
 		local a = PI / 4 + k * PI / 2
 		local corner = TB * CF(0, BH + 1.1, 0) * ANG(0, a, 0) * CF(0, 0, -HB * 1.34)
@@ -344,6 +359,15 @@ function BellSquare.Build(ctx)
 		bl:SetAttribute("HwKeyLight", true)
 	end
 	K.Part(tower, "BelfryCornice", V3(HD * 2 + 1.8, 1.2, HD * 2 + 1.8), TD * CF(0, DH + .6, 0), STONE_L, M.Slate)
+	-- chains with little bells hanging from the belfry cornice corners
+	for _, cx in ipairs({ -1, 1 }) do
+		for _, cz in ipairs({ -1, 1 }) do
+			local top = (TD * CF(cx * (HD + .6), DH - .1, cz * (HD + .6))).Position
+			local len = 6 + (cx + cz + 2) * .9
+			K.Chain(tower, top, top - V3(0, len, 0), 0, math.floor(len / .55))
+			miniBell(tower, CF(top - V3(0, len, 0)), .8, BRONZE)
+		end
+	end
 	for k = 0, 3 do
 		local a = PI / 4 + k * PI / 2
 		U.Gargoyle(tower, TD * CF(0, DH + 1.2, 0) * ANG(0, a, 0) * CF(0, 0, -HD * 1.36), 1.1, { Eye = U.GLOW.Green })
@@ -360,6 +384,9 @@ function BellSquare.Build(ctx)
 				local h = rng:NextNumber(1.2, 4.8)
 				local blk = K.Part(tower, "CrownMerlon", V3(3.8, h, 1.4), TE * face(i) * CF(k * 4.9, h / 2, -HD + .5), STONE, M.Slate)
 				blk.CFrame *= ANG(rng:NextNumber(-.06, .06), 0, rng:NextNumber(-.14, .14))
+				if (k + i) % 2 == 0 then
+					K.Attach(blk, "CrowPerch", CF(0, h / 2 + .2, 0))
+				end
 			end
 		end
 	end
@@ -638,7 +665,8 @@ function BellSquare.Build(ctx)
 		end
 		local header = K.Part(m, "BoardHeader", V3(7.4, 1.2, .3), Bd * CF(0, 8.2, -.1) * ANG(0, 0, -.03), P.WoodDark, M.WoodPlanks)
 		U.Sign(header, N.Front, "CONTRACTS", "КОНТРАКТЫ", P.Bone, { PixelsPerStud = 30, Stroke = false, H = .85, Name = "BoardSign" })
-		local ridge = U.CrookedRoof(m, Bd * CF(0, 9.1, .1), 8.2, 2.4, 1.6, rng, { Color = C(40, 34, 46), Overhang = .5, Thick = .35 })
+		-- little gabled roof whose ridge runs along the board
+		local ridge = U.CrookedRoof(m, Bd * CF(0, 9.1, .1) * ANG(0, PI / 2, 0), 2.8, 8.2, 1.3, rng, { Color = C(40, 34, 46), Overhang = .45, Thick = .3 })
 		Y.Skull(m, ridge * CF(0, .6, 0), .8, U.GLOW.Green, P.Bone)
 		local _, glass = U.Lantern(m, Bd * CF(4.4, 8.6, -.8), U.GLOW.Candle, "Orange", { Range = 14, Brightness = .9, Size = .8 })
 		lights += 1
@@ -782,6 +810,7 @@ function BellSquare.Build(ctx)
 	local decor = K.Model(root, "PlazaDecor")
 	-- crooked lamp posts at r 52 between the echo rings
 	local nLamp = 0
+	local lampTops = {}
 	for k = 0, 15 do
 		local a = (k + .5) / 16 * PI * 2
 		local p = U.Polar(c, 52, a, 0)
@@ -792,6 +821,57 @@ function BellSquare.Build(ctx)
 			lm.Name = "PlazaLamp"
 			lights += 1
 			nLamp += 1
+			table.insert(lampTops, { A = a, Top = p + V3(0, 10.2, 0) })
+		end
+	end
+	-- black / white pennant strings radiating from the tower's string course down to the plaza lamps (stop-motion fair)
+	local bunting = K.Model(decor, "Bunting")
+	for _, lt in ipairs(lampTops) do
+		local from = U.Polar(c, 13.6, lt.A, 20.6)
+		U.Pennants(bunting, from, lt.Top, { Sag = .05, Spacing = 2.4, Size = 1.1, Segs = 5 })
+	end
+	-- big inlaid paw mosaics on the paving ring between the altars and the echo rings (flat, walk-over)
+	for k = 0, 7 do
+		local a = k / 8 * PI * 2
+		local p = U.Polar(c, 42.5, a, .12)
+		U.Paw(decor, K.Look(p, V3(c.X, .12, c.Z)), 3.6, P.StoneLight:Lerp(P.Bone, .35), Enum.Material.Slate)
+	end
+	-- crooked dead trees with a dark lantern each on the plaza rim
+	local nTree = 0
+	for k = 0, 23 do
+		local a = (k + .5) / 24 * PI * 2 + .07
+		local p = U.Polar(c, 59, a, 0)
+		if nTree < 3 and k % 4 == 1 and space:Free(p, 3) then
+			space:Claim(p, 3)
+			nTree += 1
+			local tm, _, branches = Y.Tree(decor, CF(p) * ANG(0, a, 0), 15, rng, { Branches = 3, Perches = 2, Name = "PlazaTree", Spread = 5.5,
+				Hollow = true, HollowDir = (V3(c.X, 0, c.Z) - p).Unit, HollowColor = U.GLOW.Green })
+			local _t = tm
+			local br = branches[1]
+			if br then
+				local from: Vector3, to: Vector3 = br[2] :: any, br[3] :: any -- { part, from, to }
+				local tip = from:Lerp(to, .8)
+				K.Bar(decor, "TreeLanternChain", tip, tip - V3(0, 1.2, 0), .08, .14, P.Iron, M.CorrodedMetal)
+				U.Lantern(decor, CF(tip - V3(0, 1.2, 0)), U.GLOW.Green, "Green", { Light = false, Size = .7, Lite = true })
+			end
+		end
+	end
+	-- two bone-fenced dog-grave plots on the rim (open towards the tower)
+	local nPlot = 0
+	for _, a in ipairs({ math.rad(127), math.rad(307), math.rad(161), math.rad(341) }) do
+		local p = U.Polar(c, 58.6, a, 0)
+		if nPlot < 2 and space:Free(p, 4.2) then
+			space:Claim(p, 4.2)
+			nPlot += 1
+			local f = U.Facing(p, c) -- -Z faces the tower
+			local corners = { f * CF(-3.4, 0, -2.6), f * CF(-3.4, 0, 2.6), f * CF(3.4, 0, 2.6), f * CF(3.4, 0, -2.6) }
+			for i = 1, 3 do
+				U.BoneFence(decor, corners[i].Position, corners[i + 1].Position, { Height = 2.2, Spacing = 2.6 }, rng)
+			end
+			for gx = -1, 1 do
+				Y.Tombstone(decor, f * CF(gx * 2.1, 0, .9) * ANG(0, rng:NextNumber(-.15, .15), 0), ({ 4, 8, 7 })[gx + 2], rng, nil, { NoTranslate = true })
+			end
+			U.FlowerPatch(decor, f * CF(0, 0, -1.4), 2, rng, { Spread = 1.2, Color = U.GLOW.Moon })
 		end
 	end
 	-- benches facing the tower (crooked plank seats on iron legs)

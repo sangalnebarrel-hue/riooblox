@@ -5,14 +5,14 @@
 -- Builds on HalloweenBuild.Kit (parts + house style) and YardKit (deterministic Rng, gables, skulls, statues):
 --   * crooked stacked boxes (Crooked), twisted / curled spires (Spire), pointed arches (Arch), stretched gothic windows
 --     with Neon panes (GothicWindow), crooked gabled roofs (CrookedRoof),
---   * paw-print trails and deck ribbons along sampled curves (Sample, PawTrail, Deck), black/white stripe trims
---     (StripeTrim, accents only), bone fences (BoneFence),
---   * dog gargoyles (Gargoyle), HwLantern lanterns and crooked street lamps (Lantern, Lamp), candle clusters (Candles),
---     glowing flowers (Flower, FlowerPatch), stalactites and glow-root curtains (Stalactite, Roots), rune rings
---     (RuneRing), the veiled gate arch (VeilArch), cliff columns (CliffColumn),
---   * invisible colliders (Collider), bilingual world signs (Sign: NoTranslate + TextEN / TextRU, localized by the
---     client), attribute tagging (Tag) and a placement registry (Space) that keeps props off the gameplay points of
---     UnderyardLayout (echo points, choir paths, prompts, arrival).
+--   * paw-print trails and deck ribbons along sampled curves (Sample, ArcPoints, PawTrail, Paw, Deck), black/white
+--     stripe trims and pennant strings (StripeTrim, Pennants - accents only), bone fences (BoneFence),
+--   * dog gargoyles (Gargoyle), HwLantern lanterns and crooked street lamps (Lantern, Lamp), bells (Bell), candle
+--     clusters (Candles), glowing flowers (Flower, FlowerPatch), stalactites and glow-root curtains (Stalactite, Roots),
+--     rune rings (RuneRing), the veiled gate arch (VeilArch), cliff columns (CliffColumn), pointed tips (Point),
+--   * invisible colliders (Collider, ArcColliders with exact openings), bilingual world signs (Sign: NoTranslate +
+--     TextEN / TextRU, localized by the client), attribute tagging (Tag) and a placement registry (Space) that keeps
+--     props off the gameplay points of UnderyardLayout (echo points, choir paths, prompts, arrival).
 -- Style (DESIGN §7.1): crooked gothic stop-motion, exaggerated silhouettes, leaning / twisted architecture, stretched
 -- windows, crooked roofs, spiral roads, black/white stripes as accents only; palette sickly green, violet, candle orange,
 -- moon blue, bone, ink; dogs everywhere in the motif. House style (A10 §2.5): everything anchored, only walkable or
@@ -764,6 +764,37 @@ function U.BoneFence(parent: Instance, a: Vector3, b: Vector3, opts: any, rng): 
 	end
 	for _, y in ipairs({ h * .35, h * .75 }) do
 		table.insert(out, K.Rod(parent, "BoneRail", a + Vector3.new(0, y, 0), b + Vector3.new(0, y, 0), .26, col:Lerp(P.BoneDark, .3), M.SmoothPlastic, solid))
+	end
+	return out
+end
+
+-- sagging pennant string a -> b: a thin rope in `segs` straight pieces and alternating black / white (or opts.Colors)
+-- triangular pennants hanging under it every opts.Spacing (2.2). opts: Sag (fraction of the span, .08), Size (1.1),
+-- Colors, Segs (4). Non-collide. Returns the parts.
+function U.Pennants(parent: Instance, a: Vector3, b: Vector3, opts: any): { BasePart }
+	opts = opts or {}
+	local out = {}
+	local span = (b - a).Magnitude
+	local sag = span * (opts.Sag or .08)
+	local segs = opts.Segs or 4
+	local function at(t: number): Vector3
+		return a:Lerp(b, t) - Vector3.new(0, math.sin(t * PI) * sag, 0)
+	end
+	for i = 1, segs do
+		table.insert(out, K.Bar(parent, "PennantRope", at((i - 1) / segs), at(i / segs), .1, .1, P.Ink, M.Fabric))
+	end
+	local cols = opts.Colors or { P.Black, P.White }
+	local n = math.max(1, math.floor(span / (opts.Spacing or 2.2)))
+	local s = opts.Size or 1.1
+	local flat = Vector3.new(b.X - a.X, 0, b.Z - a.Z)
+	for k = 1, n do
+		local t = (k - .5) / n
+		local p = at(t)
+		local cf = K.Look(p, p + (flat.Magnitude > 1e-3 and flat.Unit or Vector3.new(0, 0, -1)))
+		-- a downward-pointing triangle in the rope's vertical plane (thickness across the rope)
+		-- (two right-triangle halves: each has its full-height leg on the centre line and its long leg along the rope)
+		table.insert(out, K.Wedge(parent, "Pennant", V3(.06, s * 1.2, s * .5), cf * CF(0, -s * .6, -s * .25) * ANG(0, 0, PI), cols[k % 2 + 1], M.Fabric))
+		table.insert(out, K.Wedge(parent, "Pennant", V3(.06, s * 1.2, s * .5), cf * CF(0, -s * .6, s * .25) * ANG(PI, 0, 0), cols[k % 2 + 1], M.Fabric))
 	end
 	return out
 end
