@@ -1466,6 +1466,9 @@ pages.contracts = function(page: Frame)
 	local price = txt(toll, { Name = "Price", Text = "", TextSize = 15, Scaled = true, MinTextSize = 8, AlignX = "Center", Color = CANDLE })
 	local buy
 	buy = button(toll, { Name = "Buy", Text = T("BUY"), Style = "gold", TextSize = 18, OnClick = function()
+		if not eligible() then
+			return
+		end
 		if not inZone() then
 			descend()
 			return
