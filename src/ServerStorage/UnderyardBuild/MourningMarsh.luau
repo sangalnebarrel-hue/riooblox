@@ -112,11 +112,19 @@ return {
 		end
 
 		----------------------------------------------------------------------------------------------- ground + water
+		-- the world framework (Ground, Order 10) may already have laid the marsh floor at GroundY with cliff edges + the
+		-- bridge from the gate ramping down onto it: then the district builds on that floor instead of duplicating it
+		local fwBase = G.DistrictBase(ctx.Root, "MourningMarsh")
+		local bridge = G.BridgeDeck(ctx.Root, "MourningMarsh")
+		root:SetAttribute("OnFrameworkBase", fwBase ~= nil)
 		local W, D = X1 - X0, Z1 - Z0
-		K.Part(ground, "MarshMudBed", V3(W, 4, D), at((X0 + X1) / 2, GY - 2, (Z0 + Z1) / 2), MUD, M.Mud, G.Solid())
-		-- banks: north + east meet the neighbours' floor (y 0); west + south rise to a shore under the boundary cliffs
-		K.Wedge(ground, "MarshBank", V3(W, -GY, 6), at((X0 + X1) / 2, GY / 2, Z0 + 3), BANK, M.Mud, G.Solid())
-		K.Wedge(ground, "MarshBank", V3(D, -GY, 6), at(X1 - 3, GY / 2, (Z0 + Z1) / 2) * ANG(0, -PI / 2, 0), BANK, M.Mud, G.Solid())
+		if not fwBase then
+			K.Part(ground, "MarshMudBed", V3(W, 4, D), at((X0 + X1) / 2, GY - 2, (Z0 + Z1) / 2), MUD, M.Mud, G.Solid())
+			-- banks: north + east meet the neighbours' floor (y 0) when nothing else lays it
+			K.Wedge(ground, "MarshBank", V3(W, -GY, 6), at((X0 + X1) / 2, GY / 2, Z0 + 3), BANK, M.Mud, G.Solid())
+			K.Wedge(ground, "MarshBank", V3(D, -GY, 6), at(X1 - 3, GY / 2, (Z0 + Z1) / 2) * ANG(0, -PI / 2, 0), BANK, M.Mud, G.Solid())
+		end
+		-- west + south: a shore rising under the boundary cliffs
 		K.Wedge(ground, "MarshBank", V3(D, .5 - GY, 8), at(X0 + 4, (GY + .5) / 2, (Z0 + Z1) / 2) * ANG(0, PI / 2, 0), BANK, M.Mud, G.Solid())
 		K.Wedge(ground, "MarshBank", V3(W, .5 - GY, 8), at((X0 + X1) / 2, (GY + .5) / 2, Z1 - 4) * ANG(0, PI, 0), BANK, M.Mud, G.Solid())
 		-- the black water sheet (walk-through; the mud bed below is the floor)
@@ -133,8 +141,9 @@ return {
 			end
 		end
 		local ey = WY + .04
-		edgeLine(V3(X0 + 6, ey, Z0 + 2.4), V3(X1 - 3, ey, Z0 + 2.4))
-		edgeLine(V3(X1 - 2.4, ey, Z0 + 4), V3(X1 - 2.4, ey, Z1 - 6))
+		local nIn = fwBase and .6 or 2.4 -- north / east waterline: at the bank, or along the framework's cliff edge
+		edgeLine(V3(X0 + 6, ey, Z0 + nIn), V3(X1 - 3, ey, Z0 + nIn))
+		edgeLine(V3(X1 - nIn, ey, Z0 + 4), V3(X1 - nIn, ey, Z1 - 6))
 		edgeLine(V3(X0 + 4.4, ey, Z0 + 4), V3(X0 + 4.4, ey, Z1 - 6))
 		edgeLine(V3(X0 + 6, ey, Z1 - 4.4), V3(X1 - 3, ey, Z1 - 4.4))
 
@@ -212,12 +221,41 @@ return {
 
 		-- 1. gate path: gate exit -> ChoirPath_7 -> the ring (radial)
 		local gate = L.Gates.MourningMarsh
-		local E0 = gate.Position + gate.Facing * 9
-		E0 = V3(E0.X, BY, E0.Z)
+		local u = gate.Facing
+		local E0
+		local bridgeEnd = nil -- along the spoke from the gate, where the framework bridge lands on the mud
+		for _, bp in ipairs(bridge) do
+			local cf, sz = bp.CFrame, bp.Size / 2
+			for _, cx in ipairs({ -1, 1 }) do
+				for _, cz in ipairs({ -1, 1 }) do
+					local w = cf * V3(cx * sz.X, sz.Y, cz * sz.Z)
+					local t = V3(w.X - gate.Position.X, 0, w.Z - gate.Position.Z):Dot(u)
+					bridgeEnd = bridgeEnd and math.max(bridgeEnd, t) or t
+				end
+			end
+		end
+		if bridgeEnd then
+			-- a gangplank from the bridge's landing on the mud up to the boardwalk
+			local foot = gate.Position + u * (bridgeEnd - 1)
+			local GL = 7
+			E0 = V3(foot.X, BY, foot.Z) + u * GL
+			local mid = V3(foot.X, (GY + BY) / 2, foot.Z) + u * (GL / 2)
+			K.Wedge(decks, "BoardwalkGangplank", V3(DECK_W, BY - GY, GL), K.Look(mid, mid + u), plankColor(), M.WoodPlanks, G.Solid())
+			for k = 1, 4 do
+				local c = V3(foot.X, GY + (BY - GY) * (k - .5) / 4.6 + .1, foot.Z) + u * (GL * (k - .5) / 4.6)
+				K.Part(decks, "GangplankCleat", V3(DECK_W - .6, .2, .35), K.Look(c, c + u) * ANG(math.atan((BY - GY) / GL), 0, 0), COL.TimberDark, M.Wood)
+			end
+			table.insert(walk, { V3(foot.X, 0, foot.Z), E0, DECK_W / 2 })
+		else
+			E0 = gate.Position + u * 9
+			E0 = V3(E0.X, BY, E0.Z)
+		end
 		local E1 = V3(L.ChoirPaths[7].X, BY, L.ChoirPaths[7].Z)
 		local radial = V3(E1.X - PC.X, 0, E1.Z - PC.Z).Unit
 		local E2 = V3(PC.X, BY, PC.Z) + radial * (RING_R + 1)
-		rampUp(decks, E0, V3(E1.X - E0.X, 0, E1.Z - E0.Z).Unit, DECK_W)
+		if not bridgeEnd then
+			rampUp(decks, E0, V3(E1.X - E0.X, 0, E1.Z - E0.Z).Unit, DECK_W)
+		end
 		deck(decks, E0, E1, DECK_W, { Rail = 1 })
 		deck(decks, E1, E2, DECK_W, { Rail = -1, SkipEnds = true })
 		-- landing at the bend
@@ -237,7 +275,7 @@ return {
 		-- crooked lantern arch over the start of the path (rope with three little glass lanterns, no lights)
 		do
 			local side = V3(-gate.Facing.Z, 0, gate.Facing.X)
-			local base = E0 + gate.Facing * 3
+			local base = E0 + gate.Facing * (bridgeEnd and .5 or 3)
 			local tops = {}
 			for _, s in ipairs({ -1, 1 }) do
 				local p = base + side * s * (DECK_W / 2 + .2)

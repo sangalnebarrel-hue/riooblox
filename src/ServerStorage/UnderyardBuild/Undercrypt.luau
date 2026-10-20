@@ -123,8 +123,14 @@ return {
 		local J = RT:Lerp(RB, JT)
 
 		--------------------------------------------------------------------------------------------- surface ground
-		K.Part(ground, "ForecourtGround", V3(X1 - X0, 4, 24), at((X0 + X1) / 2, -2, Z0 + 12), EARTH, M.Ground, G.Solid())
-		K.Part(ground, "WestStripGround", V3(22, 4, Z1 - Z0 - 24), at(X0 + 11, -2, (Z0 + 24 + Z1) / 2), EARTH:Lerp(COL.Slate, .2), M.Ground, G.Solid())
+		-- the world framework (Ground, Order 10) may already have laid the district floor at y 0 with the mine hole left
+		-- open (Undercrypt.Floor + the ramp corridor): then only the surface pieces it does not cover are added here
+		local fwBase = G.DistrictBase(ctx.Root, "Undercrypt")
+		root:SetAttribute("OnFrameworkBase", fwBase ~= nil)
+		if not fwBase then
+			K.Part(ground, "ForecourtGround", V3(X1 - X0, 4, 24), at((X0 + X1) / 2, -2, Z0 + 12), EARTH, M.Ground, G.Solid())
+			K.Part(ground, "WestStripGround", V3(22, 4, Z1 - Z0 - 24), at(X0 + 11, -2, (Z0 + 24 + Z1) / 2), EARTH:Lerp(COL.Slate, .2), M.Ground, G.Solid())
+		end
 		-- worn cobble path from the gate to the mouth (flagstones, flush + .05)
 		do
 			local gate = L.Gates.Undercrypt.Position

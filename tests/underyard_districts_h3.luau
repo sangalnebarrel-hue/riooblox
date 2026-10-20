@@ -2,10 +2,14 @@
 -- WP-H3 district builders (ServerStorage.UnderyardBuild.MourningMarsh / Undercrypt / BlackBellArena): runs the real
 -- builders from src/ through tools/edits/40_underyard.luau + tools/sim.luau on a minimal DataModel and checks the
 -- builder contract (DESIGN §7.3, §22.6) and the gameplay needs of seals III / IV / VII (§8.4).
--- usage: lune run tests/underyard_districts_h3.luau
+-- Every builder found in src/ServerStorage/UnderyardBuild runs (the world framework's Ground / Roads too when they are
+-- present), so the checks cover both the standalone districts and the districts built on the framework's islands.
+-- usage: lune run tests/underyard_districts_h3.luau   (DOGROTS_SRC=<dir> runs it against another src tree)
 local fs = require("@lune/fs")
 local luau = require("@lune/luau")
 local roblox = require("@lune/roblox")
+local process = require("@lune/process")
+local SRC = (process.env.DOGROTS_SRC or "src"):gsub("/$", "")
 local Sim = require("../tools/sim")
 local V3 = roblox.Vector3.new
 
@@ -20,7 +24,13 @@ local function test(name, fn)
 	end
 end
 
-local BUILDERS = { "GothicProps", "MourningMarsh", "Undercrypt", "BlackBellArena" }
+local BUILDERS = {}
+for _, f in fs.readDir(SRC .. "/ServerStorage/UnderyardBuild") do
+	if string.sub(f, -5) == ".luau" then
+		table.insert(BUILDERS, string.sub(f, 1, -6))
+	end
+end
+table.sort(BUILDERS)
 
 local function module(parent, name, path)
 	local m = roblox.Instance.new("ModuleScript")
@@ -41,19 +51,19 @@ local function build()
 	local hb = roblox.Instance.new("Folder")
 	hb.Name = "HalloweenBuild"
 	hb.Parent = ss
-	module(hb, "Kit", "src/ServerStorage/HalloweenBuild/Kit.luau")
-	module(hb, "YardKit", "src/ServerStorage/HalloweenBuild/YardKit.luau")
+	module(hb, "Kit", SRC .. "/ServerStorage/HalloweenBuild/Kit.luau")
+	module(hb, "YardKit", SRC .. "/ServerStorage/HalloweenBuild/YardKit.luau")
 	local ub = roblox.Instance.new("Folder")
 	ub.Name = "UnderyardBuild"
 	ub.Parent = ss
 	for _, n in BUILDERS do
-		module(ub, n, "src/ServerStorage/UnderyardBuild/" .. n .. ".luau")
+		module(ub, n, SRC .. "/ServerStorage/UnderyardBuild/" .. n .. ".luau")
 	end
 	local rs = game:GetService("ReplicatedStorage")
 	local hw = roblox.Instance.new("Folder")
 	hw.Name = "Halloween"
 	hw.Parent = rs
-	module(hw, "UnderyardLayout", "src/ReplicatedStorage/Halloween/UnderyardLayout.luau")
+	module(hw, "UnderyardLayout", SRC .. "/ReplicatedStorage/Halloween/UnderyardLayout.luau")
 	local sim = Sim.new(game)
 	local edit = luau.load(fs.readFile("tools/edits/40_underyard.luau"), { debugName = "40_underyard" })()
 	local report = {}
@@ -211,7 +221,9 @@ test("each builder makes one model named after its district (UyDistrict)", funct
 	end
 	local orders = {}
 	for _, b in report.Builders do
-		table.insert(orders, b.Name)
+		if b.Name == "MourningMarsh" or b.Name == "Undercrypt" or b.Name == "BlackBellArena" then
+			table.insert(orders, b.Name)
+		end
 	end
 	assert(table.concat(orders, ",") == "MourningMarsh,Undercrypt,BlackBellArena", "build order " .. table.concat(orders, ","))
 end)
@@ -285,6 +297,14 @@ end)
 -- MOURNING MARSH ------------------------------------------------------------------------------------------------
 test("marsh: mud bed at GroundY, black water at WaterY (Glass, walk-through), boardwalks at BoardwalkY", function()
 	local bed = marsh.Ground:FindFirstChild("MarshMudBed")
+	if marsh:GetAttribute("OnFrameworkBase") then -- the framework's floor is the mud bed
+		for _, d in root:GetDescendants() do
+			if d:IsA("BasePart") and d:GetAttribute("UyFloor") == "MourningMarsh" then
+				bed = d
+			end
+		end
+	end
+	assert(bed, "no marsh floor")
 	local _, _, _, _, top = aabb(bed)
 	assert(math.abs(top - L.Marsh.GroundY) < .01 and bed.CanCollide, "mud bed top " .. top)
 	local water = marsh.Ground:FindFirstChild("BlackWater")
@@ -319,6 +339,10 @@ test("marsh: the gate path, the pond ring and the marsh choir points are walkabl
 	-- width: walk across the gate path at mid-length and around the ring at 12 bearings
 	local g = L.Gates.MourningMarsh
 	local a = g.Position + g.Facing * 9
+	local gp = marsh.Boardwalks:FindFirstChild("BoardwalkGangplank")
+	if gp then -- the path starts at the top of the gangplank from the framework bridge
+		a = gp.CFrame * V3(0, gp.Size.Y / 2, -gp.Size.Z / 2)
+	end
 	local b = L.ChoirPaths[7]
 	local mid = a:Lerp(b, .5)
 	local dir = V3(b.X - a.X, 0, b.Z - a.Z).Unit
@@ -335,8 +359,29 @@ test("marsh: the gate path, the pond ring and the marsh choir points are walkabl
 			assert(floorAt(marsh, p.X, p.Z, L.Marsh.BoardwalkY, .35), string.format("pond ring gap at bearing %d r %d", k, r))
 		end
 	end
-	-- the path starts at the gate: the first plank floor is within 12 studs of the gate
-	assert(floorAt(marsh, (g.Position + g.Facing * 10).X, (g.Position + g.Facing * 10).Z, L.Marsh.BoardwalkY, .35), "boardwalk does not reach the gate")
+	if marsh:GetAttribute("OnFrameworkBase") then
+		-- on the framework's marsh floor: no duplicate mud bed; a gangplank climbs from the bridge's landing to the deck
+		assert(not marsh:FindFirstChild("MarshMudBed", true), "mud bed duplicated over the framework floor")
+		local gp = marsh.Boardwalks:FindFirstChild("BoardwalkGangplank")
+		assert(gp and gp.CanCollide, "no gangplank from the bridge")
+		local foot = gp.CFrame * V3(0, -gp.Size.Y / 2, gp.Size.Z / 2)
+		local head = gp.CFrame * V3(0, gp.Size.Y / 2, -gp.Size.Z / 2)
+		assert(math.abs(foot.Y - L.Marsh.GroundY) < .1 and math.abs(head.Y - L.Marsh.BoardwalkY) < .1, "gangplank heights")
+		local onBridge = false
+		for _, d in root:GetDescendants() do
+			if d:IsA("Model") and d:GetAttribute("Gate") == "MourningMarsh" then
+				for _, bp in d:GetDescendants() do
+					if bp:IsA("BasePart") and bp.CanCollide and string.find(bp.Name, "Deck") and flatDist(foot.X, foot.Z, bp) < 1.5 then
+						onBridge = true
+					end
+				end
+			end
+		end
+		assert(onBridge, "the gangplank does not start on the framework bridge")
+	else
+		-- standalone: the path starts at the gate (the first plank floor is within 12 studs of it)
+		assert(floorAt(marsh, (g.Position + g.Facing * 10).X, (g.Position + g.Facing * 10).Z, L.Marsh.BoardwalkY, .35), "boardwalk does not reach the gate")
+	end
 end)
 
 test("marsh: mirror pond (reflective Glass disc, stone rim, collider ring)", function()
@@ -553,7 +598,7 @@ local A = L.Arena
 test("arena: floor r 52 at y 0 and nothing inside r 48 but flush inlays and the chain anchors", function()
 	local fl = arena.ArenaFloor:FindFirstChild("ArenaFloorStone")
 	local _, _, _, _, top = aabb(fl)
-	assert(math.abs(top) < .01 and math.abs(fl.Size.Y - 104) < .01 and math.abs(fl.Size.Z - 104) < .01, "arena floor")
+	assert(top >= 0 and top <= .06 and math.abs(fl.Size.Y - 104) < .01 and math.abs(fl.Size.Z - 104) < .01, "arena floor " .. top)
 	assert(math.abs(fl.CFrame.Position.X - A.Centre.X) < .01 and math.abs(fl.CFrame.Position.Z - A.Centre.Z) < .01, "arena floor off centre")
 	for _, p in parts(arena) do
 		if p ~= fl and not insideModel(p, "ArenaChain_") and not insideModel(p, "BlackBell") and p.Transparency < .95 then
@@ -664,17 +709,62 @@ test("arena: raised outer ring with ruins and braziers, an open approach, a dres
 		end
 	end
 	assert(ruins >= 8, "ruins " .. ruins)
-	-- the approach corridor (|x| < Width / 2) stays open from the gate into the arena
 	local ap = A.Approach
-	for _, p in parts(arena) do
-		if p.CanCollide and p.Name ~= "ArenaGround" then
-			local x0, y0, z0, x1, y1, z1 = aabb(p)
-			if y1 > .3 and y0 < 6 and z1 > ap.From.Z and z0 < ap.To.Z then
-				assert(x1 < ap.From.X - ap.Width / 2 + .01 or x0 > ap.From.X + ap.Width / 2 - .01, p:GetFullName() .. " blocks the approach")
+	if arena:GetAttribute("ApproachBridge") then
+		-- the framework's winding bridge: nothing of the arena's stands on its walkway (1 stud in from the deck sides)
+		local deck = {}
+		for _, d in root:GetDescendants() do
+			if d:IsA("Part") and d.Name == "ApproachDeck" and d.Shape == roblox.Enum.PartType.Block and not within(d, arena) then
+				table.insert(deck, d)
+			end
+		end
+		assert(#deck > 10, "framework approach deck not found")
+		for _, p in parts(arena) do
+			if p.CanCollide and p.Transparency < 1 then
+				local pts = { p.CFrame.Position }
+				for _, sx in { -1, 1 } do
+					for _, sy in { -1, 1 } do
+						for _, sz in { -1, 1 } do
+							table.insert(pts, p.CFrame * V3(sx * p.Size.X / 2, sy * p.Size.Y / 2, sz * p.Size.Z / 2))
+						end
+					end
+				end
+				for _, d in deck do
+					for _, q in pts do
+						local l = d.CFrame:PointToObjectSpace(q)
+						if math.abs(l.X) < d.Size.X / 2 - 1 and math.abs(l.Z) < d.Size.Z / 2 and l.Y > d.Size.Y / 2 + .1 and l.Y < d.Size.Y / 2 + 6 then
+							error(p:GetFullName() .. " stands on the approach bridge's walkway")
+						end
+					end
+				end
+			end
+		end
+	else
+		-- standalone: the approach corridor (|x| < Width / 2) stays open from the gate into the arena
+		for _, p in parts(arena) do
+			if p.CanCollide and p.Name ~= "ArenaGround" then
+				local x0, y0, z0, x1, y1, z1 = aabb(p)
+				if y1 > .3 and y0 < 6 and z1 > ap.From.Z and z0 < ap.To.Z then
+					assert(x1 < ap.From.X - ap.Width / 2 + .01 or x0 > ap.From.X + ap.Width / 2 - .01, p:GetFullName() .. " blocks the approach")
+				end
 			end
 		end
 	end
-	assert((names.BannerCloth or 0) >= 12 and (names.ChainPost or 0) >= 12 and (names.GraveBase or 0) >= 12, "approach dressing")
+	if arena:GetAttribute("OnFrameworkIsland") then
+		-- on the framework island (r 62): no duplicate ground, the raised ring stays inside the island
+		assert(not arena:FindFirstChild("ArenaGround", true), "arena ground duplicated over the framework island")
+		for _, p in parts(arena.OuterRing) do
+			assert(flatDist(A.Centre.X, A.Centre.Z, p) < 62, p:GetFullName() .. " beyond the island rim")
+		end
+	end
+	if arena:GetAttribute("ApproachBridge") then
+		assert((names.BannerCloth or 0) >= 12 and (names.ChainPost or 0) >= 12 and (names.GraveBalcony or 0) >= 3 and (names.ChainLink or 0) >= 150,
+			string.format("approach bridge dressing: banner cloth %d, chain posts %d, grave balconies %d, chain links %d", names.BannerCloth or 0,
+				names.ChainPost or 0, names.GraveBalcony or 0, names.ChainLink or 0))
+	else
+		assert((names.BannerCloth or 0) >= 12 and (names.ChainPost or 0) >= 12 and (names.GraveBase or 0) >= 12, "approach dressing")
+	end
+	assert((names.EntryPost or 0) == 2 and (names.HoundPlinth or 0) == 2, "entry arch + hounds at the ring gap")
 end)
 
 print(string.format("underyard_districts_h3: %d passed, %d failed", passed, failed))

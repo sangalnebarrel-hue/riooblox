@@ -30,7 +30,8 @@ local PI = math.pi
 
 local SEAL = 7 -- LAST BELL
 local INNER_CLEAR = 48 -- nothing but flush inlays (and the chain anchors) inside this radius
-local TIER_A, TIER_B = { 52, 58, 2 }, { 58, 70, 4.5 } -- inner radius, outer radius, top
+local TIER_A, TIER_B = { 52, 56, 1.5 }, { 56, 61.5, 3.5 } -- inner radius, outer radius, top (inside the framework island r 62)
+local FT = .05 -- arena floor top: just over the framework's island floor (y 0) so the two never z-fight
 local FLOOR = C(40, 36, 48)
 local FLOOR_DARK = C(28, 24, 34)
 local IRON_BLACK = C(26, 24, 32)
@@ -69,8 +70,8 @@ return {
 		local function sub(name)
 			return K.Model(root, name)
 		end
-		local ground, floor, ring, ruins, frame, approach, lamps =
-			sub("Ground"), sub("ArenaFloor"), sub("OuterRing"), sub("Ruins"), sub("BellFrame"), sub("Approach"), sub("Lamps")
+		local ground, floor, ring, ruins, frame, approach, lamps, outer =
+			sub("Ground"), sub("ArenaFloor"), sub("OuterRing"), sub("Ruins"), sub("BellFrame"), sub("Approach"), sub("Lamps"), sub("OuterGraves")
 		local fx = G.FXModel(root, "ArenaFX")
 
 		local function at(x, y, z)
@@ -87,14 +88,35 @@ return {
 			return V3(math.sin(a), 0, -math.cos(a))
 		end
 		local lights = 0
+		-- the world framework (Ground, Order 10 / Roads, Order 20) may already have laid the arena island (circle r 62 +
+		-- a strip to the south wall over the abyss) and the winding approach bridge: build on them, never duplicate them
+		local base = G.DistrictBase(ctx.Root, "BlackBellArena")
+		local deck = G.Named(ctx.Root, "ApproachDeck", root)
+		local bridgePath = nil
+		do
+			local roads = script.Parent:FindFirstChild("Roads")
+			if #deck > 0 and roads and roads:IsA("ModuleScript") then
+				local ok, mod = pcall(require, roads)
+				if ok and type(mod) == "table" and type(mod.ApproachPath) == "function" then
+					local ok2, pts = pcall(mod.ApproachPath, L)
+					if ok2 and type(pts) == "table" and #pts >= 2 then
+						bridgePath = pts
+					end
+				end
+			end
+		end
+		root:SetAttribute("OnFrameworkIsland", base ~= nil)
+		root:SetAttribute("ApproachBridge", bridgePath ~= nil)
 
 		---------------------------------------------------------------------------------------------------- ground
-		K.Part(ground, "ArenaGround", V3(X1 - X0, 4, Z1 - Z0), at((X0 + X1) / 2, -2.1, (Z0 + Z1) / 2), C(48, 42, 50), M.Ground, G.Solid())
-		K.CylY(floor, "ArenaFloorStone", 1.2, AR * 2, at(AC.X, -.6, AC.Z), FLOOR, M.Slate, G.Solid())
+		if not base then -- standalone: the district lays its own ground over the whole box
+			K.Part(ground, "ArenaGround", V3(X1 - X0, 4, Z1 - Z0), at((X0 + X1) / 2, -2.1, (Z0 + Z1) / 2), C(48, 42, 50), M.Ground, G.Solid())
+		end
+		K.CylY(floor, "ArenaFloorStone", 1.2, AR * 2, at(AC.X, FT - .6, AC.Z), FLOOR, M.Slate, G.Solid())
 
 		-- flush inlays (all within .1 of the floor) -------------------------------------------------------------
 		local function inlayRing(r: number, n: number, w: number, color: Color3, mat: Enum.Material, fill: number?, y: number?, name: string?)
-			return G.Ring(floor, at(AC.X, y or .01, AC.Z), r, n, w, .06, color, mat, { Fill = fill, Name = name or "FloorInlay" })
+			return G.Ring(floor, at(AC.X, FT + (y or .01), AC.Z), r, n, w, .06, color, mat, { Fill = fill, Name = name or "FloorInlay" })
 		end
 		-- worn slab rings + radial joints
 		for _, r in ipairs({ 14, 24, 34 }) do
@@ -102,23 +124,23 @@ return {
 		end
 		for k = 0, 11 do
 			local a = k / 12 * PI * 2 + .13
-			K.Bar(floor, "FloorJoint", polar(a, 14.2, .04), polar(a, 43.6, .04), .3, .06, FLOOR_DARK, M.Slate)
+			K.Bar(floor, "FloorJoint", polar(a, 14.2, FT + .04), polar(a, 43.6, FT + .04), .3, .06, FLOOR_DARK, M.Slate)
 		end
 		-- the bronze paw medallion under the bell
-		K.CylY(floor, "Medallion", .06, 22, at(AC.X, .03, AC.Z), C(52, 44, 58), M.Slate)
+		K.CylY(floor, "Medallion", .06, 22, at(AC.X, FT + .03, AC.Z), C(52, 44, 58), M.Slate)
 		inlayRing(11, 32, .7, COL.Bronze, M.Metal, .94, .04, "MedallionRim")
 		inlayRing(8.4, 24, .3, COL.BronzeDark, M.Metal, .6, .04, "MedallionRim")
-		G.Rune(floor, at(AC.X, .07, AC.Z + 1) * ANG(PI / 2, 0, 0) * ANG(0, 0, PI), "Paw", 11, COL.Bronze, { Depth = .08, Material = M.Metal, Width = .2, Name = "MedallionPaw" })
+		G.Rune(floor, at(AC.X, FT + .07, AC.Z + 1) * ANG(PI / 2, 0, 0) * ANG(0, 0, PI), "Paw", 11, COL.Bronze, { Depth = .08, Material = M.Metal, Width = .2, Name = "MedallionPaw" })
 		-- cracks: jagged dark runs from the medallion outwards, a few glowing violet near the chain anchors
 		for k = 1, 14 do
 			local a = k / 14 * PI * 2 + rng:NextNumber(-.15, .15)
 			local r = rng:NextNumber(11.5, 16)
-			local p = polar(a, r, .05)
+			local p = polar(a, r, FT + .05)
 			local steps = rng:NextInteger(3, 5)
 			for _ = 1, steps do
 				a += rng:NextNumber(-.12, .12)
 				r = math.min(r + rng:NextNumber(4, 7), 43)
-				local q = polar(a, r, .05)
+				local q = polar(a, r, FT + .05)
 				K.Bar(floor, "FloorCrack", p, q, rng:NextNumber(.18, .35), .05, C(18, 14, 24), M.SmoothPlastic)
 				p = q
 			end
@@ -127,7 +149,7 @@ return {
 			local c = A.Chains[key]
 			local d = V3(c.X - AC.X, 0, c.Z - AC.Z).Unit
 			local side = V3(-d.Z, 0, d.X)
-			local p = V3(c.X, .06, c.Z) - d * 3
+			local p = V3(c.X, FT + .06, c.Z) - d * 3
 			for k = 1, 3 do
 				local q = p - d * rng:NextNumber(3, 5) + side * rng:NextNumber(-2, 2)
 				K.Bar(floor, "GlowCrack", p, q, .2, .05, RUNE, M.Neon, { Transparency = .25 })
@@ -141,16 +163,16 @@ return {
 		inlayRing(47.1, 48, .35, COL.Bronze, M.Metal, 1, .05, "RuneRingBorder")
 		for k = 0, 23 do
 			local a = (k + .5) / 24 * PI * 2
-			local p = polar(a, 45.5, .09)
+			local p = polar(a, 45.5, FT + .09)
 			local cf = CF(p) * ANG(0, PI - a, 0) * ANG(PI / 2, 0, 0)
 			G.Rune(floor, cf, G.GlyphNames[k % #G.GlyphNames + 1], 1.7, RUNE, { Depth = .04, Width = .16, Name = "RingGlyph", Attrs = { UyLightAtSeal = SEAL } })
 		end
 		-- the edge spawn mark (flush bronze circle + arrow towards the centre)
 		do
 			local s = A.Spawn
-			G.Ring(floor, at(s.X, .02, s.Z), 2.6, 16, .3, .06, COL.Bronze, M.Metal, { Fill = .7, Name = "SpawnMark" })
+			G.Ring(floor, at(s.X, FT + .02, s.Z), 2.6, 16, .3, .06, COL.Bronze, M.Metal, { Fill = .7, Name = "SpawnMark" })
 			local toC = V3(AC.X - s.X, 0, AC.Z - s.Z).Unit
-			G.Rune(floor, CF(V3(s.X, .08, s.Z)) * ANG(0, math.atan2(toC.X, toC.Z), 0) * ANG(PI / 2, 0, 0), "Arrow", 2.6, COL.Bronze,
+			G.Rune(floor, CF(V3(s.X, FT + .08, s.Z)) * ANG(0, math.atan2(toC.X, toC.Z), 0) * ANG(PI / 2, 0, 0), "Arrow", 2.6, COL.Bronze,
 				{ Depth = .05, Material = M.Metal, Name = "SpawnMark" })
 		end
 
@@ -181,21 +203,22 @@ return {
 				end
 			end
 		end
-		-- buttresses on the outer face (r 70), every 30° away from the approach
+		-- buttresses on the outer face, every 30° away from the approach (standalone only: on the framework island the
+		-- outer face meets its cliff rim)
 		for k = 0, 11 do
 			local a = (k + .5) / 12 * PI * 2
-			if not inGap(a, TIER_B[2]) then
+			if not base and not inGap(a, TIER_B[2]) then
 				local cf = radialCF(a, TIER_B[2] + 1.6, 0) * ANG(0, -PI / 2, 0) -- -Z outwards: wedge high side against the wall
 				K.Wedge(ring, "RingButtress", V3(3.2, TIER_B[3] + .5, 3.4), cf * CF(0, (TIER_B[3] + .5) / 2 - .1, 0) * ANG(0, PI, 0), C(50, 46, 58), M.Slate, G.Solid())
 			end
 		end
 		-- stairs on the diagonals: floor -> tier A (inside r 48..52), tier A -> tier B
 		for _, a in ipairs({ PI / 4, 3 * PI / 4, 5 * PI / 4, 7 * PI / 4 }) do
-			for k = 0, 3 do
+			for k = 0, math.floor(TIER_A[3] / .5) - 1 do
 				local r = TIER_A[1] - .45 - k * .9
 				K.Part(ring, "ArenaStair", V3(1, TIER_A[3] - k * .5, 7), radialCF(a, r, (TIER_A[3] - k * .5) / 2), C(70, 64, 78), M.Slate, G.Solid())
 			end
-			for k = 0, 4 do
+			for k = 0, math.floor((TIER_B[3] - TIER_A[3]) / .5) - 1 do
 				local r = TIER_B[1] - .45 - k * .9
 				local top = TIER_B[3] - k * .5
 				K.Part(ring, "ArenaStair", V3(1, top - TIER_A[3] + .2, 6), radialCF(a, r, TIER_A[3] + (top - TIER_A[3]) / 2 - .1), C(66, 60, 74), M.Slate, G.Solid())
@@ -205,7 +228,7 @@ return {
 		----------------------------------------------------------------------------------------------------- braziers
 		for k = 0, 7 do
 			local a = (({ 1, 2, 4, 5, 7, 8, 10, 11 })[k + 1]) / 12 * PI * 2
-			local p = polar(a, 55.2, TIER_A[3])
+			local p = polar(a, (TIER_A[1] + TIER_A[2]) / 2, TIER_A[3])
 			local m = K.Model(ring, "Brazier")
 			K.Part(m, "BrazierPedestal", V3(2.4, 2.4, 2.4), at(p.X, p.Y + 1.2, p.Z) * ANG(0, a, 0), C(60, 54, 68), M.Slate, G.Solid())
 			K.Part(m, "BrazierPedestalCap", V3(2.9, .4, 2.9), at(p.X, p.Y + 2.5, p.Z) * ANG(0, a, 0), COL.StoneLight, M.Slate)
@@ -247,7 +270,7 @@ return {
 			return base * CF(0, h + .7, 0)
 		end
 		local function ruinAt(kind: number, a: number)
-			local p = polar(a, 64, TIER_B[3])
+			local p = polar(a, (TIER_B[1] + TIER_B[2]) / 2, TIER_B[3])
 			local base = CF(p) * ANG(0, PI - a, 0) -- -Z faces the arena centre
 			local m = K.Model(ruins, "Ruin")
 			if kind == 1 then -- broken gothic arch: two columns, a half arch on one of them
@@ -286,8 +309,6 @@ return {
 				G.Skull(m, base * CF(0, 8.5, -.3), 2.2, RUNE, COL.Bone)
 				K.Attach(K.Part(m, "GargoylePerch", V3(.2, .2, .2), base * CF(0, 9.8, 0), COL.Bone, nil, { Transparency = 1 }), "CrowPerch")
 			end
-			-- a gravestone or two behind every ruin, on the outer edge
-			Y.Tombstone(m, base * CF(rng:NextNumber(-2.5, 2.5), 0, 4.6) * ANG(0, rng:NextNumber(-.2, .2), 0), ({ 1, 3, 6, 2 })[rng:NextInteger(1, 4)], rng, nil, { Color = COL.Stone })
 		end
 		local RUIN_ANGLES = { 15, 45, 75, 105, 135, 165, 195, 225, 255, 285, 315, 345 }
 		local RUIN_KIND = { 6, 1, 2, 3, 5, 4, 1, 3, 2, 5, 1, 6 }
@@ -297,14 +318,14 @@ return {
 
 		-------------------------------------------------------------------------------------------------- the gallows
 		local BEAM_Y = BELL.Y + 26 -- crossbeam centre height
-		local UPR = 62 -- uprights stand on tier B at this radius, east + west
+		local UPR = (TIER_B[1] + TIER_B[2]) / 2 -- uprights stand on tier B, east + west
 		local tops = {}
 		for _, sx in ipairs({ -1, 1 }) do
 			local base = V3(AC.X + sx * UPR, TIER_B[3], AC.Z)
 			-- plinth + iron foot
-			K.Part(frame, "GallowsPlinth", V3(10, 3, 10), at(base.X, base.Y + 1.5, base.Z) * ANG(0, .2 * sx, 0), C(58, 52, 66), M.Slate, G.Solid())
-			K.Part(frame, "GallowsPlinthCap", V3(8.6, 1, 8.6), at(base.X, base.Y + 3.5, base.Z) * ANG(0, .2 * sx + .4, 0), C(80, 74, 90), M.Slate, G.Solid())
-			K.Part(frame, "GallowsFoot", V3(6.4, 1.6, 6.4), at(base.X, base.Y + 4.8, base.Z) * ANG(0, .7 * sx, 0), IRON_EDGE, M.CorrodedMetal, G.Solid())
+			K.Part(frame, "GallowsPlinth", V3(7, 3, 7), at(base.X, base.Y + 1.5, base.Z) * ANG(0, .1 * sx, 0), C(58, 52, 66), M.Slate, G.Solid())
+			K.Part(frame, "GallowsPlinthCap", V3(6.2, 1, 6.2), at(base.X, base.Y + 3.5, base.Z) * ANG(0, .1 * sx + .4, 0), C(80, 74, 90), M.Slate, G.Solid())
+			K.Part(frame, "GallowsFoot", V3(5, 1.6, 5), at(base.X, base.Y + 4.8, base.Z) * ANG(0, .7 * sx, 0), IRON_EDGE, M.CorrodedMetal, G.Solid())
 			-- twisted upright: 10 segments, each turned a little further, leaning inward with a crooked wobble
 			local y = base.Y + 5.4
 			local n = 10
@@ -514,18 +535,112 @@ return {
 
 		------------------------------------------------------------------------------------------------- the approach
 		local zA, zB = AP.From.Z, AP.To.Z
-		local ringZ = AC.Z - TIER_B[2] -- where the ring's outer face crosses the approach
-		do
-			-- terraced banks rising into a canyon towards the ring (crooked retaining walls facing the road)
+		local ringZ = AC.Z - TIER_B[2] -- where the ring's outer face crosses the straight approach line
+		if bridgePath then
+			-- the framework's winding approach bridge (18 wide, over the abyss): dress its edges from the outside — stone
+			-- corbels hung on the deck sides carry chained iron posts, bell banners and little grave balconies, so nothing
+			-- stands on the walkway (its parapets + side colliders stay the edge) and nothing blocks its lamps
+			local total = G.PathLength(bridgePath)
+			local HALF = ROAD_HALF
+			local avoid = {}
+			for _, p in ipairs(G.Named(ctx.Root, "LampCorbel", root)) do
+				table.insert(avoid, p.CFrame.Position)
+			end
+			local taken = {} -- {pos} of my own items, per side, for spacing
+			local function clear(p: Vector3, r: number): boolean
+				for _, q in ipairs(avoid) do
+					if G.Flat(p, q) < r then
+						return false
+					end
+				end
+				for _, q in ipairs(taken) do
+					if G.Flat(p, q) < r then
+						return false
+					end
+				end
+				return true
+			end
+			-- deck-edge frame at distance s: point on the outer face of the deck side `side` (+1 right of travel), the
+			-- deck top there, the travel direction and the outward unit vector
+			local function edgeAt(s: number, side: number, out: number): (Vector3, Vector3)
+				local c, d = G.PathAt(bridgePath, s)
+				local top = G.DeckTop(deck, c.X, c.Z) or G.DeckTop(deck, c.X + d.X, c.Z + d.Z) or 0
+				local o = V3(-d.Z, 0, d.X) * side
+				local p = c + o * (HALF + out)
+				return V3(p.X, top, p.Z), o
+			end
+			local function corbel(p: Vector3, o: Vector3, w: number, depth: number, name: string): CFrame
+				local cf = K.Look(p, p + o) -- -Z points away from the deck
+				K.Part(approach, name, V3(w, .8, depth), cf * CF(0, -.4, 0), C(62, 56, 70), M.Slate, G.Solid())
+				K.Wedge(approach, name .. "Bracket", V3(w * .8, 2, depth * .95), cf * CF(0, -1.8, 0) * ANG(PI, 0, 0), C(52, 46, 60), M.Slate)
+				return cf
+			end
+			local sMin, sMax = 10, total - 14 -- clear of the gate arch and of the ring at the landing
+			-- bell banners, alternating sides
+			for i, s0 in ipairs({ 23, 46, 70, 93, 115 }) do
+				local side = i % 2 == 1 and 1 or -1
+				for shift = 0, 3 do
+					local s = s0 + shift * 4
+					local p = edgeAt(s, side, 1.3)
+					if s <= sMax and clear(p, 5) then
+						local _, o = edgeAt(s, side, 1.3)
+						corbel(p, o, 2.6, 2.6, "BannerCorbel")
+						G.Banner(approach, K.Look(p, p - o), 13 + (i % 2) * 2.5, i % 2 == 0 and COL.Cloth or COL.ClothViolet, rng,
+							{ Sigil = i % 2 == 0 and "Eye" or "Bell", Glow = RUNE })
+						table.insert(taken, p)
+						break
+					end
+				end
+			end
+			-- grave balconies: a ledge with a headstone facing the walkers, candles at its foot (4, spread along the bridge)
+			local balconies = 0
+			local s = 28
+			while balconies < 4 and s <= sMax do
+				local placed = false
+				for _, side in ipairs(balconies % 2 == 0 and { -1, 1 } or { 1, -1 }) do
+					local p, o = edgeAt(s, side, 1.9)
+					if not placed and clear(p, 6) then
+						balconies += 1
+						corbel(p, o, 4.2, 3.8, "GraveBalcony")
+						Y.Tombstone(approach, K.Look(p, p - o) * CF(0, 0, .4), ({ 1, 3, 8, 5 })[balconies], rng, nil, { Color = COL.Stone })
+						K.Candles(approach, K.Look(p, p - o) * CF(1.3, 0, -.9), 3, rng, { Light = false, Spread = .35 })
+						table.insert(taken, p)
+						placed = true
+					end
+				end
+				s += placed and 24 or 5
+			end
+			-- chained iron posts on small corbels every ~9 studs on both sides, chains sagging between them
+			for _, side in ipairs({ -1, 1 }) do
+				local prevTop, prevS = nil, nil
+				local s = sMin
+				while s <= sMax do
+					local p, o = edgeAt(s, side, .9)
+					if clear(p, 3.2) then
+						corbel(p, o, 1.6, 1.8, "ChainCorbel")
+						K.CylY(approach, "ChainPost", 2.8, .6, CF(p + V3(0, 1.4, 0)) * ANG(rng:NextNumber(-.05, .05), 0, rng:NextNumber(-.05, .05)), IRON_BLACK, M.CorrodedMetal, G.Solid())
+						K.Ball(approach, "ChainPostKnob", .85, CF(p + V3(0, 2.9, 0)), IRON_EDGE, M.CorrodedMetal)
+						local top = p + V3(0, 2.5, 0)
+						if prevTop and s - prevS < 16 then
+							G.Chain(approach, prevTop, top, 1.1, { Link = 1.6, Thick = .18, Width = .45 })
+						end
+						prevTop, prevS = top, s
+					end
+					s += 9
+				end
+			end
+		else
+			-- standalone (no framework approach bridge): a straight road along Arena.Approach between terraced banks rising
+			-- into a canyon towards the ring; kerbs + chained posts on the road edges, graves, banners, lamps, mausoleums
 			local TERR = { -- {inner |x|, z start, top}
-				{ ROAD_HALF + 1.2, zA + 14, 1.4 }, { ROAD_HALF + 5, zA + 34, 2.8 }, { ROAD_HALF + 9.5, zA + 52, 4.2 },
+				{ ROAD_HALF + 1.2, zA + 14, 1.4 }, { ROAD_HALF + 5, zA + 34, 2.4 }, { ROAD_HALF + 9.5, zA + 52, 3.4 },
 			}
+			local zEnd = ringZ + 1.5
 			for ti, t in ipairs(TERR) do
 				for _, s in ipairs({ -1, 1 }) do
 					local xi, xo = t[1], 42 + ti * 4
-					local za, zb2 = t[2], ringZ + 6
+					local za, zb2 = t[2], zEnd
 					K.Part(approach, "BankTerrace", V3(xo - xi, t[3] + .1, zb2 - za), at(AC.X + s * (xi + xo) / 2, t[3] / 2 - .05, (za + zb2) / 2), C(54, 48, 58), M.Ground, G.Solid())
-					-- retaining wall along the road side + the north end
 					local nw = math.max(1, math.floor((zb2 - za) / 7))
 					for k = 0, nw - 1 do
 						local zc = za + (k + .5) * (zb2 - za) / nw
@@ -535,7 +650,6 @@ return {
 					K.Part(approach, "BankWall", V3(xo - xi, t[3] + .45, 1.2), at(AC.X + s * (xi + xo) / 2, (t[3] + .45) / 2, za + .3), C(70, 64, 78), M.Cobblestone, G.Solid())
 				end
 			end
-			-- kerbs + chained posts along both road edges
 			for _, s in ipairs({ -1, 1 }) do
 				local x = AC.X + s * (ROAD_HALF + .45)
 				K.Part(approach, "RoadKerb", V3(.9, .5, zB - zA - 14), at(x, .2, (zA + 12 + zB - 2) / 2), C(84, 78, 92), M.Slate, G.Solid())
@@ -553,16 +667,11 @@ return {
 					prev = top
 				end
 			end
-			-- gravestones on the first terrace, banners on the second, lantern posts on the kerb line
 			for _, s in ipairs({ -1, 1 }) do
 				for k = 0, 6 do
 					local z = zA + 17 + k * 7.6 + rng:NextNumber(-1, 1)
-					local x = AC.X + s * (ROAD_HALF + 3 + rng:NextNumber(0, 1.2))
-					local top = 1.4
-					if z > TERR[2][2] then
-						x = AC.X + s * (ROAD_HALF + 3 + rng:NextNumber(0, .8))
-					end
-					Y.Tombstone(approach, at(x, top, z) * ANG(0, s * PI / 2 + rng:NextNumber(-.25, .25), 0), ({ 1, 3, 4, 6, 8, 2, 5 })[k + 1], rng, nil, { Color = COL.Stone })
+					local x = AC.X + s * (ROAD_HALF + 3 + rng:NextNumber(0, .8))
+					Y.Tombstone(approach, at(x, TERR[1][3], z) * ANG(0, s * PI / 2 + rng:NextNumber(-.25, .25), 0), ({ 1, 3, 4, 6, 8, 2, 5 })[k + 1], rng, nil, { Color = COL.Stone })
 				end
 				for k = 0, 3 do
 					local z = TERR[2][2] + 3 + k * 8.5
@@ -579,23 +688,14 @@ return {
 					end
 				end
 			end
-			-- two mourning hounds flanking the ring gap, on the top terrace
-			for _, s in ipairs({ -1, 1 }) do
-				local p = V3(AC.X + s * (ROAD_HALF + 14), TERR[3][3], ringZ - 4)
-				local base = K.Look(p, p + V3(-s * .6, 0, -1).Unit)
-				K.Part(approach, "HoundPlinth", V3(6, 2.4, 6), base * CF(0, 1.2, 0), C(64, 58, 74), M.Slate, G.Solid())
-				K.Part(approach, "HoundPlinthCap", V3(6.6, .5, 6.6), base * CF(0, 2.6, 0), C(96, 90, 106), M.Slate)
-				Y.DogStatue(approach, base * CF(0, 2.85, 0), { Bowed = true, Scale = 1.7, Color = C(120, 116, 134), EyeColor = RUNE, Name = "GateHound" })
-			end
 			-- the banks are an old burial ground: rows of graves, a crooked mausoleum, dead trees, bone piles
 			for _, s in ipairs({ -1, 1 }) do
-				for k = 0, 5 do -- a row on the second terrace, a row on the first
+				for k = 0, 5 do
 					local x = AC.X + s * (24 + k * 4.2 + rng:NextNumber(-.6, .6))
 					Y.Tombstone(approach, at(x, TERR[2][3], TERR[2][2] + 6 + rng:NextNumber(-1, 1)) * ANG(0, PI + rng:NextNumber(-.2, .2), 0), rng:NextInteger(1, 9), rng, nil, { Color = COL.Stone })
 					Y.Tombstone(approach, at(x + s * 2, TERR[1][3], TERR[1][2] + 6 + rng:NextNumber(-1, 1)) * ANG(0, PI + rng:NextNumber(-.2, .2), 0), rng:NextInteger(1, 9), rng, nil, { Color = COL.Stone })
 				end
-				-- mausoleum on the top terrace
-				local mb = at(AC.X + s * 41, TERR[3][3], ringZ - 3) * ANG(0, s * .12, 0) -- -Z (the door) faces north, up the approach
+				local mb = at(AC.X + s * 41, TERR[3][3], zEnd - 7) * ANG(0, s * .12, 0) -- -Z (the door) faces north, up the approach
 				K.Part(approach, "MausoleumBase", V3(8.4, .8, 9.4), mb * CF(0, .4, 0), C(64, 58, 74), M.Slate, G.Solid())
 				K.Part(approach, "MausoleumBody", V3(7, 6.4, 8), mb * CF(0, 4, 0) * ANG(0, 0, s * .04), C(84, 78, 94), M.Slate, G.Solid())
 				Y.GableTri(approach, "MausoleumRoof", mb * CF(0, 7.2, 0), 9.2, 3.8, 7.8, C(50, 44, 58), M.Slate, true)
@@ -606,42 +706,55 @@ return {
 					K.Part(approach, "MausoleumPilaster", V3(.9, 6.6, .9), mb * CF(sx * 3.3, 4.1, -4.05), C(104, 98, 114), M.Slate)
 				end
 				K.Candles(approach, mb * CF(-1.6, .8, -5), 3, rng, { Light = false, Spread = .4 })
-				Y.Tree(approach, at(AC.X + s * 31, TERR[3][3], ringZ - 9), rng:NextNumber(12, 15), rng, { Branches = 3, Perches = 2, Bats = true })
+				Y.Tree(approach, at(AC.X + s * 30, TERR[3][3], zEnd - 9), rng:NextNumber(12, 15), rng, { Branches = 3, Perches = 2, Bats = true })
 				Y.Tree(approach, at(AC.X + s * 44, TERR[1][3], TERR[1][2] + 12), rng:NextNumber(10, 13), rng, { Branches = 3, Perches = 1 })
 				Y.BonePile(approach, at(AC.X + s * 30, TERR[2][3], TERR[2][2] + 12), rng, 4, true)
 				Y.IronFence(approach, V3(AC.X + s * 20, TERR[2][3], TERR[2][2] + 10), V3(AC.X + s * 20, TERR[2][3], TERR[2][2] + 17), { Height = 2.4, Spacing = 1.3, Broken = .2 }, rng)
-				-- rubble at the foot of the banks' outer faces
-				for _, t in ipairs(TERR) do
-					G.Rubble(approach, at(AC.X + s * (42 + (table.find(TERR, t) or 1) * 4 + 1.5), 0, (t[2] + ringZ) / 2), 3, 4, rng, 1.6, { Color = C(70, 64, 76), Min = 1.2, Max = 2.8 })
+				for ti, t in ipairs(TERR) do
+					G.Rubble(approach, at(AC.X + s * (42 + ti * 4 + 1.5), 0, (t[2] + zEnd) / 2), 3, 4, rng, 1.6, { Color = C(70, 64, 76), Min = 1.2, Max = 2.8 })
 				end
 			end
-			-- the crooked iron entry arch over the gap, a small bell hanging from it
-			do
-				local gz = ringZ + 1.5
-				local hs = {}
-				for _, s in ipairs({ -1, 1 }) do
-					local b = V3(AC.X + s * (ROAD_HALF + 2.2), TIER_B[3], gz)
-					local t = b + V3(-s * 1.2, 15, 0)
-					K.Rod(approach, "EntryPost", b + V3(0, -TIER_B[3], 0), t, 1.4, IRON_BLACK, M.CorrodedMetal, G.Solid())
-					K.Wedge(approach, "EntryPostThorn", V3(.6, 2, .6), CF(t + V3(0, 1, 0)), IRON_EDGE, M.CorrodedMetal)
-					hs[s] = t
-				end
-				local mid = hs[-1]:Lerp(hs[1], .5) + V3(0, 2.4, 0)
-				K.Bar(approach, "EntryBeam", hs[-1] - V3(0, .6, 0), mid, 1.2, 1.2, IRON_BLACK, M.CorrodedMetal)
-				K.Bar(approach, "EntryBeam", mid, hs[1] - V3(0, .6, 0), 1.2, 1.2, IRON_BLACK, M.CorrodedMetal)
-				K.Part(approach, "EntryBand", V3(1.5, 1.5, 1.5), CF(mid) * ANG(0, 0, PI / 4), RUNE, M.Neon, { Transparency = .1 })
-				local hang = mid - V3(0, 4.2, 0)
-				G.Chain(approach, mid - V3(0, .7, 0), hang + V3(0, 1, 0), 0, { Link = .8, Thick = .16, Width = .4 })
-				K.CylY(approach, "EntryBell", 1.6, 1.8, CF(hang), IRON_BLACK, M.CorrodedMetal)
-				K.Ball(approach, "EntryBellCrown", 1.4, CF(hang + V3(0, .9, 0)), IRON_BLACK, M.CorrodedMetal)
-				K.CylY(approach, "EntryBellLip", .3, 2.2, CF(hang - V3(0, .8, 0)), IRON_EDGE, M.CorrodedMetal)
-				K.Ball(approach, "EntryBellClapper", .6, CF(hang - V3(0, 1.2, 0)), RUNE, M.Neon)
-				K.Attach(K.Part(approach, "EntryPerch", V3(.2, .2, .2), CF(mid + V3(0, 1, 0)), IRON_EDGE, nil, { Transparency = 1 }), "CrowPerch")
+		end
+
+		-- at the ring gap (both cases): two mourning hounds on tier B flanking the way in, and a crooked iron entry arch
+		-- with a small bell over it
+		do
+			local rMid = (TIER_B[1] + TIER_B[2]) / 2
+			for _, s in ipairs({ -1, 1 }) do
+				local x = ROAD_HALF + 6.6
+				local p = V3(AC.X + s * x, TIER_B[3], AC.Z - math.sqrt(rMid * rMid - x * x))
+				local hb = K.Look(p, p + V3(-s * .45, 0, -1).Unit)
+				K.Part(approach, "HoundPlinth", V3(4.6, 1.4, 4.6), hb * CF(0, .7, 0), C(64, 58, 74), M.Slate, G.Solid())
+				K.Part(approach, "HoundPlinthCap", V3(5, .4, 5), hb * CF(0, 1.55, 0), C(96, 90, 106), M.Slate)
+				Y.DogStatue(approach, hb * CF(0, 1.75, 0), { Bowed = true, Scale = 1.45, Color = C(120, 116, 134), EyeColor = RUNE, Name = "GateHound" })
 			end
+			local gx = ROAD_HALF + 2.2
+			local gz = AC.Z - math.sqrt((TIER_B[1] + 1.6) ^ 2 - gx * gx)
+			local hs = {}
+			for _, s in ipairs({ -1, 1 }) do
+				local b = V3(AC.X + s * gx, 0, gz)
+				local t = b + V3(-s * 1.2, TIER_B[3] + 15, 0)
+				K.Rod(approach, "EntryPost", b, t, 1.4, IRON_BLACK, M.CorrodedMetal, G.Solid())
+				K.Wedge(approach, "EntryPostThorn", V3(.6, 2, .6), CF(t + V3(0, 1, 0)), IRON_EDGE, M.CorrodedMetal)
+				hs[s] = t
+			end
+			local mid = hs[-1]:Lerp(hs[1], .5) + V3(0, 2.4, 0)
+			K.Bar(approach, "EntryBeam", hs[-1] - V3(0, .6, 0), mid, 1.2, 1.2, IRON_BLACK, M.CorrodedMetal)
+			K.Bar(approach, "EntryBeam", mid, hs[1] - V3(0, .6, 0), 1.2, 1.2, IRON_BLACK, M.CorrodedMetal)
+			K.Part(approach, "EntryBand", V3(1.5, 1.5, 1.5), CF(mid) * ANG(0, 0, PI / 4), RUNE, M.Neon, { Transparency = .1 })
+			local hang = mid - V3(0, 4.2, 0)
+			G.Chain(approach, mid - V3(0, .7, 0), hang + V3(0, 1, 0), 0, { Link = .8, Thick = .16, Width = .4 })
+			K.CylY(approach, "EntryBell", 1.6, 1.8, CF(hang), IRON_BLACK, M.CorrodedMetal)
+			K.Ball(approach, "EntryBellCrown", 1.4, CF(hang + V3(0, .9, 0)), IRON_BLACK, M.CorrodedMetal)
+			K.CylY(approach, "EntryBellLip", .3, 2.2, CF(hang - V3(0, .8, 0)), IRON_EDGE, M.CorrodedMetal)
+			K.Ball(approach, "EntryBellClapper", .6, CF(hang - V3(0, 1.2, 0)), RUNE, M.Neon)
+			K.Attach(K.Part(approach, "EntryPerch", V3(.2, .2, .2), CF(mid + V3(0, 1, 0)), IRON_EDGE, nil, { Transparency = 1 }), "CrowPerch")
 		end
 
 		------------------------------------------------------------------------------------------------ outer grounds
 		do
+			-- standalone: the whole box outside the ring + banks; on the framework island: its south strip only (the rest
+			-- of the box is the abyss)
 			local function free(p: Vector3, r: number): boolean
 				if p.X < X0 + 3 or p.X > X1 - 3 or p.Z < Z0 + 3 or p.Z > Z1 - 3 then
 					return false
@@ -649,29 +762,33 @@ return {
 				if G.Flat(p, AC) < TIER_B[2] + 2 + r then
 					return false
 				end
-				if math.abs(p.X - AC.X) < 48 + 12 + r and p.Z < AC.Z - 40 then -- the approach banks
-					return false
+				if base then
+					return math.abs(p.X - AC.X) < 40 - r and p.Z > AC.Z + 60
 				end
-				return true
+				return not (math.abs(p.X - AC.X) < 48 + 12 + r and p.Z < AC.Z - 40)
 			end
 			local n, tries = 0, 0
-			while n < 22 and tries < 400 do
+			local want = base and 12 or 22
+			while n < want and tries < 600 do
 				tries += 1
 				local p = V3(rng:NextNumber(X0, X1), 0, rng:NextNumber(Z0, Z1))
 				if free(p, 2) then
 					n += 1
+					local gy = base and 0 or -.1
 					if n % 6 == 0 then
-						Y.Tree(ground, at(p.X, -.1, p.Z), rng:NextNumber(11, 15), rng, { Branches = 3, Perches = 2 })
+						Y.Tree(outer, at(p.X, gy, p.Z), rng:NextNumber(11, 15), rng, { Branches = 3, Perches = 2 })
 					else
-						Y.Tombstone(ground, at(p.X, -.1, p.Z) * ANG(0, rng:NextNumber(0, PI * 2), 0), rng:NextInteger(1, 9), rng, nil, { Color = COL.Stone })
+						Y.Tombstone(outer, at(p.X, gy, p.Z) * ANG(0, rng:NextNumber(0, PI * 2), 0), rng:NextInteger(1, 9), rng, nil, { Color = COL.Stone })
 					end
 				end
 			end
-			for _, p in ipairs({ V3(-50, 0, 2505), V3(50, 0, 2505), V3(0, 0, 2706), V3(-62, 0, 2700), V3(62, 0, 2700) }) do
+			local FOG = base and { V3(0, 0, 2700), V3(-28, 0, 2698), V3(28, 0, 2698) }
+				or { V3(-50, 0, 2505), V3(50, 0, 2505), V3(0, 0, 2706), V3(-62, 0, 2700), V3(62, 0, 2700) }
+			for _, p in ipairs(FOG) do
 				local host = G.EmitterPart(fx, "GroundFog", V3(22, 1, 22), at(p.X, .6, p.Z))
 				G.Fog(host, { Color = C(150, 140, 230), Color2 = COL.MoonDim, Rate = 1.1 })
 			end
-			for _, p in ipairs({ V3(-30, 0, 2520), V3(30, 0, 2520), V3(-60, 0, 2650), V3(60, 0, 2650) }) do
+			for _, p in ipairs(base and { V3(-20, 0, 2696), V3(20, 0, 2696) } or { V3(-30, 0, 2520), V3(30, 0, 2520), V3(-60, 0, 2650), V3(60, 0, 2650) }) do
 				Y.Marker(fx, "FogPoint", p + V3(0, .4, 0))
 			end
 		end
