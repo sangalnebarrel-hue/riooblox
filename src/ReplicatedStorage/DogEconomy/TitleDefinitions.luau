@@ -372,6 +372,13 @@ local LEGACY_FIXED = {
 	BuriedMoon2026 = { Text = "BURIED MOON SURVIVOR", RU = "ПЕРЕЖИВШИЙ ПОГРЕБЁННУЮ ЛУНУ", Icon = "🎃", Rarity = "Mythic",
 		Gradient = grad(C(255, 150, 40), C(122, 62, 200), C(120, 255, 110)), How = "Discover all 8 dogs of the BURIED MOON 2026 event DogDex",
 		HowRU = "Открой всех 8 собак события «Погребённая Луна 2026»" },
+	-- [WP-A] CHAPTER II · THE UNDERYARD titles (Chapter2Config.Titles): Dex II 8/8 and the Gravekeeper finale
+	HollowCrown2026 = { Text = "HOLLOW CROWN", RU = "ПОЛАЯ КОРОНА", Icon = "👑", Rarity = "Secret",
+		Gradient = grad(C(150, 80, 230), C(16, 12, 26), C(150, 200, 255)), How = "Discover all 8 dogs of THE UNDERYARD Dex II",
+		HowRU = "Открой всех 8 собак Догдекса II «Поддворье»" },
+	LastBark2026 = { Text = "THE LAST BARK", RU = "ПОСЛЕДНИЙ ЛАЙ", Icon = "🔔", Rarity = "Mythic",
+		Gradient = grad(C(150, 200, 255), C(150, 80, 230), C(230, 222, 200)), How = "Silence the Last Bark: win the Gravekeeper finale",
+		HowRU = "Заставь умолкнуть Последний лай: победи в финале Смотрителя кладбища" },
 }
 local DEX_RU = {
 	["DOG SPOTTER"] = "ЗНАТОК СОБАК",

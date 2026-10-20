@@ -6,6 +6,8 @@
 --     Houses = {Day, Knocked = {["1"] = true}}, Rush = {Day, Remaining, Active},
 --     Skins = {[skinId] = true}, Skin = "", DexClaims = {["2"] = true}, Boss = {Unlocked, Kills, Best},
 --     Onboarded, Seen = {[key] = true}, Stats = {Ore, Spots, Perfect, BossDamage, Knocks, Pumpkins, Mutations, BloodMoons, Tricks}}
+-- Skins holds the pickaxe skins of both chapters (Chapter II ids UY_*; up to 64). The view also carries .Chapter2, the
+-- CHAPTER II view of Economy.Features.Underyard (p.Underyard), so every Halloween reply / View push updates both.
 -- Every mutation happens in ServerScriptService.Halloween (Core.Transact). This module only shapes, validates and
 -- describes the data; it never requires Rules/Runtime (FeatureRegistry loads it while Rules loads).
 -- Event dogs, mutated finds, pumpkin blocks and decor live in the normal profile tables and stay after the event.
@@ -118,7 +120,7 @@ function F.Shape(p: any): any
 	rush.Day = type(rush.Day) == "number" and math.floor(rush.Day) or -1
 	rush.Remaining = math.min(int(rush.Remaining), cfg.CandyRush.Seconds)
 	rush.Active = rush.Active == true and rush.Remaining > 0
-	h.Skins = stringSet(h.Skins, 40)
+	h.Skins = stringSet(h.Skins, 64) -- Chapter I + Chapter II pickaxe skins (was 40)
 	h.Skin = type(h.Skin) == "string" and h.Skins[h.Skin] and h.Skin or ""
 	h.DexClaims = stringSet(h.DexClaims, 20)
 	local boss = tbl(h.Boss)
@@ -278,11 +280,31 @@ end
 ---------------------------------------------------------------------------------------------------------------------
 -- Client view (snapshot.Features.Halloween and every Halloween request reply)
 ---------------------------------------------------------------------------------------------------------------------
+-- CHAPTER II view (Features.Underyard.View), never able to break the Chapter I view
+local underyard: any = nil
+local function chapter2View(p: any, now: number): any
+	if underyard == nil then
+		local mod = script.Parent:FindFirstChild("Underyard")
+		local ok, res = false, nil
+		if mod then
+			ok, res = pcall(require, mod)
+		end
+		underyard = ok and type(res) == "table" and type(res.View) == "function" and res or false
+	end
+	if not underyard then
+		return nil
+	end
+	local ok, view = pcall(underyard.View, p, now)
+	return ok and view or nil
+end
+F.Chapter2View = chapter2View
+
 function F.View(p: any, now: number): any
 	local cfg = C()
 	local h = type(p.Halloween) == "table" and p.Halloween or nil
 	if not h then
-		return { Season = cfg.Season, Enabled = cfg.HalloweenEventEnabled, Candy = 0, Lifetime = 0, Fresh = true }
+		return { Season = cfg.Season, Enabled = cfg.HalloweenEventEnabled, Candy = 0, Lifetime = 0, Fresh = true,
+			Chapter2 = chapter2View(p, now) }
 	end
 	local quests = {}
 	for _, row in ipairs(h.Quests.List or {}) do
@@ -314,6 +336,7 @@ function F.View(p: any, now: number): any
 		Skins = h.Skins, Skin = h.Skin, DexClaims = h.DexClaims, Dex = dex, DexCount = F.EventDexCount(p),
 		Boss = { Unlocked = h.Boss.Unlocked, Kills = h.Boss.Kills, Best = h.Boss.Best },
 		Onboarded = h.Onboarded, Seen = h.Seen, Stats = h.Stats,
+		Chapter2 = chapter2View(p, now),
 	}
 end
 
