@@ -2,8 +2,11 @@
 -- Enforces Config.Quality[Q].Particles (Shared.Budget("Particles")) as the cap on simultaneously running CONTINUOUS
 -- ParticleEmitters of the event on this client (Enabled and Rate > 0; one-shot :Emit() bursts have Rate 0 and are free).
 -- * Tracks the emitters under the event's client roots — FX.Folder(), Workspace.HalloweenLive and
---   Workspace.DOGROTS_District.38_DeadYard / 39_HalloweenLayer — with DescendantAdded / DescendantRemoving bookkeeping
---   (one GetDescendants per root when it (re)appears; StreamingEnabled: roots and their parts come and go).
+--   Workspace.DOGROTS_District.38_DeadYard / 39_HalloweenLayer / 40_Underyard / 41_HalloweenCalendar (Chapter II, WP-H2:
+--   the Underyard's SelfManagedFX emitters and the calendar stages) — with DescendantAdded / DescendantRemoving bookkeeping
+--   (one GetDescendants per root when it (re)appears; StreamingEnabled: roots and their parts come and go). In those two
+--   world roots only emitters inside a SelfManagedFX model are ours: every other world emitter belongs to
+--   WorldDetailQuality, and two governors on one emitter would fight.
 -- * Every 0.5 s: ranks the running + governed emitters by distance from the camera (parent BasePart / Attachment world
 --   position), keeps the nearest N running and suppresses the rest. Ranking: attribute HwParticlePriority = true (on the
 --   emitter or its parent) is never suppressed, emitters within 25 studs always win, the ones kept last pass get a 15 %
@@ -90,8 +93,23 @@ function M.Start(ctx)
 		end
 	end
 
+	-- [WP-H2] roots marked Managed only govern emitters below a SelfManagedFX ancestor (WorldDetailQuality has the rest)
+	local function selfManaged(d: Instance, root: Instance): boolean
+		local a = d.Parent
+		while a and a ~= root do
+			if a:GetAttribute("SelfManagedFX") == true then
+				return true
+			end
+			a = a.Parent
+		end
+		return false
+	end
+
 	local function track(d: Instance, r)
 		if recs[d] or not d:IsDescendantOf(r.Inst) then
+			return
+		end
+		if r.Managed and not selfManaged(d, r.Inst) then
 			return
 		end
 		nextId += 1
@@ -128,8 +146,8 @@ function M.Start(ctx)
 		end
 	end
 
-	local function attach(key: string, inst: Instance)
-		local r = { Key = key, Inst = inst, Conns = {} }
+	local function attach(key: string, inst: Instance, managed: boolean?)
+		local r = { Key = key, Inst = inst, Conns = {}, Managed = managed == true }
 		roots[key] = r
 		table.insert(r.Conns, inst.DescendantAdded:Connect(function(d)
 			if alive and roots[key] == r and d.ClassName == "ParticleEmitter" then
@@ -164,6 +182,15 @@ function M.Start(ctx)
 			local district = workspace:FindFirstChild("DOGROTS_District")
 			return district and district:FindFirstChild("39_HalloweenLayer")
 		end },
+		-- [WP-H2] CHAPTER II: THE UNDERYARD and the main-map Halloween calendar stages (DESIGN §17)
+		{ "Underyard", function()
+			local district = workspace:FindFirstChild("DOGROTS_District")
+			return district and district:FindFirstChild("40_Underyard")
+		end, true },
+		{ "Calendar", function()
+			local district = workspace:FindFirstChild("DOGROTS_District")
+			return district and district:FindFirstChild("41_HalloweenCalendar")
+		end, true },
 	}
 	local function resolveRoots()
 		for _, row in ipairs(ROOTS) do
@@ -176,7 +203,7 @@ function M.Start(ctx)
 				r = nil
 			end
 			if inst and not r then
-				attach(key, inst)
+				attach(key, inst, row[3])
 			end
 		end
 	end

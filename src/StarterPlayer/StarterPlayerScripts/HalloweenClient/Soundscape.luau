@@ -12,7 +12,19 @@
 -- * Positional one-shots with sensible rates (scaled by Config.Quality[q].Ambient): Howl (far off over the cliffs),
 --   ChainRattle (ChainPoint / gate chains), Whisper (behind the listener), CoffinKnock (under the graves), Owl (night);
 --   CrowCaw / GhostWoo only as a fallback when AmbientFX (which animates the crows and ghosts and voices them) is absent.
--- API: Soundscape.Theme() -> current music theme | nil; Soundscape.Rates (tunable); Soundscape.Stop().
+-- * CHAPTER II (WP-H2, DESIGN §16.4 / §24.5): the theme is chosen by UnderyardRuntime.Theme — Bus "MusicOverride"
+--   {Theme, Seconds, Fade} (COFFIN / REVEAL stings, short overrides) > BOSS / FINALE_* (RS.Halloween.State.Boss /
+--   State.Finale.State: FakeDeath and Fail stop the music, Bell / Choir / Hound play FINALE_BELL / _CHOIR / _HOUND with the
+--   hound anchored to State.Finale.StartAt (else StageStart), Victory resolves into ZONE) > TRIAL (player attribute UyTrial ~= "",
+--   layer "Urgent" in its last UrgentAt seconds) > UNDERYARD (in the zone) > Blood Moon > ZONE > NIGHT. Inside THE
+--   UNDERYARD the island is gone: an island world-event track is ducked (AudioMixer reason "Underyard", bus WorldEvents)
+--   instead of owning the music, the Dead Yard beds fade out and the Underyard's own come in: UnderyardBed (2D), the
+--   Funeral Carnival's calliope in fragments (CarnivalOrgan at the carousel), and district one-shots — BellTollFar from
+--   the broken tower / the Black Bell, Whisper2, Moths at the moth swarms (40_Underyard.FXMarkers), MarshFrog by the
+--   mirror pond, CaveDrip and distant pickaxe echoes (UyPickEcho, registered here) in the Undercrypt, DoorCreak in
+--   Crooked Row, a far GhostDogBark.
+-- API: Soundscape.Theme() -> current music theme | nil; Soundscape.Rates (tunable); Soundscape.Stop();
+--      Soundscape.Override(theme, seconds, fade) (= Bus "MusicOverride").
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local SoundService = game:GetService("SoundService")
@@ -32,6 +44,10 @@ local beds = {}
 local suppressed = {}
 local WEA = nil
 local Music = nil
+local Mixer: any = nil -- [WP-H2] RS.AudioMixer (the Underyard ducks the island's world-event bus)
+local override: any = nil -- [WP-H2] {Theme, Until (os.clock), Fade} from Bus "MusicOverride"
+local ducked = false
+local tickRef: (() -> ())? = nil
 
 function M.Theme(): string?
 	return current
@@ -71,11 +87,29 @@ function M.Stop()
 		Music.Stop(2)
 	end
 	current = nil
+	override = nil
 	for name in pairs(beds) do
 		stopBed(name, 1)
 	end
+	if ducked and Mixer then
+		ducked = false
+		pcall(Mixer.Release, "Underyard", 1)
+	end
 	setSuppressed("Halloween", false)
 	setOwner(false)
+end
+
+-- [WP-H2] a short music override (one-shot stings; Bus "MusicOverride" {Theme, Seconds, Fade}): the normal choice
+-- returns when it runs out. A theme the sequencer does not know clears the override.
+function M.Override(theme: string?, seconds: number?, fade: number?)
+	if type(theme) ~= "string" or not (Music and Music.Players and Music.Players[theme]) then
+		override = nil
+	else
+		override = { Theme = theme, Until = os.clock() + math.clamp(tonumber(seconds) or 4, .5, 120), Fade = tonumber(fade) or .4 }
+	end
+	if running and tickRef then
+		pcall(tickRef :: () -> ())
+	end
 end
 
 function M.Start(ctx)
@@ -100,6 +134,69 @@ function M.Start(ctx)
 	local weState = RS:FindFirstChild("WorldEvents") and RS.WorldEvents:FindFirstChild("State")
 	local hwState = RS.Halloween:FindFirstChild("State")
 	local bossFolder = hwState and hwState:FindFirstChild("Boss")
+
+	-- [WP-H2] CHAPTER II: the Underyard rules (theme priority, presence), the mixer, music overrides, trial clocks
+	local UR: any = nil
+	pcall(function()
+		local mod = RS.Halloween:FindFirstChild("UnderyardRuntime")
+		UR = mod and require(mod) :: any
+	end)
+	local UL = UR and UR.Layout
+	pcall(function()
+		local mod = RS:FindFirstChild("AudioMixer")
+		Mixer = mod and require(mod) :: any
+	end)
+	local Bus = ctx.Bus
+	local trialEnds = 0
+	if Bus then
+		Bus.On("MusicOverride", function(d)
+			if type(d) == "table" then
+				M.Override(d.Theme, d.Seconds, d.Fade)
+			end
+		end)
+		Bus.On("C2Signal", function(sig)
+			local d = type(sig) == "table" and sig.Kind == "C2Trial" and sig.Data or nil
+			if type(d) ~= "table" then
+				return
+			end
+			if d.Kind == "Won" or d.Kind == "Failed" or d.Kind == "Left" then
+				trialEnds = 0
+			elseif type(d.EndsAt) == "number" then
+				trialEnds = d.EndsAt
+			end
+		end)
+	end
+	-- the distant pickaxe echo of the Undercrypt (a recipe of this module, built from the shared sources / presets)
+	if UR and not Audio.Has("UyPickEcho") and Audio.Sources and Audio.Presets and Audio.Cues then
+		local S, P = Audio.Sources, Audio.Presets
+		Audio.Cues.UyPickEcho = { Group = "Ambience", Jitter = .08, Rows = {
+			{ S.KNOCK, .09, 1.35, P.CRYPT, near = 12, far = 170 }, { S.CLICK, .05, 1.6, P.CRYPT, at = .01, near = 12, far = 170 },
+			{ S.KNOCK, .06, 1.22, P.CRYPT, at = .46, near = 12, far = 170 }, { S.CLICK, .03, 1.5, P.CRYPT, at = .47, near = 12, far = 170 },
+			{ S.KNOCK, .035, 1.3, P.CRYPT, at = .93, near = 12, far = 170 } } }
+	end
+	-- moth swarm markers of 40_Underyard.FXMarkers (refreshed every 10 s while the Underyard is near)
+	local mothMarks: { Vector3 } = {}
+	local mothAt = -1e9
+	local function refreshMoths(clock: number)
+		if clock - mothAt < 10 then
+			return
+		end
+		mothAt = clock
+		table.clear(mothMarks)
+		local district = workspace:FindFirstChild("DOGROTS_District")
+		local root = district and district:FindFirstChild("40_Underyard")
+		local fx = root and root:FindFirstChild("FXMarkers")
+		if not fx then
+			return
+		end
+		for _, d in ipairs(fx:GetDescendants()) do
+			if d:IsA("Attachment") and string.sub(d.Name, 1, 10) == "MothSwarm_" then
+				local p = d.Parent
+				table.insert(mothMarks, (p and p:IsA("BasePart")) and (p.CFrame * d.CFrame).Position or d.WorldPosition)
+			end
+		end
+	end
+	local organ = { On = false, Until = 0 }
 
 	-- markers in the Dead Yard (streamed: register as they arrive)
 	local marks = { CrowPerch = {}, ChainPoint = {}, GhostPath = {}, Brazier = {} }
@@ -253,36 +350,80 @@ function M.Start(ctx)
 		local boss = type(bossPhase) == "number" and bossPhase >= 1 and not BOSS_OFF[tostring(bossState)]
 			and (zoneIn or Layout.InPit(pos))
 		local musicOn = player:GetAttribute("Music") ~= false
+		-- [WP-H2] THE UNDERYARD: the character's presence (server attribute, or the layout before it arrives)
+		local underIn = false
+		local underW = 0
+		if UR then
+			local attr = player:GetAttribute("UyInZone")
+			underIn = attr == true or (attr == nil and UL.InZone(pos, 2))
+			underW = UR.UnderWeight(listener, 40)
+		end
 		-- an uploaded world-event track that is really audible owns the music (a running event's track counts while it
-		-- fades in, also from MUSIC: OFF: switching music back on then never blips the OST)
+		-- fades in, also from MUSIC: OFF: switching music back on then never blips the OST) — never inside the Underyard
 		local wes = weState and weState:GetAttribute("State")
 		local eventAudible = false
-		if wes == "ACTIVE" or wes == "ENDING" then
+		if (wes == "ACTIVE" or wes == "ENDING") and not underIn then
 			local em = SoundService:FindFirstChild("DogrotsEventMusic")
 			eventAudible = em ~= nil and em:IsA("Sound") and em.IsPlaying and em.TimeLength > 0
 				and (em.Volume > .02 or (WEA ~= nil and WEA.Current ~= nil))
 		end
-		-- theme
-		local theme, opts = nil, nil
-		local reach = zoneIn or nightOn or near
-		if not musicOn then
-			theme = nil
-		elseif boss then
-			theme = "BOSS"
-			opts = { Fade = M.Fade.Boss }
-		elseif bm.State == "WARNING" and reach then
-			theme = "BLOOD_WARN"
-			opts = { Elapsed = math.max(0, now - (bm.WarningTimestamp or now)) }
-		elseif bm.State == "ACTIVE" and reach then
-			theme = "BLOOD_MOON"
-			opts = { Fade = current == "BLOOD_WARN" and M.Fade.MoonRises or M.Fade.Default }
-		elseif zoneIn then
-			theme = "ZONE"
-		elseif nightOn then
-			theme = "NIGHT"
+		if Mixer and underIn ~= ducked then
+			ducked = underIn
+			if underIn then
+				pcall(Mixer.Duck, "Underyard", { WorldEvents = 0 }, 1.5)
+			else
+				pcall(Mixer.Release, "Underyard", 1.5)
+			end
 		end
-		if theme ~= "BLOOD_MOON" and current == "BLOOD_MOON" and bm.State == "ENDING" then
-			opts = { Fade = M.Fade.MoonSets }
+		-- the Gravekeeper finale (State.Finale, WP-C) near the pit
+		local finale, finaleElapsed, finaleFolder = nil, 0, nil
+		if hwState then
+			finaleFolder = hwState:FindFirstChild("Finale")
+			local st = finaleFolder and finaleFolder:GetAttribute("State")
+			if type(st) == "string" and st ~= "" and (zoneIn or Layout.InPit(pos)) then
+				finale = st
+				-- the hound beat is anchored at StartAt (after the rise), like FinaleFX; every other stage at StageStart
+				local startAt = tonumber(finaleFolder:GetAttribute("StartAt"))
+				local at = (st == "Hound" and startAt and startAt > 0) and startAt
+					or tonumber(finaleFolder:GetAttribute("StageStart"))
+				finaleElapsed = at and math.max(0, workspace:GetServerTimeNow() - at) or 0
+			end
+		end
+		local trialId = player:GetAttribute("UyTrial")
+		local inTrial = type(trialId) == "string" and trialId ~= ""
+		if override and os.clock() >= override.Until then
+			override = nil
+		end
+		local reach = zoneIn or nightOn or near
+		local theme, opts, hold
+		if UR then
+			theme, opts, hold = UR.Theme({
+				MusicOn = musicOn, Override = override, Finale = finale, FinaleElapsed = finaleElapsed, Boss = boss, Trial = inTrial,
+				Underyard = underIn, Blood = bm.State, BloodElapsed = math.max(0, now - (bm.WarningTimestamp or now)), Reach = reach,
+				Zone = zoneIn, Night = nightOn, Current = current,
+			})
+		else
+			-- (a place without CHAPTER II: the Chapter I order)
+			if not musicOn then
+				theme = nil
+			elseif boss then
+				theme = "BOSS"
+				opts = { Fade = M.Fade.Boss }
+			elseif bm.State == "WARNING" and reach then
+				theme = "BLOOD_WARN"
+				opts = { Elapsed = math.max(0, now - (bm.WarningTimestamp or now)) }
+			elseif bm.State == "ACTIVE" and reach then
+				theme = "BLOOD_MOON"
+				opts = { Fade = current == "BLOOD_WARN" and M.Fade.MoonRises or M.Fade.Default }
+			elseif zoneIn then
+				theme = "ZONE"
+			elseif nightOn then
+				theme = "NIGHT"
+			end
+			if theme ~= "BLOOD_MOON" and current == "BLOOD_MOON" and bm.State == "ENDING" then
+				opts = { Fade = M.Fade.MoonSets }
+			end
+			hold = theme ~= nil
 		end
 		if theme ~= current then
 			current = theme
@@ -294,10 +435,16 @@ function M.Start(ctx)
 				lastBossLayer = layer
 				Music.SetLayer("BOSS", "Enrage", layer)
 			end
+		elseif theme == "TRIAL" and UR then
+			local left = trialEnds > 0 and trialEnds - workspace:GetServerTimeNow() or math.huge
+			Music.SetLayer("TRIAL", "Urgent", (left > 0 and left <= UR.Config.Sound.UrgentAt) and 1 or 0)
+		elseif theme == "FINALE_HOUND" and UR and finaleFolder then
+			local hp, max = tonumber(finaleFolder:GetAttribute("HoundHP")), tonumber(finaleFolder:GetAttribute("HoundMax"))
+			Music.SetLayer("FINALE_HOUND", "Frenzy", (hp and max and max > 0 and hp / max <= UR.Config.Sound.FrenzyAt) and 1 or 0)
 		end
 		Music.SetMaster(eventAudible and 0 or 1)
-		setSuppressed("Halloween", theme ~= nil)
-		setOwner(theme ~= nil)
+		setSuppressed("Halloween", hold == true)
+		setOwner(hold == true)
 
 		-- ambience beds
 		local q = Shared.Budget("Ambient")
@@ -305,7 +452,8 @@ function M.Start(ctx)
 			q = .35
 		end
 		local camZone = Layout.Weight(listener, 40)
-		bed("Wind", "WindBed", nil, math.clamp(camZone + (nightOn and .3 or 0) * (1 - camZone) * (near and 1 or .5), 0, 1))
+		-- [WP-H2] the island's wind fades out under the Underyard's own bed
+		bed("Wind", "WindBed", nil, math.clamp(camZone + (nightOn and .3 or 0) * (1 - camZone) * (near and 1 or .5), 0, 1) * (1 - underW))
 		local dGrave = (listener - GRAVE).Magnitude
 		bed("Grave", "GraveAmbience", GRAVE, (dGrave < (beds.Grave and 170 or 150)) and 1 or 0)
 		-- nearest fire: streamed-in braziers (HwBrazier) else the gate pillars, or the cauldron fire
@@ -334,6 +482,96 @@ function M.Start(ctx)
 		local bmActive = bm.State == "ACTIVE" or bm.State == "ENDING"
 		bed("RedRain", "RedRain", nil, bmActive and bmAlpha * camZone or 0)
 		bed("BloodAmb", "BloodMoonAmbience", nil, bmActive and bmAlpha * math.max(camZone, near and .3 or 0) or 0)
+
+		-- [WP-H2] THE UNDERYARD's beds and life (district by the listener; island one-shots below need the Dead Yard)
+		if UR then
+			local SC = UR.Config.Sound
+			bed("UyBed", "UnderyardBed", nil, SC.Bed * underW)
+			local district = underW > .5 and (UL.District(listener) or "BellSquare") or ""
+			-- the Funeral Carnival's calliope comes and goes in fragments
+			local carousel = UL.Carnival.Carousel.Centre + Vector3.new(0, 4, 0)
+			local dOrgan = (carousel - listener).Magnitude
+			local organVol = 0
+			if underW > .5 and dOrgan < SC.Organ.Range then
+				if clock >= organ.Until then
+					organ.On = not organ.On
+					local span = organ.On and SC.Organ.Hold or SC.Organ.Every
+					organ.Until = clock + rng:NextNumber(span[1], span[2])
+				end
+				organVol = organ.On and math.clamp(1.15 - dOrgan / SC.Organ.Range, 0, 1) or 0
+			end
+			bed("UyOrgan", "CarnivalOrgan", organVol > 0 and carousel or nil, organVol)
+			if underW > .5 then
+				refreshMoths(clock)
+				local ur = q
+				local function due2(kind: string): boolean
+					local r = SC.Rates[kind]
+					if not r then
+						return false
+					end
+					M.Rates[kind] = M.Rates[kind] or r
+					return due(kind, clock, ur)
+				end
+				if (district == "BellSquare" or district == "BlackBellArena") and due2("BellTollFar") then
+					local bell = district == "BlackBellArena" and UL.Arena.Bell
+						or UL.Square.Tower.Centre + Vector3.new(0, UL.Square.Tower.BellY, 0)
+					Audio.Play("BellTollFar", bell, { Volume = rng:NextNumber(.75, 1), Pitch = district == "BlackBellArena" and .72 or 1 })
+					if ctx.Bus then
+						ctx.Bus.Fire("UyBellToll", { Position = bell, Arena = district == "BlackBellArena" })
+					end
+				end
+				if cam and due2("Whisper2") then
+					local at = (cam.CFrame * CFrame.new(rng:NextNumber(-7, 7), rng:NextNumber(-1, 2), rng:NextNumber(7, 13))).Position
+					Audio.Play("Whisper2", at, { Volume = rng:NextNumber(.6, .9) })
+				end
+				if #mothMarks > 0 and due2("Moths") then
+					local best, bestD = nil, 36
+					for _, p in ipairs(mothMarks) do
+						local d = (p - listener).Magnitude
+						if d < bestD then
+							best, bestD = p, d
+						end
+					end
+					if best then
+						Audio.Play("Moths", best, { Volume = rng:NextNumber(.7, 1) })
+					end
+				end
+				if district == "MourningMarsh" and due2("MarshFrog") then
+					local c = UL.Marsh.Pond.Centre
+					local a = rng:NextNumber(0, math.pi * 2)
+					local r = rng:NextNumber(UL.Marsh.Pond.Radius * .6, UL.Marsh.Pond.Radius + 10)
+					local at = Vector3.new(c.X + math.cos(a) * r, UL.Marsh.WaterY, c.Z + math.sin(a) * r)
+					if (at - listener).Magnitude > 50 then
+						at = listener + Vector3.new(rng:NextNumber(-20, 20), -2, rng:NextNumber(-20, 20))
+					end
+					Audio.Play("MarshFrog", at, { Volume = rng:NextNumber(.6, 1), Pitch = rng:NextNumber(.9, 1.12) })
+				end
+				if district == "Undercrypt" then
+					if due2("CaveDrip") then
+						local a = rng:NextNumber(0, math.pi * 2)
+						local at = listener + Vector3.new(math.cos(a) * rng:NextNumber(8, 26), rng:NextNumber(6, 14), math.sin(a) * rng:NextNumber(8, 26))
+						Audio.Play("CaveDrip", at, { Volume = rng:NextNumber(.6, 1), Pitch = rng:NextNumber(.9, 1.15) })
+					end
+					if Audio.Has("UyPickEcho") and due2("UyPickEcho") then
+						local f = UL.Undercrypt.Floor
+						local at = Vector3.new(rng:NextNumber(f.Min.X, f.Max.X), f.Min.Y + 2, rng:NextNumber(f.Min.Z, f.Max.Z))
+						if (at - listener).Magnitude > 25 then
+							Audio.Play("UyPickEcho", at, { Volume = rng:NextNumber(.6, 1), Pitch = rng:NextNumber(.9, 1.1) })
+						end
+					end
+				end
+				if district == "CrookedRow" and due2("DoorCreak") then
+					local doors = UL.Crooked.Doors
+					local at = doors[rng:NextInteger(1, #doors)] + Vector3.new(0, 4, 0)
+					Audio.Play("DoorCreak", at, { Volume = rng:NextNumber(.5, .8), Pitch = rng:NextNumber(.8, 1.05) })
+				end
+				if due2("GhostDogBark") then
+					local a = rng:NextNumber(0, math.pi * 2)
+					local at = listener + Vector3.new(math.cos(a) * 90, 20, math.sin(a) * 90)
+					Audio.Play("GhostDogBark", at, { Volume = rng:NextNumber(.35, .55), Pitch = rng:NextNumber(.85, 1.05) })
+				end
+			end
+		end
 
 		-- one-shots
 		local inside = camZone > .5
@@ -388,6 +626,7 @@ function M.Start(ctx)
 		end
 	end
 
+	tickRef = tick
 	task.spawn(function()
 		while running do
 			local ok, err = pcall(tick)
