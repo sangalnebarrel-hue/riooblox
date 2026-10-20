@@ -2300,6 +2300,18 @@ pages.cauldron = function(page: Frame)
 	local scroll = scrollPage(page)
 	local levels = (Config.Cauldron and Config.Cauldron.Levels) or {}
 	local trickCost = (Config.Cauldron and Config.Cauldron.TrickCost) or 80
+	-- [WP-E] the TRICK price grows with every trick of the UTC day (server View.Cauldron.TrickPrice); a view from an
+	-- earlier UTC day means the price is back to the base
+	local function trickPrice(): (number, number)
+		local v = view()
+		local c = v.Cauldron or {}
+		local today = math.floor(now() / 86400)
+		if tonumber(v.Day) and tonumber(v.Day) < today then
+			return tonumber(c.TrickBase) or trickCost, 0
+		end
+		return tonumber(c.TrickPrice) or trickCost, tonumber(c.TricksToday) or 0
+	end
+	local shownPrice = trickCost -- the price on the TRICK button (sent as MaxPrice: never pay more than shown)
 
 	-- TRICK
 	local trick = panel(scroll, "Trick", C(96, 40, 110), C(44, 14, 54))
@@ -2324,7 +2336,7 @@ pages.cauldron = function(page: Frame)
 			showTheWay()
 			return
 		end
-		act(trickBtn, "CauldronTrick", { Request = (HttpService:GenerateGUID(false):gsub("-", "")) }, function(res)
+		act(trickBtn, "CauldronTrick", { Request = (HttpService:GenerateGUID(false):gsub("-", "")), MaxPrice = shownPrice }, function(res)
 			audio("CauldronSplash")
 			local cursed = res and res.Tier == "Cursed Pumpkin"
 			Kit.Toast((cursed and "💀 " or "🎃 ") .. T(cursed and "CURSED PUMPKIN LUCKY BLOCK added to your Inventory" or "PUMPKIN LUCKY BLOCK added to your Inventory"),
@@ -2336,7 +2348,9 @@ pages.cauldron = function(page: Frame)
 	-- TREAT
 	local treat = panel(scroll, "Treat", C(60, 30, 96), C(34, 14, 56))
 	local treatTitle = txt(treat, { Name = "Title", Text = T("TREAT"), TextSize = 30, Scaled = true, MinTextSize = 12, Color = NEON, Stroke = 0.2 })
-	local treatBody = txt(treat, { Name = "Body", Text = T("Feed candy to the cauldron. The more you invest, the better the brew. One brew per season, ready 7 days after you start."),
+	-- [WP-E] late starters: every brew is ready by the claim deadline (Shared.BrewSeconds), at least one day after the start
+	local treatBody = txt(treat, { Name = "Body", Text = Kit.T("Feed candy to the cauldron. The more you invest, the better the brew. One brew per season, ready 7 days after you start, and always by Oct 31 (at least 1 day).",
+		"Корми котёл конфетами. Чем больше вложишь, тем лучше зелье. Одно зелье за сезон: готово через 7 дней после начала и всегда к 31 октября (не раньше чем через 1 день)."),
 		TextSize = 14, Wrap = true, AlignY = "Top", Color = SOFT })
 	local line = Kit.New("Frame", { Name = "Line", BorderSizePixel = 0, BackgroundColor3 = TRACK, ZIndex = Z + 1 }, treat)
 	Kit.Corner(line, "pill")
@@ -2510,6 +2524,10 @@ pages.cauldron = function(page: Frame)
 		-- trick
 		local cauldronPos = layout() and layout().Cauldron and layout().Cauldron.Center
 		P.Near = near(cauldronPos, ((Config.Cauldron and Config.Cauldron.Range) or 22) + 6)
+		-- [WP-E] the price of the next TRICK + "the cauldron grows hungry" hint
+		local price, today = trickPrice()
+		shownPrice = price
+		trickBody.Text = F("Throw %d candy into the cauldron and get a PUMPKIN LUCKY BLOCK. Sometimes it comes out CURSED.", price)
 		if not P.Near then
 			trickBtn:SetText(T("SHOW THE WAY"))
 			trickBtn:SetPrice(nil)
@@ -2518,10 +2536,15 @@ pages.cauldron = function(page: Frame)
 			trickHint.TextColor3 = GOLD
 		else
 			trickBtn:SetText(T("TRICK"))
-			trickBtn:SetPrice("🍬 " .. trickCost)
-			trickBtn:SetDisabled(have < trickCost)
-			trickHint.Text = have < trickCost and F("You need %d candy", trickCost) or T("The cauldron is listening...")
-			trickHint.TextColor3 = have < trickCost and C(255, 120, 120) or MUTED
+			trickBtn:SetPrice("🍬 " .. price)
+			trickBtn:SetDisabled(have < price)
+			local maxPrice = tonumber(c.TrickMax)
+			local hungry = today <= 0 and ("🎃 " .. Kit.T("The price rises with every trick today", "Цена растёт с каждой гадостью за день"))
+				or (maxPrice and price >= maxPrice) and ("🔥 " .. Kit.T("The cauldron is starving: the price resets at midnight (UTC)",
+					"Котёл ненасытен: цена сбросится в полночь (UTC)"))
+				or ("🔥 " .. Kit.T("The cauldron grows hungry: the price rises with every trick today", "Котёл голодает: цена растёт с каждой гадостью за день"))
+			trickHint.Text = have < price and F("You need %d candy", price) or hungry
+			trickHint.TextColor3 = have < price and C(255, 120, 120) or (today > 0 and PUMPKIN_HI or MUTED)
 		end
 		trickCount.Text = F("Tricks played: %d", tonumber(c.Tricks) or 0)
 		P.TrickRows = trickRows()

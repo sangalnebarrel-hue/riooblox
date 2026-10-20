@@ -4,11 +4,16 @@
 --   E.Has(tier) / E.Def(tier)                    event tier? (LuckyBlockConfig.EventTiers)
 --   E.Rows(tier) -> {row}                        fresh copies of the reward rows (Halloween.Config.Rewards[def.Rewards])
 --   E.Freeze(b, random)                          at grant (LuckyLifecycle.AddStored): Seed + Pool + Variants + OddsVersion,
---                                                so freeze()/RewardService.Pool never run for an event block
+--                                                so freeze()/RewardService.Pool never run for an event block. The Pool is
+--                                                frozen for good: a later balance change (the Chapter I rare prize
+--                                                rescale, Config.Rebalance) only reaches blocks granted after it
 --   E.Ghost(b) -> bool                           deterministic "a ghost flies out" flag (own stream; never moves the roll)
 --   E.Apply(p, b, row, rand, now) -> value       inside LuckyLifecycle.Open's transaction for a row with Kind ~= 'Dog':
---                                                Cash / Bones / Candy / Decor / Skin / Mutation. Never fails on a full
---                                                wallet, decor set, skin collection or bag: converts and marks Converted.
+--                                                Cash / Bones / Candy / Dust / Decor / Skin / Mutation. Never fails on a
+--                                                full wallet, decor set, skin collection or bag: converts and marks
+--                                                Converted. Dust (the rescaled tables' filler): Amount = n or {min, max}
+--                                                rolled on the block's own stream -> Resources "LuckyDust" (no art model:
+--                                                the reward card / pumpkin show fall back to the name)
 --   E.Track(p, b, value, now) -> questRow?       quest OpenPumpkin + stat Pumpkins (+ FindMutation / Mutations for an
 --                                                event-mutated find) while the event is on; inside the same transaction
 --   E.AfterOpen(player, value, quest)            after commit: pushes the Halloween view / QuestComplete to the client
@@ -61,7 +66,7 @@ local function rawRows(tier: string): { any }
 	return type(rows) == "table" and rows or {}
 end
 
-local KINDS = { Cash = true, Bones = true, Candy = true, Decor = true, Skin = true, Mutation = true, Dog = true }
+local KINDS = { Cash = true, Bones = true, Candy = true, Dust = true, Decor = true, Skin = true, Mutation = true, Dog = true }
 function E.Rows(tier: string): { any }
 	local out = {}
 	for _, row in ipairs(rawRows(tier)) do
@@ -92,7 +97,9 @@ function E.Freeze(b: any, random: any)
 		return require(RS.WorldEvents.WorldEventModifiers).MutationRows(Econ.Variants, "Name", "Weight", os.time())
 	end)
 	b.Variants = R.Copy(ok and variants or Econ.Variants)
-	b.OddsVersion = "hw" .. tostring(hw().DataVersion or 1)
+	local rb = hw().Rebalance
+	b.OddsVersion = (type(rb) == "table" and rb.Applied == true and type(rb.OddsVersion) == "string") and rb.OddsVersion
+		or ("hw" .. tostring(hw().DataVersion or 1))
 end
 
 -- the same weighted pick LuckyLifecycle.Open makes (Random.new(Seed), first NextNumber)
@@ -153,6 +160,19 @@ local function coins(p: any, spec: any, now: number): number
 		R.Credit(p, amount)
 	end
 	return amount
+end
+
+-- a Dust row's amount: n, or {min, max} rolled on the block's own stream (rand: the Random the pick was made with)
+local function dustAmount(spec: any, rand: any): number
+	if type(spec) == "table" then
+		local lo = math.max(0, math.floor(tonumber(spec[1]) or 0))
+		local hi = math.max(lo, math.floor(tonumber(spec[2]) or lo))
+		if rand and type(rand.NextInteger) == "function" then
+			return rand:NextInteger(lo, hi)
+		end
+		return math.floor((lo + hi) / 2)
+	end
+	return math.max(0, math.floor(tonumber(spec) or 0))
 end
 
 local function number(n: number): string
@@ -217,6 +237,18 @@ function E.Apply(p: any, b: any, row: any, rand: any, now: number): any
 		local F = require(script.Parent.Features.Halloween)
 		v.Amount = F.AddCandy(p, tonumber(row.Amount) or 0)
 		v.Name = number(v.Amount) .. " Candy"
+	elseif kind == "Dust" then
+		local n = dustAmount(row.Amount, rand)
+		local Resources = require(RS.DogEconomy.Resources)
+		if Resources.Kinds.LuckyDust and n > 0 then
+			v.Amount = Resources.Add(p, "LuckyDust", n)
+			v.Name = number(v.Amount) .. " Lucky Dust"
+		else
+			-- a build without Lucky Dust: the same roll as bones (never a failed open)
+			v.Kind, v.Converted = "Bones", true
+			v.Amount = bones(p, math.max(1, n))
+			v.Name = number(v.Amount) .. " Bones"
+		end
 	elseif kind == "Decor" then
 		local Catalog = require(RS.DogEconomy.DecorCatalog)
 		require(script.Parent.Features.Decor).Normalize(R, p, now)
@@ -301,7 +333,17 @@ function E.AfterOpen(player: any, value: any, quest: any)
 		local p = runtime.Engine:Get(player.UserId)
 		if type(p) == "table" and type(p.Halloween) == "table" then
 			local F = require(script.Parent.Features.Halloween)
-			signal:FireClient(player, "View", { View = F.View(p, os.time()) })
+			local now = os.time()
+			local view = F.View(p, now)
+			-- the same view Halloween.Core sends: + TRICK price of the moment and the catch-up brew time
+			local folder = RS:FindFirstChild("Halloween")
+			local rules = folder and folder:FindFirstChild("Chapter1Rules")
+			local shared = folder and folder:FindFirstChild("Shared")
+			if rules and shared and type(p.Halloween.Cauldron) == "table" then
+				local Shared = require(shared) :: any
+				require(rules).DecorateView(view, p.Halloween, now, hw(), Shared.BrewSeconds(p.Halloween.Cauldron.StartedAt))
+			end
+			signal:FireClient(player, "View", { View = view })
 		end
 	end)
 	if not ok then

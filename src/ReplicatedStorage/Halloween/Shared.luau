@@ -396,8 +396,18 @@ function S.CauldronLevel(level: number)
 	return rows[math.clamp(math.floor(level or 1), 1, #rows)]
 end
 
-function S.BrewSeconds(): number
-	return S.FastTimers() and Config.Cauldron.StudioBrewSeconds or Config.Cauldron.BrewSeconds
+-- [WP-E] late-starter catch-up: pass the brew's StartedAt for its real length (Chapter1Rules.BrewSeconds: ready at
+-- min(StartedAt + 7 days, Config.Rebalance.BrewDeadline), never sooner than StartedAt + 1 day); no StartedAt = the full
+-- brew. Studio fast timers unchanged.
+function S.BrewSeconds(startedAt: number?): number
+	if S.FastTimers() then
+		return Config.Cauldron.StudioBrewSeconds
+	end
+	local ok, secs = pcall(function()
+		local rules = root:FindFirstChild("Chapter1Rules")
+		return rules and require(rules :: any).BrewSeconds(startedAt, Config)
+	end)
+	return ok and type(secs) == "number" and secs or Config.Cauldron.BrewSeconds
 end
 
 function S.Remotes()

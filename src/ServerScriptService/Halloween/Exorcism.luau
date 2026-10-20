@@ -1,9 +1,11 @@
 -- SERVER EXORCISM (ServerScriptService.Halloween.Exorcism): one shared Haunted Souls counter per server.
 -- Every candy earned and every Dead Yard objective adds souls (Config.Exorcism.Souls). Milestones:
 --   1000 -> server Candy Rush x2 for 5 minutes, 2500 -> a RARE Pumpkin Lucky Block (MinRank: Epic+ rewards only) for every
---   player on the server,
+--   EXORCIST: a player active in the Dead Yard within the milestone's ActiveWindow (180 s, Core.ActiveInYard; Chapter I
+--   rebalance — AFK players and players elsewhere on the island no longer get it, they are told why),
 --   4000 -> event mutation chance x2 for 10 minutes, 5000 -> THE GRAVEKEEPER rises (then the counter starts over).
 -- Published on RS.Halloween.State.Exorcism (Souls, Goal, Cycle, Milestone) + State.ServerRushUntil/MutationBoostUntil.
+--   Ex.Recipients(players, milestone, core) -> exorcists, others     (pure selection; used by the block milestone, tests)
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local Halloween = RS:WaitForChild("Halloween")
@@ -27,8 +29,33 @@ function Ex.SetBossHook(fn)
 	Ex.Hooks.SummonBoss = fn
 end
 
-local function grantBlockToAll(tier: string, minRank: number?)
-	for _, player in ipairs(Players:GetPlayers()) do
+-- who gets a "for the server" grant: with m.ActiveWindow only the players core.ActiveInYard says were active in the Dead
+-- Yard within that many seconds (a core without ActiveInYard: nobody, never everyone); without it, everyone
+function Ex.Recipients(players: { Player }, m: any, c: any): ({ Player }, { Player })
+	local window = type(m) == "table" and tonumber(m.ActiveWindow) or nil
+	local yes, no = {}, {}
+	for _, player in ipairs(players) do
+		local ok = window == nil or (type(c) == "table" and type(c.ActiveInYard) == "function" and c.ActiveInYard(player, window) == true)
+		table.insert(ok and yes or no, player)
+	end
+	return yes, no
+end
+
+local function grantBlockToExorcists(m: any)
+	local tier, minRank = m.Tier or "Pumpkin", m.MinRank
+	local exorcists, others = Ex.Recipients(Players:GetPlayers(), m, core)
+	-- tell the ones who missed it while near the event (idle in the Dead Yard, or there within NoticeWindow), not the
+	-- whole island
+	local notice = tonumber(m.NoticeWindow) or 900
+	for _, player in ipairs(others) do
+		local inZone = type(core.InZone) == "function" and core.InZone(player)
+		local lately = type(core.ActiveInYard) == "function" and core.ActiveInYard(player, notice)
+		if inZone or lately then
+			core.Signal(player, "Toast", { Text = "Only exorcists active in the Dead Yard got the RARE PUMPKIN LUCKY BLOCK. Play there to share the next one!",
+				Kind = "info" })
+		end
+	end
+	for _, player in ipairs(exorcists) do
 		task.spawn(function()
 			-- server-made receipt (one block per player per cycle); a cached reply was granted and toasted before
 			local ok, res, _, cached = core.Transact(player, "ExorcismBlock", function(_p, _h, ctx)
@@ -59,7 +86,7 @@ local function reach(index: number)
 	if m.Kind == "CandyRush" then
 		State:SetAttribute("ServerRushUntil", math.max(State:GetAttribute("ServerRushUntil") or 0, now) + m.Seconds)
 	elseif m.Kind == "Block" then
-		grantBlockToAll(m.Tier or "Pumpkin", m.MinRank)
+		grantBlockToExorcists(m)
 	elseif m.Kind == "Mutation" then
 		State:SetAttribute("MutationBoostUntil", math.max(State:GetAttribute("MutationBoostUntil") or 0, now) + m.Seconds)
 	elseif m.Kind == "Boss" then

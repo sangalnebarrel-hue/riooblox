@@ -2,8 +2,13 @@
 --   Hello                       -> {View, Server}            first sync of the client
 --   QuestClaim {Id} / QuestBonus                             daily quests (+ the all-quests bonus)
 --   RushStart                                                personal Candy Rush (once per UTC day, 10 min of ACTIVE play)
---   CauldronTrick                                            TRICK: 80 Candy -> Pumpkin Lucky Block (sometimes Cursed)
+--   CauldronTrick {MaxPrice?}                                TRICK: candy -> Pumpkin Lucky Block (sometimes Cursed). The
+--                                                            price grows with every TRICK of the UTC day ("the cauldron
+--                                                            grows hungry": Chapter1Rules.TrickPrice from
+--                                                            h.Cauldron.TricksToday {Day, N}; View.Cauldron.TrickPrice);
+--                                                            MaxPrice = the price the client showed (refused if higher)
 --   CauldronInvest {Amount} / CauldronClaim                  TREAT: invest candy, level up, claim the brew after 7 days
+--                                                            (sooner for late starters: Shared.BrewSeconds(StartedAt))
 --   SkinEquip {Id}                                           cosmetic pickaxe skin ("" = none)
 --   DexClaim {Count}                                         event DogDex (BURIED MOON 2026) rewards
 --   Onboarded / Seen {Key}                                   first-visit guide flags
@@ -14,6 +19,7 @@
 local RS = game:GetService("ReplicatedStorage")
 local Halloween = RS:WaitForChild("Halloween")
 local Shared = require(Halloween:WaitForChild("Shared"))
+local Rules1 = require(Halloween:WaitForChild("Chapter1Rules"))
 local Config = Shared.Config
 local Layout = Shared.Layout
 
@@ -112,21 +118,29 @@ function A.Start(core)
 
 	-- no client-chosen receipt (a.Request is ignored): a replayed receipt returned the cached reply without spending
 	-- candy, and Core re-ran its souls / broadcast every time. Every trick is a new paid transaction.
-	core.OnRequest("CauldronTrick", function(player)
+	-- The price is read and raised inside the transaction (h.Cauldron.TricksToday), so two quick tricks pay two steps;
+	-- a.MaxPrice (the price on the player's button) refuses a trick that would cost more than the player saw.
+	core.OnRequest("CauldronTrick", function(player, a)
 		R.Check(core.Near(player, Layout.Cauldron.Center, Config.Cauldron.Range + 8), "Come closer to the Haunted Cauldron")
+		local maxPrice = tonumber(a.MaxPrice)
 		local cursed = math.random() < Config.Cauldron.CursedChance
 		local tier = cursed and "Cursed Pumpkin" or "Pumpkin"
-		local ok, res, _, cached = core.Transact(player, "CauldronTrick", function(p, h, ctx)
-			ctx.Spend(Config.Cauldron.TrickCost)
+		local ok, res, _, cached = core.Transact(player, "CauldronTrick", function(p, h, ctx, now)
+			local c = h.Cauldron
+			local price = Rules1.TrickPrice(c, now, Config)
+			R.Check(maxPrice == nil or price <= maxPrice, "The cauldron grew hungrier: the TRICK price changed")
+			ctx.Spend(price)
 			local cap = require(RS.LuckyLifecycleConfig).InventoryCapacity or 60
 			R.Check(R.Count(p.OwnedBlocks or {}) + 1 <= cap, "Your Lucky Block storage is full. Open a block first")
 			local ids = ctx.Block(tier, 1)
 			R.Check(ids ~= nil, "Your Lucky Block storage is full. Open a block first")
-			h.Cauldron.Tricks += 1
+			c.Tricks += 1
+			local today = Rules1.NoteTrick(c, now)
 			ctx.Stat("Tricks", 1)
 			ctx.Souls(Config.Exorcism.Souls.Trick or 0)
 			ctx.Relief("Cauldron")
-			return { Message = string.upper(tier) .. " LUCKY BLOCK added to your Inventory", Tier = tier, Uids = ids }
+			return { Message = string.upper(tier) .. " LUCKY BLOCK added to your Inventory", Tier = tier, Uids = ids, Price = price,
+				TricksToday = today, NextPrice = Rules1.TrickPrice(c, now, Config) }
 		end)
 		if ok and not cached then
 			cauldronFx(player, { Kind = "Trick", UserId = player.UserId, Tier = tier })
@@ -187,7 +201,7 @@ function A.Start(core)
 			local c = h.Cauldron
 			R.Check(c.StartedAt > 0, "Start a brew first")
 			R.Check(not c.Claimed, "Already claimed")
-			R.Check(os.time() >= c.StartedAt + Shared.BrewSeconds(), "The brew is not ready yet")
+			R.Check(os.time() >= c.StartedAt + Shared.BrewSeconds(c.StartedAt), "The brew is not ready yet")
 			c.Claimed = true
 			level = c.Level
 			local tableName = Shared.CauldronLevel(c.Level).Table

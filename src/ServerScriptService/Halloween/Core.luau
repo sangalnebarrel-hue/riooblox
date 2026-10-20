@@ -7,6 +7,11 @@
 --   (only ticks while the player is active), Blood Moon participation, player attributes. RAM is authoritative for
 --   curse and rush: a silent write every few points / rush seconds and a last write on leave keep the saved copy close.
 -- * Core.OnRequest: client actions on ReplicatedStorage.Halloween.Remotes.Request (own token bucket).
+-- Chapter I rebalance (docs/halloween2/DESIGN.md §12, Chapter1Rules): the per-minute candy cap applies to the BASE
+-- amount before the multipliers (a Candy Rush / Blood Moon keeps its value near the cap); only earned candy progresses
+-- the EarnCandy quest (fixed payouts never do); ctx.Dust / reward rows of Kind "Dust" pay Lucky Dust (Resources);
+-- Core.ActiveInYard(player, window) tells the exorcists (active in the Dead Yard lately) from AFK players; every view
+-- the client gets carries Cauldron.TrickPrice and the catch-up brew ReadyAt (Chapter1Rules.DecorateView).
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local SSS = game:GetService("ServerScriptService")
@@ -14,6 +19,7 @@ local HttpService = game:GetService("HttpService")
 
 local Halloween = RS:WaitForChild("Halloween")
 local Shared = require(Halloween:WaitForChild("Shared"))
+local Rules1 = require(Halloween:WaitForChild("Chapter1Rules"))
 local Config = Shared.Config
 local Layout = Shared.Layout
 local Economy = SSS:WaitForChild("Economy")
@@ -166,6 +172,13 @@ Core.IsActive = function(player: Player): boolean
 	return st ~= nil and isActive(st)
 end
 
+-- an exorcist: active (an action within Activity.Window) inside the Dead Yard at some second of the last `window`
+-- seconds (st.YardActiveAt, stamped by the 1 s tick). AFK players and players elsewhere on the island are not.
+function Core.ActiveInYard(player: Player, window: number): boolean
+	local st = Core.Players[player]
+	return st ~= nil and st.Ready == true and Rules1.RecentlyActive(st.YardActiveAt, os.clock(), window)
+end
+
 ---------------------------------------------------------------------------------------------------------------------
 -- Transactions
 ---------------------------------------------------------------------------------------------------------------------
@@ -214,12 +227,25 @@ local function makeCtx(player: Player, p: any, h: any, v: any, now: number, dogs
 		table.insert(after, fn)
 	end
 
-	-- candy with multipliers (curse, rush, blood moon) and the per-minute anti-macro cap
+	-- candy with multipliers (curse, rush, blood moon) and the per-minute anti-macro cap. The cap counts the BASE
+	-- amount, before the multipliers (Chapter1Rules.MinuteCap), so a Candy Rush or a Blood Moon keeps its full value
+	-- near the cap. o = {NoMult, NoCap, Earned}: only earned candy progresses the EarnCandy quest (Chapter1Rules.Earned:
+	-- quest claims, reward rows, conversions and other fixed payouts never do).
 	function ctx.Candy(n: number, source: string?, o: { [string]: any }?): number
 		o = o or {}
 		n = math.max(0, n or 0)
 		if n <= 0 then
 			return 0
+		end
+		if not o.NoCap and st then
+			local clock = os.clock()
+			if clock - st.MinuteStart >= 60 then
+				st.MinuteStart, st.MinuteCandy = clock, 0
+			end
+			n, st.MinuteCandy = Rules1.MinuteCap(st.MinuteCandy, n, Config.Candy.MinuteCap)
+			if n <= 0 then
+				return 0
+			end
 		end
 		local mult = o.NoMult and 1 or Core.Multiplier(player)
 		local raw = n * mult
@@ -227,19 +253,34 @@ local function makeCtx(player: Player, p: any, h: any, v: any, now: number, dogs
 		if rng:NextNumber() < raw - amount then
 			amount += 1
 		end
-		if not o.NoCap and st then
-			local clock = os.clock()
-			if clock - st.MinuteStart >= 60 then
-				st.MinuteStart, st.MinuteCandy = clock, 0
-			end
-			amount = math.clamp(amount, 0, math.max(0, Config.Candy.MinuteCap - st.MinuteCandy))
-			st.MinuteCandy += amount
-		end
 		amount = Feature.AddCandy(p, amount)
 		if amount > 0 then
-			ctx.Quest("EarnCandy", amount)
+			if Rules1.Earned(source, o, Config) then
+				ctx.Quest("EarnCandy", amount)
+			end
 			ctx.Souls(amount * (Config.Exorcism.Souls.Candy or 1))
 			note("Candy", amount, { Source = source })
+		end
+		return amount
+	end
+
+	-- Lucky Dust (Resources "LuckyDust", the Dust Forge currency). n or {min, max}; 0 when this build has no Lucky Dust
+	function ctx.Dust(n: any): number
+		local amount = n
+		if type(n) == "table" then
+			local lo = math.floor(tonumber(n[1]) or 0)
+			local hi = math.max(lo, math.floor(tonumber(n[2]) or lo))
+			amount = rng:NextInteger(lo, hi)
+		end
+		amount = math.max(0, math.floor(tonumber(amount) or 0))
+		local Resources = require(RS.DogEconomy.Resources)
+		if amount <= 0 or not Resources.Kinds.LuckyDust then
+			return 0
+		end
+		amount = Resources.Add(p, "LuckyDust", amount)
+		if amount > 0 then
+			ctx.Touched = true
+			note("Dust", amount)
 		end
 		return amount
 	end
@@ -409,6 +450,12 @@ local function makeCtx(player: Player, p: any, h: any, v: any, now: number, dogs
 			out.Amount = ctx.Candy(row.Amount or 0, "Reward", { NoMult = true, NoCap = true })
 		elseif kind == "Bones" then
 			out.Amount = ctx.Bones(row.Amount or 0)
+		elseif kind == "Dust" then
+			out.Amount = ctx.Dust(row.Amount or 0)
+			if out.Amount <= 0 then -- no Lucky Dust in this build (or a zero row): bones instead, never a failure
+				out.Converted = true
+				out.Kind, out.Amount = "Bones", ctx.Bones(conv.DecorBones)
+			end
 		elseif kind == "Cash" then
 			out.Amount = ctx.Coins(row.Coins or row.Amount or 0)
 		elseif kind == "Decor" then
@@ -453,6 +500,18 @@ local function makeCtx(player: Player, p: any, h: any, v: any, now: number, dogs
 	end
 
 	return ctx
+end
+Core.MakeCtx = makeCtx -- tests: the grant ctx of one transaction (makeCtx(player, p, h, v, now, dogs, after, st))
+
+-- the client view of a profile: Features.Halloween.View + the Chapter I rebalance fields (TRICK price of the moment,
+-- the catch-up brew time)
+function Core.View(p: any, now: number): any
+	local view = Feature.View(p, now)
+	local h = type(p) == "table" and p.Halloween or nil
+	if type(h) == "table" and type(h.Cauldron) == "table" then
+		Rules1.DecorateView(view, h, now, Config, Shared.BrewSeconds(h.Cauldron.StartedAt))
+	end
+	return view
 end
 
 -- opts = {Dogs = {dogId...}, Rows = {...} (dog ids are taken from reward rows), Refresh = bool, Receipt = string,
@@ -506,7 +565,7 @@ function Core.Transact(player: Player, label: string, fn: (any, any, any, number
 		local r = h.Rush
 		-- RAM takes the profile's rush only when this transaction set it (RushStart, a new UTC day, a debug refill)
 		local rushSet = rush0 == nil or r.Day ~= rush0.Day or r.Remaining ~= rush0.Remaining or r.Active ~= rush0.Active
-		return { Nonce = nonce, Result = res, View = Feature.View(p, now), Touched = ctx.Touched, Souls = ctx.SoulCount,
+		return { Nonce = nonce, Result = res, View = Core.View(p, now), Touched = ctx.Touched, Souls = ctx.SoulCount,
 			Completed = ctx.Completed, Granted = ctx.Granted, Candy = h.Candy, RushSet = rushSet, Curse = h.Curse }
 	end, opts.Receipt, opts.Timeout and { Timeout = opts.Timeout } or nil)
 	if not ok then
@@ -690,6 +749,9 @@ local function tickPlayer(player: Player, st, dt: number)
 	end
 	local active = isActive(st) and root ~= nil -- a dead player (no live root) burns no rush seconds and earns no credit
 	local clock = os.clock()
+	if active and inZone then
+		st.YardActiveAt = clock -- Core.ActiveInYard (the exorcism block goes to recent exorcists only)
+	end
 	-- curse: rises only while the player is really idle in the zone. Walking is not idle (it holds the curse, but it
 	-- is no activity: Candy Rush and Blood Moon participation still need actions), nor is a first-visit guide card
 	-- (st.CurseFrozenUntil, Actions "OnboardingStep"). IdleGrace counts from the last action, step or card.
