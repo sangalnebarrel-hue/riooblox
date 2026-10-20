@@ -523,10 +523,29 @@ local function inRareRoom(player: Player): boolean
 end
 D.InRareRoom = inRareRoom
 
+-- §24.4: the 0.5% HOLLOW KING of the hidden room is announced to the server once, when its chest opens (or when the
+-- visit ends with that chest still closed: the dog was granted with the door)
+local function announceKing(player: Player, visit: any, rows: any)
+	if visit.KingAnnounced or not core then
+		return
+	end
+	for _, row in ipairs(type(rows) == "table" and rows or {}) do
+		if type(row) == "table" and row.Kind == "Dog" and row.Id == "HW_HollowKing" and not row.Converted then
+			visit.KingAnnounced = true
+			core.Signal("all", "C2Announce", { Kind = "HollowKing", Source = "Doors", Name = player.DisplayName,
+				UserId = player.UserId, DogId = row.Id })
+			return
+		end
+	end
+end
+
 local function exitRare(player: Player, visit: any)
 	local st = stateOf(player)
 	if st.Rare ~= visit then
 		return
+	end
+	for _, rows in ipairs(visit.Chests) do
+		announceKing(player, visit, rows)
 	end
 	st.Rare = nil
 	syncAttrs(player)
@@ -579,6 +598,7 @@ function D.OpenChest(player: Player, index: number): (boolean, string?)
 	end
 	visit.Opened[index] = true
 	signal(player, { Kind = "Chest", Index = index, Rewards = visit.Chests[index] })
+	announceKing(player, visit, visit.Chests[index])
 	local all = true
 	for i in ipairs(visit.Chests) do
 		if not visit.Opened[i] then

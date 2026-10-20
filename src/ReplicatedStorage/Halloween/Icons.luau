@@ -705,8 +705,8 @@ end
 
 -- Icons.New(parent, kind, opts) -> handle. The root Frame is transparent; place / size it like any GuiObject
 -- (default: fills the parent).
-function Icons.New(parent: Instance?, kind: string, opts: { [string]: any }?): any
-	opts = opts or {}
+function Icons.New(parent: Instance?, kind: string, optsIn: { [string]: any }?): any
+	local opts: { [string]: any } = optsIn or {}
 	local root = Instance.new("Frame")
 	root.Name = opts.Name or "HwIcon"
 	root.BackgroundTransparency = 1

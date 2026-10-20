@@ -285,6 +285,17 @@ function M.Start(H: any, env: any)
 		Assault = { Title = "BLACK BELL ASSAULT", Sub = "The Black Bell is ringing: join the assault in the Black Bell Arena", Color = C(255, 80, 90),
 			Icon = { "Seal", { Glow = C(255, 80, 90) } }, Seconds = 5, Cue = "BellToll" },
 	}
+	-- the subtitle by where the reward came from (Source; the Black Coffin when absent) and the assault by its Stage
+	local SOURCE_SUB = {
+		HollowKing = { Finale = "%s won the Hollow King from the Gravekeeper's last stand",
+			Doors = "%s found the Hollow King behind a Crooked Door" },
+		Mythic = { Finale = "%s won %s from the Gravekeeper's last stand" },
+	}
+	local ASSAULT_STAGE = {
+		Start = { Sub = "The assault has begun: strike the Bellkeeper in the Black Bell Arena" },
+		Won = { Title = "THE BLACK BELL HAS FALLEN", Sub = "The Underyard brought the Black Bell down together", Color = GOLD, Cue = "SealComplete" },
+		Failed = { Title = "THE BLACK BELL HOLDS", Sub = "The assault failed: fill the resonance again", Color = C(150, 80, 230), Cue = "TrialFail" },
+	}
 	local function itemName(data: any): string
 		if type(data.DogId) == "string" then
 			return UV.RowName({ Kind = "Dog", Id = data.DogId }, lang())
@@ -315,15 +326,23 @@ function M.Start(H: any, env: any)
 		if who == "" then
 			who = mine and player.DisplayName or "?"
 		end
+		local stage = data.Kind == "Assault" and ASSAULT_STAGE[tostring(data.Stage or "")] or nil
+		if stage then
+			spec = table.clone(spec)
+			for k, v in pairs(stage) do
+				spec[k] = v
+			end
+		end
+		local subTpl = (SOURCE_SUB[data.Kind] or {})[tostring(data.Source or "")] or spec.Sub
 		local title = T(spec.Title)
 		local sub
 		if data.Kind == "Mythic" then
 			local what = itemName(data)
-			sub = F(spec.Sub, who, what ~= "" and what or T("A MYTHIC FIND"))
+			sub = F(subTpl, who, what ~= "" and what or T("A MYTHIC FIND"))
 		elseif data.Kind == "Assault" then
-			sub = T(spec.Sub)
+			sub = T(subTpl)
 		else
-			sub = F(spec.Sub, who)
+			sub = F(subTpl, who)
 		end
 		local function show()
 			local menu = gui:GetAttribute("OpenMenu") ~= nil or gui:GetAttribute("UIHidden") == true

@@ -1917,16 +1917,16 @@ local function announce(player: Player, res: any)
 		return
 	end
 	if res.FinaleFirst == true then
-		core.Signal("all", "C2Announce", { Kind = "FinaleClear", Name = player.DisplayName, UserId = player.UserId })
+		core.Signal("all", "C2Announce", { Kind = "FinaleClear", Source = "Finale", Name = player.DisplayName, UserId = player.UserId })
 	end
 	for _, row in ipairs(type(res.Rewards) == "table" and res.Rewards or {}) do
 		if type(row) == "table" and row.Kind == "Dog" and not row.Converted and type(row.Id) == "string" then
 			local def = C2Cfg.Dogs and C2Cfg.Dogs.Defs and C2Cfg.Dogs.Defs[row.Id]
 			local rank = def and def.Rank or 0
 			if rank >= 6 then
-				core.Signal("all", "C2Announce", { Kind = "HollowKing", Name = player.DisplayName, UserId = player.UserId, DogId = row.Id })
+				core.Signal("all", "C2Announce", { Kind = "HollowKing", Source = "Finale", Name = player.DisplayName, UserId = player.UserId, DogId = row.Id })
 			elseif rank >= 5 then
-				core.Signal("all", "C2Announce", { Kind = "Mythic", Name = player.DisplayName, UserId = player.UserId, DogId = row.Id })
+				core.Signal("all", "C2Announce", { Kind = "Mythic", Source = "Finale", Name = player.DisplayName, UserId = player.UserId, DogId = row.Id })
 			end
 		end
 	end

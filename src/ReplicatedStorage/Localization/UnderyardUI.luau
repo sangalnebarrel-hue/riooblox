@@ -163,6 +163,12 @@ L.UI = {
 	["THE LAST BELL FALLS SILENT"] = "ПОСЛЕДНИЙ КОЛОКОЛ УМОЛКАЕТ",
 	["The Black Bell is ringing: join the assault in the Black Bell Arena"] =
 		"Чёрный колокол звонит: присоединяйся к штурму на Арене Чёрного колокола",
+	["The assault has begun: strike the Bellkeeper in the Black Bell Arena"] =
+		"Штурм начался: бей Звонаря на Арене Чёрного колокола",
+	["THE BLACK BELL HAS FALLEN"] = "ЧЁРНЫЙ КОЛОКОЛ ПАЛ",
+	["The Underyard brought the Black Bell down together"] = "Поддворье вместе обрушило Чёрный колокол",
+	["THE BLACK BELL HOLDS"] = "ЧЁРНЫЙ КОЛОКОЛ УСТОЯЛ",
+	["The assault failed: fill the resonance again"] = "Штурм провалился: снова наполни резонанс",
 	-- HALLOWEEN window / HUD (Chapter I labels this package relabels)
 	["PUMPKIN BLOCK FOR EXORCISTS"] = "ТЫКВЕННЫЙ БЛОК ЭКЗОРЦИСТАМ",
 	["A PUMPKIN BLOCK FOR THE EXORCISTS"] = "ТЫКВЕННЫЙ БЛОК ДЛЯ ЭКЗОРЦИСТОВ",
@@ -233,6 +239,9 @@ L.Templates = {
 	-- HUD announcements (C2Announce)
 	["%s pulled the Hollow King from the Black Coffin"] = "%s достаёт Полого короля из Чёрного гроба",
 	["%s pulled %s from the Black Coffin"] = "%s достаёт из Чёрного гроба: %s",
+	["%s won the Hollow King from the Gravekeeper's last stand"] = "%s получает Полого короля в последнем бою Смотрителя кладбища",
+	["%s found the Hollow King behind a Crooked Door"] = "%s находит Полого короля за Кривой дверью",
+	["%s won %s from the Gravekeeper's last stand"] = "%s получает в последнем бою Смотрителя кладбища: %s",
 	["%s and the party broke the Gravekeeper's last stand"] = "%s и отряд сломили последний бой Смотрителя кладбища",
 	["DEX II reward for %d dogs: %s"] = { "Награда Догдекса II за %d собаку: %s", "Награда Догдекса II за %d собаки: %s",
 		"Награда Догдекса II за %d собак: %s" },
