@@ -127,6 +127,20 @@ C.Dogs = {
 		MegaSeconds = 28,
 		Color = Color3.fromRGB(176, 70, 255),
 	},
+	-- THE UNDERYARD event Secret (WP-K1): never on the tongue, arrives where it is won (SecretReveal Venue "Coffin" at the
+	-- Black Coffin shrine, "RareRoom" behind a Crooked Door, "Finale" after the Last Bark, "Underyard" anywhere else
+	-- below). Dogs/HW_HollowKing: the light dies, a black moon rises behind the spot and swallows its last sliver of light,
+	-- moths spiral up, the king walks out of the dark as a silhouette (Walk, 1.2) and a crown of violet fire settles on
+	-- its head at totality (3.2, its signature Coronation). Mega/HW_HollowKing: the same black moon and burning crown over
+	-- the whole island (or over the Underyard cavern for players down there) with the colossal king rising against it.
+	HW_HollowKing = {
+		Hold = 8.2,
+		Clips = { { 0, "Idle", true }, { 1.2, "Walk", true }, { 3.2, "Coronation" }, { 7.2, "Idle", true } }, -- Coronation: 4.0 s
+		Whispers = { { 0.3, "the last bell has stopped ringing." }, { 2.4, "something hollow wears the crown now." } },
+		Title = "HOLLOW KING",
+		MegaSeconds = 30,
+		Color = Color3.fromRGB(150, 80, 230),
+	},
 	TheDog = {
 		Hold = 14,
 		SpeedScale = 0.5,
