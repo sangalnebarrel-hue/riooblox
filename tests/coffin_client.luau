@@ -630,7 +630,8 @@ test("a duplicate shows its conversion; bonus rows (crown, pug) are on the card"
 	CE.Advance(1.8)
 	eq(chips[1].Visible, true)
 	eq(chips[3].Visible, true)
-	eq(chips[1].Text.Text, "BELL SHARDS +100")
+	eq(chips[1].Text.Text, "🔔 +100", "three chips on one card: the currency icons")
+	eq(chips[3].Text.Text, "🧵 +3")
 	local bonus = {}
 	for _, c in ipairs(card().Card:GetChildren()) do
 		if c.Name == "Bonus" then
@@ -687,6 +688,23 @@ test("SECRET with the arrival: blackout, music cut, violet seams, the lid, the h
 	assertRestored("secret: ")
 end)
 
+test("SECRET with the arrival and a crown bonus row: the card shows only what else the coffin gave", function()
+	local main = { Kind = "Dog", Id = "HW_HollowKing", Amount = 1 }
+	local p = payload(6, main)
+	p.Rows = { main, { Kind = "Find", Id = "uy_bellkeeper_mask", Amount = 1, Bonus = "Crown", Rank = 5 } }
+	p.Arrival = true
+	p.Handoff = p.At + CC.Beats(6).Handoff
+	signal("C2Coffin", p)
+	local show = State.Current
+	advanceTo(show, show.Beats.Card + .2)
+	truthy(card(), "a card for the bonus row")
+	eq(cardText("Kicker"), "ALSO FROM THE BLACK COFFIN")
+	eq(cardText("Title"), "BELLKEEPER MASK", "not the king again")
+	eq(cardText("Rarity"), "MYTHIC")
+	finish(show)
+	assertRestored("secret bonus: ")
+end)
+
 test("SECRET without an arrival: the module's own moon, king, crown, banner and card", function()
 	plays = {}
 	local p = payload(6, { Kind = "Dog", Id = "HW_HollowKing", Amount = 1 })
@@ -723,6 +741,7 @@ test("the lighter version: no camera, no card, a name plate; it yields to the pl
 	local show = State.Current
 	truthy(show and show.Near, "the lighter show")
 	eq(mainGui:GetAttribute("CinemaActive"), nil, "no cinematic for onlookers")
+	eq(prompt.Enabled, true, "onlookers keep the prompt (their own opening takes over)")
 	advanceTo(show, show.Beats.Card + .2)
 	eq(card(), nil, "no card")
 	local plate = scene():FindFirstChild("CoffinNamePlate", true)
@@ -796,6 +815,8 @@ test("a refused OPEN AGAIN and C2CoffinRefused become localized toasts", functio
 	eq(cardText("Kicker"), "ЧЁРНЫЙ ГРОБ", "Russian card")
 	eq(cardText("Rarity"), "РЕДКОЕ")
 	eq(cardText("Title"), "ФРАГМЕНТЫ КОСМЕТИКИ")
+	eq(CoffinFX.Upper("Полое сердце · ёж"), "ПОЛОЕ СЕРДЦЕ · ЁЖ", "Cyrillic upper case")
+	eq(CoffinFX.Describe({ Kind = "Find", Id = "uy_hollow_heart" }).Title, "ПОЛОЕ СЕРДЦЕ")
 	CE.Click(State.Card.Again)
 	CE.Advance(0)
 	eq(toasts[#toasts].Text, "Сначала освободи место в хранилище собак")

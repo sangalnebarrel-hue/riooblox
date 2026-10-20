@@ -142,6 +142,23 @@ local function Lp(pair: any): string
 	end
 	return tostring(pair or "")
 end
+-- upper case for Latin and Cyrillic (string.upper only knows ASCII: "Полое сердце" -> "ПОЛОЕ СЕРДЦЕ")
+local function upper(text: string): string
+	local ok, out = pcall(function()
+		local chars = {}
+		for _, c in utf8.codes(text) do
+			if (c >= 0x61 and c <= 0x7A) or (c >= 0x430 and c <= 0x44F) then
+				c -= 32
+			elseif c == 0x451 then
+				c = 0x401
+			end
+			table.insert(chars, utf8.char(c))
+		end
+		return table.concat(chars)
+	end)
+	return ok and out or string.upper(text)
+end
+CoffinFX.Upper = upper
 
 local function reduced(): boolean
 	return Shared.ReducedMotion()
@@ -262,6 +279,9 @@ local function cue(show: any?, name: string, where: any?, volume: number?, opts:
 	end
 	local o = opts and table.clone(opts) or {}
 	o.Volume = (volume or 1) * (show and show.Near and CC.Show.Near.Volume or 1)
+	if where == nil and show and show.Near and show.Rig then
+		where = show.Rig.Seat.Position -- onlookers hear the coffin where it stands
+	end
 	safe("cue" .. name, a.Play, name, where, o)
 end
 
@@ -274,6 +294,8 @@ local CURRENCY = {
 }
 local CHIP = { Dust = "LUCKY DUST +%s", Shards = "BELL SHARDS +%s", Fragments = "FRAGMENTS +%s", Bones = "BONES +%s",
 	Cash = "COINS +%s", Key = "COFFIN KEYS +%s", Candy = "CANDY +%s" }
+-- the short form of a chip on a narrow card (an icon instead of the words)
+local ICON = { Dust = "✨", Shards = "🔔", Fragments = "🧵", Bones = "🦴", Cash = "💰", Key = "🗝", Candy = "🍬" }
 local REASON = { Owned = "DUPLICATE", Full = "STORAGE FULL", Unavailable = "NOT AVAILABLE YET", Undeclared = "CONVERTED",
 	Unknown = "CONVERTED" }
 
@@ -286,14 +308,14 @@ local function nameOf(kind: string?, id: string?): string?
 	return def and Lp(def.Name) or nil
 end
 
--- -> {Kind, Title, Sub, Amount?, Status?, New?, Chips = {string}}
+-- -> {Kind, Title, Sub, Amount?, Status?, New?, Chips = {string}, Short = {string}}
 function CoffinFX.Describe(row: any): any
 	row = type(row) == "table" and row or {}
 	local kind = tostring(row.Kind or "")
-	local out: any = { Kind = kind, Chips = {} }
+	local out: any = { Kind = kind, Chips = {}, Short = {} }
 	local amount = math.max(0, math.floor(tonumber(row.Amount) or 0))
 	if kind == "Find" or kind == "Decor" or kind == "Skin" or kind == "Dog" then
-		out.Title = string.upper(nameOf(kind, row.Id) or tostring(row.Id or "?"))
+		out.Title = upper(nameOf(kind, row.Id) or tostring(row.Id or "?"))
 		if kind == "Find" then
 			out.Sub = T("SHOWCASE FIND")
 		elseif kind == "Decor" then
@@ -314,7 +336,9 @@ function CoffinFX.Describe(row: any): any
 		for _, c in ipairs(type(row.Conversion) == "table" and row.Conversion or {}) do
 			local tpl = CHIP[c.Kind]
 			if tpl then
-				table.insert(out.Chips, F(tpl, Shared.Format(tonumber(c.Amount) or 0)))
+				local n = Shared.Format(tonumber(c.Amount) or 0)
+				table.insert(out.Chips, F(tpl, n))
+				table.insert(out.Short, (ICON[c.Kind] or "+") .. " +" .. n)
 			end
 		end
 	elseif kind == "Dog" then
@@ -332,7 +356,9 @@ function CoffinFX.Describe(row: any): any
 	end
 	if type(row.Overflow) == "table" then
 		out.Status = T("KEY STORAGE FULL")
-		table.insert(out.Chips, F(CHIP.Shards, Shared.Format(tonumber(row.Overflow.Amount) or 0)))
+		local n = Shared.Format(tonumber(row.Overflow.Amount) or 0)
+		table.insert(out.Chips, F(CHIP.Shards, n))
+		table.insert(out.Short, ICON.Shards .. " +" .. n)
 	end
 	return out
 end
@@ -779,7 +805,7 @@ local function fxFolder(): Folder
 end
 
 local function spart(show: any, props: { [string]: any }): BasePart
-	local p = Instance.new(props.Class or "Part")
+	local p = Instance.new(props.Class or "Part") :: BasePart
 	p.Anchored = true
 	p.CanCollide = false
 	p.CanQuery = false
@@ -1037,6 +1063,15 @@ local function buildCard(show: any): any
 	local main = type(payload.Main) == "table" and payload.Main or rows[1] or {}
 	local rank = show.Rank
 	local color = show.Color
+	local kicker = payload.Preview and T("PREVIEW · NOTHING GRANTED") or payload.Forced and T("YOUR FIRST BLACK COFFIN") or T("THE BLACK COFFIN")
+	if show.Beats and show.Beats.Secret and payload.Arrival and #rows > 1 then
+		-- the Hollow King had his own arrival: this card only shows what else the coffin gave
+		main = rows[2]
+		rows = { table.unpack(rows, 2) }
+		rank = math.clamp(math.floor(tonumber(main.Rank) or 2), 1, 6)
+		color = rarityColor(rank)
+		kicker = T("ALSO FROM THE BLACK COFFIN")
+	end
 	local info = CoffinFX.Describe(main)
 	local card: any = { Closed = false, Conns = {} }
 	local pg = player:FindFirstChildOfClass("PlayerGui")
@@ -1093,7 +1128,6 @@ local function buildCard(show: any): any
 	local textX = wide and (viewSize + pad * 2) or pad
 	local textW = wide and (W - viewSize - pad * 3) or (W - pad * 2)
 	local y = pad
-	local kicker = payload.Preview and T("PREVIEW · NOTHING GRANTED") or payload.Forced and T("YOUR FIRST BLACK COFFIN") or T("THE BLACK COFFIN")
 	label(frame, { Name = "Kicker", Text = kicker, Size = UDim2.fromOffset(textW, 20), Position = UDim2.fromOffset(textX, y),
 		TextColor3 = BONE:Lerp(color, .25), Max = 16 })
 	y += 24
@@ -1197,8 +1231,9 @@ local function buildCard(show: any): any
 	local n = #info.Chips
 	local cw = n == 1 and math.min(textW, 240) or math.floor((textW - 8 * (n - 1)) / math.max(1, n))
 	local x0 = n == 1 and math.floor((textW - cw) / 2) or 0
+	local short = cw < 150 -- a narrow chip shows the currency's icon instead of its name
 	for i, text in ipairs(info.Chips) do
-		local c = chip(chipRow, text, C3(255, 196, 110), i, cw)
+		local c = chip(chipRow, short and info.Short[i] or text, C3(255, 196, 110), i, cw)
 		c.Position = UDim2.fromOffset(x0 + (i - 1) * (cw + 8), 0)
 		c.Visible = false
 		table.insert(card.Chips, c)
@@ -1322,7 +1357,7 @@ local function namePlate(show: any)
 	g.AlwaysOnTop = false
 	g.Adornee = anchor
 	g:SetAttribute("NoTranslate", true)
-	label(g, { Name = "Who", Text = string.upper(tostring(show.Payload.Name or "")), Size = UDim2.new(1, 0, 0, 22), TextColor3 = BONE,
+	label(g, { Name = "Who", Text = upper(tostring(show.Payload.Name or "")), Size = UDim2.new(1, 0, 0, 22), TextColor3 = BONE,
 		TextStrokeTransparency = .3, Max = 20 })
 	label(g, { Name = "What", Text = rarityLabel(show.Rank) .. " · " .. (info.Title or ""), Size = UDim2.new(1, 0, 0, 34),
 		Position = UDim2.fromOffset(0, 24), TextColor3 = show.Color:Lerp(WHITE, .25), TextStrokeTransparency = .2, Max = 28 })
@@ -1505,9 +1540,33 @@ local function ensureReward(show: any)
 	local off = centreOffset(model)
 	model.Name = "CoffinReward"
 	model.Parent = show.Scene
+	-- a showcase find brings its own aura colour and glint parts (WP-K3: ShowcaseAura / ShowcaseGlint)
+	local auraColor = model:GetAttribute("ShowcaseAura")
+	auraColor = typeof(auraColor) == "Color3" and auraColor or show.Color
 	local aura = spart(show, { Name = "RewardAura", Shape = BALL, Size = Vector3.one * (CC.Show.RiseSize * 1.25), CFrame = CF(show.Rig.Seat.Position),
-		Color = show.Color, Material = Enum.Material.ForceField, Transparency = .6 })
-	local light = slight(show, aura, show.Color:Lerp(WHITE, .3), 14, 2.2)
+		Color = auraColor, Material = Enum.Material.ForceField, Transparency = .6 })
+	local light = slight(show, aura, auraColor:Lerp(WHITE, .3), 14, 2.2)
+	if not lowQuality() then
+		local glints = 0
+		for _, d in ipairs(model:GetDescendants()) do
+			if glints < 3 and d:IsA("BasePart") and d:GetAttribute("ShowcaseGlint") then
+				glints += 1
+				local at = Instance.new("Attachment")
+				at.Parent = d
+				local e = Instance.new("ParticleEmitter")
+				e.Name = "Glint"
+				e.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+				e.Color = ColorSequence.new(auraColor:Lerp(WHITE, .6))
+				e.LightEmission = 1
+				e.LightInfluence = 0
+				e.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(.4, .35), NumberSequenceKeypoint.new(1, 0) })
+				e.Lifetime = NumberRange.new(.4, .8)
+				e.Speed = NumberRange.new(0, .4)
+				e.Rate = 5 * budget()
+				e.Parent = at
+			end
+		end
+	end
 	show.Reward = { Model = model, Offset = off, Aura = aura, Light = light }
 end
 
@@ -1889,7 +1948,7 @@ local function buildEvents(show: any): { any }
 			if s.Payload.Arrival or late or s.Near then
 				return -- the Mega layer names the raiser; onlookers get the omen banner (C2Announce)
 			end
-			local main = F("%s RAISED THE HOLLOW KING", string.upper(tostring(s.Payload.Name or "")))
+			local main = F("%s RAISED THE HOLLOW KING", upper(tostring(s.Payload.Name or "")))
 			s.Banner = banner(main, T("✦ SECRET ✦"), T("FROM THE BLACK COFFIN"), VIOLET_HOT, CC.Show.Omen.Hold)
 		end)
 		add(b.Release, "Release", function(s, late)
@@ -2142,10 +2201,7 @@ local function beginReset(show: any)
 	end)
 end
 
-stepShow = function(show: any, dt: number)
-	if not show.Alive then
-		return
-	end
+local function stepOnce(show: any, dt: number)
 	local t = showTime(show)
 	runEvents(show, t, false)
 	if not show.Alive then
@@ -2181,6 +2237,19 @@ stepShow = function(show: any, dt: number)
 		end
 	elseif os.clock() - show.ResetAt >= CC.Show.CloseLid + .35 then
 		teardown(show, "Done")
+	end
+end
+
+stepShow = function(show: any, dt: number)
+	-- one frame at a time: a beat that yields (a model built on demand) never lets the next frame re-enter
+	if not show.Alive or show.Stepping then
+		return
+	end
+	show.Stepping = true
+	local ok, err = pcall(stepOnce, show, dt)
+	show.Stepping = false
+	if not ok then
+		error(err, 0)
 	end
 end
 
@@ -2448,8 +2517,8 @@ function CoffinFX.Play(payload: any, opts: { [string]: any }?): any
 		show.Events = buildEvents(show)
 		State.Current = show
 		State.Shows += 1
-		hidePrompts(show)
 		if not near then
+			hidePrompts(show) -- (onlookers keep theirs: their own opening takes the coffin over)
 			startCinema(show)
 		end
 		show.Conn = RunService.Heartbeat:Connect(function(dt: number)
@@ -2501,7 +2570,7 @@ function CoffinFX.Announce(data: any)
 	local wait = math.clamp(revealAt + CC.Show.Omen.Banner - CC.Show.Secret.Total - serverNow(), 0, 6)
 	State.Omens += 1
 	task.delay(wait, function()
-		local main = F("%s RAISED THE HOLLOW KING", string.upper(tostring(data.Name or "?")))
+		local main = F("%s RAISED THE HOLLOW KING", upper(tostring(data.Name or "?")))
 		banner(main, T("✦ SECRET ✦"), T("FROM THE BLACK COFFIN"), VIOLET_HOT, CC.Show.Omen.Hold)
 		cue(nil, "BellTollFar", nil, .6)
 		if not reduced() then

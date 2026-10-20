@@ -56,6 +56,8 @@ function E.Build()
 		end
 	end
 	module(folder(RS, "Halloween"), "UnderyardLayout", SRC .. "/ReplicatedStorage/Halloween/UnderyardLayout.luau")
+	-- [WP-K4] the BlackCoffin builder (Order 31) reads its sizes / attribute contract from CoffinConfig
+	module(folder(RS, "Halloween"), "CoffinConfig", SRC .. "/ReplicatedStorage/Halloween/CoffinConfig.luau")
 	local report = {}
 	local edit = luau.load(fs.readFile(EDITS .. "/40_underyard.luau"), { debugName = "40_underyard.luau" })()
 	edit({ game = game, sim = Sim.new(game), report = report, roblox = roblox, fs = fs, serde = serde })

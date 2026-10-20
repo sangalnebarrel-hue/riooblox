@@ -17,6 +17,7 @@ L.UI = {
 	["THE BLACK COFFIN"] = "ЧЁРНЫЙ ГРОБ",
 	["YOUR FIRST BLACK COFFIN"] = "ТВОЙ ПЕРВЫЙ ЧЁРНЫЙ ГРОБ",
 	["PREVIEW · NOTHING GRANTED"] = "ПРЕДПРОСМОТР · НИЧЕГО НЕ ВЫДАНО",
+	["ALSO FROM THE BLACK COFFIN"] = "ЕЩЁ ИЗ ЧЁРНОГО ГРОБА",
 	["FROM THE BLACK COFFIN"] = "ИЗ ЧЁРНОГО ГРОБА",
 	["SHOWCASE FIND"] = "НАХОДКА ДЛЯ ВИТРИНЫ",
 	["PLOT COSMETIC"] = "УКРАШЕНИЕ УЧАСТКА",

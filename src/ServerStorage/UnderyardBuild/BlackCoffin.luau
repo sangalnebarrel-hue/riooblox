@@ -93,7 +93,12 @@ function BlackCoffin.Build(ctx: any)
 	local L = ctx.Layout
 	local RS = game:GetService("ReplicatedStorage")
 	local halloween = RS:FindFirstChild("Halloween")
-	local CC = require((halloween and halloween:FindFirstChild("CoffinConfig")) :: ModuleScript) -- (the offline env has no WaitForChild)
+	local cfgModule = halloween and halloween:FindFirstChild("CoffinConfig") -- (the offline env has no WaitForChild)
+	if not cfgModule then
+		ctx.Note("BlackCoffin: ReplicatedStorage.Halloween.CoffinConfig missing, the coffin was not built")
+		return nil
+	end
+	local CC = require(cfgModule :: ModuleScript)
 	local D = CC.Model
 	local A = CC.Attr
 	local P = CC.Palette
@@ -123,7 +128,7 @@ function BlackCoffin.Build(ctx: any)
 		for _, d in ipairs(shrine:GetDescendants()) do
 			local k = d:IsA("Attachment") and tonumber(string.match(d.Name, "^ChainAnchor_(%d)$"))
 			if k and d.Parent and d.Parent:IsA("BasePart") then
-				anchors[k] = ((d.Parent :: BasePart).CFrame * d.CFrame).Position
+				anchors[k] = ((d.Parent :: BasePart).CFrame * (d :: Attachment).CFrame).Position
 			end
 		end
 	end
