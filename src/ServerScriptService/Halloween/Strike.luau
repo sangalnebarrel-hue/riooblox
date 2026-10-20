@@ -25,6 +25,8 @@
 --       Perfect = true,          Perfect Hit candy on this kind (default true)
 --       Activity = "Hit",        Core.Activity kind for every hit (curse relief)
 --       Remove = true,           remove the target automatically when it breaks (false: the kind decides)
+--       EventMult = nil | true | "Apply",   CHAPTER II kinds: hit.EventMult = the attacker's EventHP.DamageMult (WEAKENED
+--                                .7, else 1); "Apply" also multiplies hit.Applied by it before OnHit (nil: Chapter I, untouched)
 --   }
 --   Strike.Add(t) -> target       t = {Kind, Position=Vector3 | CFrame=CFrame (hit box centre), Radius=3, Size=Vector3?
 --       (hit box, default Radius*2 cube), HP, MaxHP?, Unit? (HP per power for Damage="Power"), Color=Color3,
@@ -41,6 +43,10 @@
 --   Strike.Get(id) / Strike.All(kind?)
 --   Strike.HitDamage(player) -> n  average plain hit with the player's real pickaxe (0 = no pickaxe)
 --   Strike.HitsHP(player, hits) -> n                       HP that needs `hits` plain hits from this player (Raw)
+-- GLOBAL GATES (CHAPTER II): Strike.CanAct = {{Name, Fn}} checked on every Begin and every hit, before the kind's CanHit.
+--   Strike.AddCanAct(name, fn(player, target) -> ok, err?)  (re-adding a name replaces it) ; Strike.RemoveCanAct(name)
+--   Strike.CheckCanAct(player, target?) -> ok, err          EventHP adds "EventHP": a DOWNED player cannot strike
+--                                                          ("HW:DOWNED"). No gate registered = Chapter I unchanged.
 -- Replication: every target is an invisible anchored Part in Workspace.HalloweenLive.Targets (CanQuery true, tag
 -- "HalloweenTarget") with attributes TargetId, Kind, HP, MaxHP, Color, Verb, Range, Radius, Variant, Seed, Label, LabelRU,
 -- Material, Shared, OwnerUserId, Ground, Facing, Panel, BornAt (+ EndReason when it goes away) and child Attachments
@@ -59,7 +65,7 @@ local EconConfig = require(RS:WaitForChild("DogEconomy"):WaitForChild("Config"))
 local MR = require(RS:WaitForChild("Mining"):WaitForChild("MiningRules"))
 local M = EconConfig.Mining
 
-local Strike = { Kinds = {}, Targets = {}, Sessions = {}, NextId = 0, IdBase = {} }
+local Strike = { Kinds = {}, Targets = {}, Sessions = {}, NextId = 0, IdBase = {}, CanAct = {} }
 Strike.TAG = "HalloweenTarget"
 Strike.TierBonus = .04 -- "Power" damage: +4% per pickaxe level above the first
 Strike.RangeSlack = 6
@@ -79,6 +85,7 @@ Strike.Now = function(): number
 end
 
 local core = nil
+local started = nil -- the server's modules table (EventHP is reached through it lazily)
 
 local function round1(x: number): number
 	return math.floor(x * 10 + .5) / 10
@@ -201,14 +208,59 @@ end
 ---------------------------------------------------------------------------------------------------------------------
 function Strike.Register(kind: string, def: { [string]: any }?)
 	assert(type(kind) == "string" and #kind > 0 and #kind <= 40, "Strike.Register: bad kind")
-	def = def or {}
+	local spec: { [string]: any } = def or {}
 	local d = {
-		Kind = kind, Range = tonumber(def.Range) or 14, Verb = def.Verb or "STRIKE", Damage = def.Damage or "Raw",
-		CanHit = def.CanHit, OnBegin = def.OnBegin, OnHit = def.OnHit, OnBreak = def.OnBreak, OnRemove = def.OnRemove,
-		Perfect = def.Perfect ~= false, Activity = def.Activity or "Hit", Remove = def.Remove ~= false,
+		Kind = kind, Range = tonumber(spec.Range) or 14, Verb = spec.Verb or "STRIKE", Damage = spec.Damage or "Raw",
+		CanHit = spec.CanHit, OnBegin = spec.OnBegin, OnHit = spec.OnHit, OnBreak = spec.OnBreak, OnRemove = spec.OnRemove,
+		Perfect = spec.Perfect ~= false, Activity = spec.Activity or "Hit", Remove = spec.Remove ~= false,
+		EventMult = (spec.EventMult == true or spec.EventMult == "Apply") and spec.EventMult or nil,
 	}
 	Strike.Kinds[kind] = d
 	return d
+end
+
+---------------------------------------------------------------------------------------------------------------------
+-- global gates (CHAPTER II): every gate must allow a player before any kind's own CanHit runs
+---------------------------------------------------------------------------------------------------------------------
+function Strike.AddCanAct(name: string, fn: (Player, any) -> (boolean, string?))
+	assert(type(name) == "string" and type(fn) == "function", "Strike.AddCanAct: bad gate")
+	for _, g in ipairs(Strike.CanAct) do
+		if g.Name == name then
+			g.Fn = fn
+			return
+		end
+	end
+	table.insert(Strike.CanAct, { Name = name, Fn = fn })
+end
+
+function Strike.RemoveCanAct(name: string)
+	for i = #Strike.CanAct, 1, -1 do
+		if Strike.CanAct[i].Name == name then
+			table.remove(Strike.CanAct, i)
+		end
+	end
+end
+
+function Strike.CheckCanAct(player: Player, target: any?): (boolean, string?)
+	for _, g in ipairs(Strike.CanAct) do
+		local ok, allowed, err = pcall(g.Fn, player, target)
+		if not ok then
+			warn("Halloween Strike: gate " .. g.Name .. " failed: " .. tostring(allowed))
+		elseif not allowed then
+			return false, type(err) == "string" and err or "HW:CANT"
+		end
+	end
+	return true, nil
+end
+
+-- the attacker's Event HP damage multiplier (WEAKENED) for kinds that opt in; 1 without combat or EventHP
+local function eventMult(player: Player): number
+	local hp = started and started.EventHP
+	if type(hp) ~= "table" or type(hp.DamageMult) ~= "function" then
+		return 1
+	end
+	local ok, m = pcall(hp.DamageMult, player)
+	return (ok and tonumber(m)) or 1
 end
 
 local function setAttr(inst: Instance, name: string, value: any)
@@ -490,6 +542,12 @@ local function gate(player: Player, target): (boolean, string?)
 	if not Shared.Enabled() then
 		return false, "HW:OFF"
 	end
+	if #Strike.CanAct > 0 then
+		local okAct, errAct = Strike.CheckCanAct(player, target)
+		if not okAct then
+			return false, errAct
+		end
+	end
 	if target.Shared == false and target.Owner ~= nil and target.Owner ~= player then
 		return false, "HW:NOT_YOURS"
 	end
@@ -626,6 +684,12 @@ function Strike.Hit(player: Player, a: { [string]: any })
 	local hit = { Damage = v.Damage, Quality = v.Quality, Crit = v.Crit, Combo = v.Combo, Pick = pick, Level = level, Point = point,
 		Power = Strike.Power(v.Damage, pick, level), Player = player }
 	hit.Applied = applyDamageMode(def, player, target, hit)
+	if def.EventMult then
+		hit.EventMult = eventMult(player)
+		if def.EventMult == "Apply" then
+			hit.Applied = (tonumber(hit.Applied) or 0) * hit.EventMult
+		end
+	end
 	local extra = nil
 	if def.OnHit then
 		local okH, res = pcall(def.OnHit, player, target, hit)
@@ -729,9 +793,10 @@ end
 ---------------------------------------------------------------------------------------------------------------------
 -- start
 ---------------------------------------------------------------------------------------------------------------------
-function Strike.Start(c, _modules)
+function Strike.Start(c, modules)
 	core = c
 	Strike.Core = c
+	started = type(modules) == "table" and modules or nil
 	folder()
 	c.OnRequest("StrikeBegin", function(player, a)
 		return Strike.Begin(player, a)

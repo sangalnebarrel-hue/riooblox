@@ -44,6 +44,7 @@ local CODES={
  ['HW:OFF']={'The Night of the Buried Moon has ended','Ночь Погребённой Луны закончилась'},
  ['HW:WAIT']={'Catch your breath...','Переведи дух...'},
  ['HW:CANT']={'Not now','Сейчас нельзя'},
+ ['HW:DOWNED']={'You are downed: wait for a revive','Ты повержен: дождись, пока тебя поднимут'}, -- [WP-B] Event HP downed lockout
  ['Please wait a moment']={'Please wait a moment','Подожди немного'},
 }
 
@@ -551,7 +552,7 @@ function Strike.new(ctx)
    resyncing=false
    if not self.Active or self.Token~=token then return end
    if ok and type(res)=='table'then syncTargets(res.Targets);hp,maxHP=res.HP or hp,res.MaxHP or maxHP;refreshPanel();return end
-   if res=='HW:FAR'or res=='HW:GONE'or res=='HW:NEED_PICKAXE'or res=='HW:NOT_YOURS'or res=='HW:OFF'then
+   if res=='HW:FAR'or res=='HW:GONE'or res=='HW:NEED_PICKAXE'or res=='HW:NOT_YOURS'or res=='HW:OFF'or res=='HW:DOWNED'then
     if res~='HW:GONE'then Hud.Toast(message(res),U.Colors.red)end
     self.Exit('resync');return
    end
@@ -585,7 +586,7 @@ function Strike.new(ctx)
   local c=item.Circle
   local pos=c.Point and wpos(c.Point) or(view and view.Part and view.Part.CFrame.Position)
   if not ok then
-   if result=='HW:FAR'or result=='HW:NEED_PICKAXE'or result=='HW:NOT_YOURS'or result=='HW:OFF'then Hud.Toast(message(result),U.Colors.red);self.Exit('denied');return end
+   if result=='HW:FAR'or result=='HW:NEED_PICKAXE'or result=='HW:NOT_YOURS'or result=='HW:OFF'or result=='HW:DOWNED'then Hud.Toast(message(result),U.Colors.red);self.Exit('denied');return end
    if result=='HW:GONE'then self.Exit('gone');return end
    local key=type(result)=='string'and string.sub(result,1,2)=='M:'and Text.Key(result)
    if pos and(key=='TOO_EARLY'or key=='NOT_READY')then FX.Popup(pos,message(result),U.Colors.red)
@@ -734,6 +735,7 @@ function Strike.new(ctx)
  end
  function self.Enter(part)
   if self.Active or not enabled()then return end
+  if player:GetAttribute('HwDowned')==true then Hud.Toast(message('HW:DOWNED'),U.Colors.red);Audio.Play('Deny');return end -- [WP-B] downed: no strikes
   if not(part and part.Parent and part:GetAttribute('TargetId'))or part:GetAttribute('EndReason')then return end
   if ctx.Mine and ctx.Mine.Active then return end
   if ctx.MenuOpen()then Hud.Toast(L('Close the menu first','Сначала закрой меню'),U.Colors.gold);return end
@@ -827,6 +829,7 @@ function Strike.new(ctx)
  local prompts={} -- part -> ProximityPrompt
  local function promptAllowed(part)
   if self.Active or not enabled()or part:GetAttribute('EndReason')then return false end
+  if player:GetAttribute('HwDowned')==true then return false end -- [WP-B] downed: target prompts hidden
   if ctx.Mine and ctx.Mine.Active then return false end
   local owner=part:GetAttribute('OwnerUserId')or 0
   if part:GetAttribute('Shared')==false and owner~=0 and owner~=player.UserId then return false end
@@ -934,6 +937,11 @@ function Strike.new(ctx)
    elseif kind=='TargetBroke'and type(data)=='table'and self.Active and view and data.TargetId==view.Id and data.UserId~=player.UserId then
     playBreak(view.Part.CFrame.Position,targetColor())
    end
+  end)
+  -- [WP-B] Event HP: becoming DOWNED ends the session at once and hides every target prompt until revived
+  player:GetAttributeChangedSignal('HwDowned'):Connect(function()
+   if player:GetAttribute('HwDowned')==true and self.Active then self.Exit('downed')end
+   self.RefreshPrompts()
   end)
   for _,part in ipairs(CollectionService:GetTagged(TAG))do attach(part)end
   CollectionService:GetInstanceAddedSignal(TAG):Connect(attach)
