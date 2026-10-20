@@ -645,6 +645,188 @@ test("DogDex: THE UNDERYARD COLLECTION tab (Dex II milestones through C2DexClaim
 	Lang.Override = "en"
 end)
 
+-- HalloweenClient.HUD.Chapter2 with a recording HUD environment (the real UITheme needs the place's MainWindow)
+local hcFolder = CE.Folder("HalloweenClient", CE.Service("StarterPlayer"))
+CE.Mount("StarterPlayer/StarterPlayerScripts/HalloweenClient", hcFolder)
+local C2HUD = CE.Require(hcFolder.HUD.Chapter2)
+local Icons = CE.Require(HW.Icons)
+local banners, toasts, tileBadges, layouts, popped = {}, {}, {}, 0, 0
+local hudFrame = gui.HUD
+local flyLayer = CE.Instance.new("Frame")
+flyLayer.Name = "HalloweenFly"
+flyLayer.Size = roblox.UDim2.fromScale(1, 1)
+flyLayer.Parent = gui
+local tileRoot = CE.Instance.new("Frame")
+tileRoot.Name = "QuickUnderyard"
+tileRoot.Parent = hudFrame
+local tileButton = CE.Instance.new("TextButton")
+tileButton.Name = "Open"
+tileButton.Parent = tileRoot
+local tileIcon = CE.Instance.new("ImageLabel")
+tileIcon.Name = "CandyIcon"
+tileIcon.Image = ""
+tileIcon.Parent = tileButton
+local FakeU = {
+	PillSpecs = { { key = "Coins", name = "MoneyWidget", always = true }, { key = "Level", name = "XPWidget", always = true } },
+	QuickTiles = { { key = "Underyard", root = tileRoot, button = tileButton, icon = tileIcon, spec = { key = "Underyard", when = "HalloweenChapter1Complete" } } },
+	ChapterPills = {},
+	HUD = { Touch = false, Layout = { Free = { Left = 120, Right = 1180, Top = 90, Bottom = 650 } } },
+	RequestHUDLayout = function()
+		layouts += 1
+	end,
+	SetTileBadge = function(key, text, color)
+		table.insert(tileBadges, { Key = key, Text = text, Color = color })
+	end,
+	Pop = function()
+		popped += 1
+	end,
+	L = function(en)
+		return UV.T(en, Lang.Get and Lang.Get() or "en")
+	end,
+}
+local fakeH = {
+	Banner = function(data)
+		table.insert(banners, data)
+	end,
+}
+local function hudLabel(parent, props)
+	local p = table.clone(props)
+	if p.NoTranslate == nil then
+		p.NoTranslate = true
+	end
+	return Kit.Text(parent, p)
+end
+local function hudPill(name, glyph)
+	local root = Kit.New("Frame", { Name = name, BackgroundTransparency = 1, Size = roblox.UDim2.fromOffset(138, 46), Visible = false })
+	local holder = Kit.New("Frame", { Name = "IconHolder", BackgroundTransparency = 1, Size = roblox.UDim2.fromOffset(40, 40) }, root)
+	hudLabel(holder, { Name = "Glyph", Text = glyph, TextSize = 30 })
+	local value = hudLabel(root, { Name = "Value", Text = "0", TextSize = 28 })
+	root.Parent = hudFrame
+	return root, value, holder, root
+end
+local hudToast = Kit.Toast
+test("HUD: objective line, Coffin Key pill, C2Announce banners, fly-ins, UNDERYARD tile", function()
+	Lang.Override = "en"
+	screen(SCREENS[3])
+	Kit.Toast = function(text, opts)
+		table.insert(toasts, text)
+	end
+	local hv, cv = load("mid")
+	P:SetAttribute("UyInZone", true)
+	P:SetAttribute("UyTrial", "")
+	C2HUD.Start(fakeH, { Player = P, Gui = gui, Hud = hudFrame, U = FakeU, Kit = Kit, Bus = Bus, Shared = CE.Require(HW.Shared), Icons = Icons, Label = hudLabel,
+		New = Kit.New, TextStroke = function() end, Glass = function() end, Audio = function(cue)
+			table.insert(cues, cue)
+		end, FlyLayer = flyLayer, Reduced = function()
+			return false
+		end, Low = function()
+			return false
+		end, Pill = hudPill })
+	Bus.Fire("C2Changed", { View = cv })
+	CE.Advance(1)
+	local line = hudFrame:FindFirstChild("UnderyardObjective")
+	truthy(line and line.Visible, "objective line in the Underyard")
+	local o = UV.Objective(cv, CE.Unix, { Eligible = true, InZone = true, InTrial = false, Shards = cv.Shards, Keys = cv.Keys, Near = function()
+		return false
+	end })
+	local title = UV.ObjectiveText(o, "en", CE.Unix)
+	eq(line.Title.Text, title, "objective title")
+	truthy(string.find(line.Title.Text, "BELL SEAL III", 1, true), "the current seal: " .. line.Title.Text)
+	-- a trial hides it
+	P:SetAttribute("UyTrial", "Echo")
+	CE.Advance(0.6)
+	truthy(not line.Visible, "hidden during a trial")
+	P:SetAttribute("UyTrial", "")
+	CE.Advance(0.6)
+	truthy(line.Visible, "back after the trial")
+	-- the Coffin Key pill: in the Underyard only
+	local keys = hudFrame:FindFirstChild("QuickKeys")
+	truthy(keys and (keys:GetAttribute("HUDValue") or 0) > 0, "key pill wanted in the Underyard")
+	local hasSpec = false
+	for _, spec in ipairs(FakeU.PillSpecs) do
+		hasSpec = hasSpec or spec.key == "CoffinKeys"
+	end
+	truthy(hasSpec and FakeU.PillSpecs[#FakeU.PillSpecs].key == "Level", "CoffinKeys pill spec before LEVEL")
+	P:SetAttribute("UyInZone", false)
+	CE.Advance(0.6)
+	eq(keys:GetAttribute("HUDValue"), 0, "no key pill outside")
+	truthy(not line.Visible, "no objective line outside the Underyard and the Dead Yard")
+	-- the Dead Yard: the way down once Chapter I is complete and the Underyard was never entered
+	local _, fresh = load("locked")
+	P:SetAttribute("HalloweenChapter1Complete", true)
+	local cv2 = table.clone(fresh)
+	cv2.Chapter1 = table.clone(fresh.Chapter1)
+	cv2.Chapter1.Complete = true
+	cv2.Entered = false
+	Bus.Fire("C2Changed", { View = cv2 })
+	P:SetAttribute("HwInZone", true)
+	CE.Advance(0.6)
+	truthy(line.Visible, "Dead Yard: descend line")
+	eq(line.Line.Text, UV.T("Descend through the church in the Dead Yard", "en"))
+	P:SetAttribute("HwInZone", false)
+	load("mid")
+	P:SetAttribute("UyInZone", true)
+	CE.Advance(0.6)
+	-- announcements: someone else's Hollow King -> a banner at once; with a menu open -> a toast
+	Bus.Fire("C2Signal", { Kind = "C2Announce", Data = { Kind = "HollowKing", Name = "Mira", UserId = 99 } })
+	CE.Advance(0.2)
+	eq(#banners, 1, "Hollow King banner")
+	eq(banners[1].Style, "Underyard")
+	truthy(string.find(banners[1].Subtitle, "Mira", 1, true), "who found it")
+	gui:SetAttribute("OpenMenu", "Underyard")
+	Bus.Fire("C2Signal", { Kind = "C2Announce", Data = { Kind = "Assault", Name = "", UserId = 0 } })
+	CE.Advance(0.2)
+	eq(#banners, 1, "no banner over a menu")
+	truthy(#toasts >= 1, "toast instead")
+	gui:SetAttribute("OpenMenu", nil)
+	-- my own Hollow King waits for the coffin's secret show
+	Bus.Fire("C2Signal", { Kind = "C2Announce", Data = { Kind = "HollowKing", Name = P.DisplayName, UserId = P.UserId } })
+	CE.Advance(2)
+	eq(#banners, 1, "own Hollow King held back")
+	CE.Advance(8)
+	eq(#banners, 2, "own Hollow King after the reveal")
+	-- Mythic names the find, FinaleClear the party
+	Bus.Fire("C2Signal", { Kind = "C2Announce", Data = { Kind = "Mythic", Name = "Ivo", UserId = 5, DogId = "HW_BellkeeperWolf" } })
+	CE.Advance(0.2)
+	truthy(string.find(banners[3].Subtitle, "Bellkeeper Wolf", 1, true), "mythic dog named: " .. banners[3].Subtitle)
+	Lang.Override = "ru"
+	Bus.Fire("C2Signal", { Kind = "C2Announce", Data = { Kind = "FinaleClear", Name = "Ivo", UserId = 5 } })
+	CE.Advance(0.2)
+	truthy(cyrillic(banners[4].Title) and cyrillic(banners[4].Subtitle), "Russian banner")
+	Lang.Override = "en"
+	-- shards / keys fly into their pills, then the icons are gone
+	local shardsPill = Kit.New("Frame", { Name = "QuickShards", Size = roblox.UDim2.fromOffset(138, 46), Position = roblox.UDim2.fromOffset(600, 10) }, hudFrame)
+	FakeU.ChapterPills.Shards = shardsPill
+	local before = popped
+	Bus.Fire("C2Signal", { Kind = "C2Shards", Data = { Amount = 120, Source = "Contract" } })
+	CE.Advance(0.1)
+	local flying = 0
+	for _, c in ipairs(flyLayer:GetChildren()) do
+		if c.Name == "UyShard" then
+			flying += 1
+		end
+	end
+	truthy(flying >= 1, "shards in flight")
+	CE.Advance(2)
+	truthy(popped > before, "the pill popped")
+	for _, c in ipairs(flyLayer:GetChildren()) do
+		truthy(c.Name ~= "UyShard", "flight cleaned up")
+	end
+	Bus.Fire("C2Signal", { Kind = "C2Key", Data = { Amount = 1, Source = "Contract" } })
+	CE.Advance(2)
+	-- the tile: built art + a badge with the things to claim
+	CE.Advance(2.5)
+	truthy(tileIcon:FindFirstChild("UyTileArt"), "tile art")
+	local lastBadge = nil
+	for _, b in ipairs(tileBadges) do
+		if b.Key == "Underyard" then
+			lastBadge = b
+		end
+	end
+	truthy(lastBadge and tonumber(lastBadge.Text) and tonumber(lastBadge.Text) > 0, "tile badge counts what is ready")
+	Kit.Toast = hudToast
+end)
+
 if OUT then
 	fs.writeDir(OUT)
 	fs.writeFile(OUT .. "/underyard_dump.json", serde.encode("json", dumps))

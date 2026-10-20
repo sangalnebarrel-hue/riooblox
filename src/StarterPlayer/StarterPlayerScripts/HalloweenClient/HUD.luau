@@ -12,6 +12,8 @@
 --     Signal Milestone banners, Signal Rush end, rail tile badge (claimable quests / "!" during Blood Moon and boss).
 --   * Bus "HUDFocus" {Key = "Candy"|"Curse"|"Strip"|"Boss"|"Tile"|nil}: onboarding highlight ring + pointer.
 --   * Russian ActionText / ObjectText of the Dead Yard's server prompts (World.Prompt sets attribute HalloweenPrompt).
+--   * CHAPTER II (child module HUD.Chapter2, WP-L): the Underyard objective line, the Coffin Key pill, C2Announce banners,
+--     Bell Shard / key fly-ins, the UNDERYARD rail tile art + badge.
 --   * Studio only: F7 debug panel (Request "Debug" {Cmd}).
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
@@ -98,8 +100,17 @@ function H.Start(ctx)
 	local function ru()
 		return Kit.Lang() == "ru"
 	end
+	-- Chapter II labels (Localization.UnderyardUI / .Underyard through UnderyardView) when the Halloween table has none
+	local UV = nil
+	do
+		local mod = RS:WaitForChild("Halloween"):FindFirstChild("UnderyardView")
+		if mod then
+			local okV, m = pcall(require, mod)
+			UV = okV and type(m) == "table" and m or nil
+		end
+	end
 	local function T(en)
-		return ru() and (Dict.UI[en] or Dict.Exact[en]) or en
+		return ru() and (Dict.UI[en] or Dict.Exact[en] or (UV and UV.T(en, "ru"))) or en
 	end
 	local function F(en, ...)
 		local fmt = ru() and Dict.Templates[en] or en
@@ -997,10 +1008,11 @@ function H.Start(ctx)
 		Exorcism = { Color = C(120, 255, 140), Glyph = "👻", Band = C(10, 40, 30) },
 		Rush = { Color = C(255, 170, 40), Glyph = "🍬", Band = C(60, 24, 0) },
 		Event = { Color = C(255, 140, 40), Glyph = "🎃", Band = C(40, 14, 60) },
+		Underyard = { Color = C(190, 140, 255), Glyph = "🔔", Band = C(24, 10, 52) }, -- Chapter II announcements (WP-L)
 	}
 	local STYLE_ICON = {
 		BloodMoon = { "Moon", { State = "Blood" } }, Boss = { "Skull", { Glow = C(255, 70, 80) } }, Exorcism = { "Ghost", { Glow = NEON } },
-		Rush = { "Candy", {} }, Event = { "Pumpkin", {} },
+		Rush = { "Candy", {} }, Event = { "Pumpkin", {} }, Underyard = { "Seal", { Glow = C(150, 200, 255) } },
 	}
 	local banner = nil
 	local function buildBanner()
@@ -1098,7 +1110,8 @@ function H.Start(ctx)
 		end
 		local glyph = data.Glyph or style.Glyph
 		b.Left.Text, b.Right.Text = glyph, glyph
-		local art = (not data.Glyph) and b.LeftArt and STYLE_ICON[data.Style or "Event"] or nil
+		-- data.Icon = {kind, opts}: a built icon of its own (Chapter II announcements)
+		local art = b.LeftArt and ((type(data.Icon) == "table" and data.Icon) or ((not data.Glyph) and STYLE_ICON[data.Style or "Event"])) or nil
 		for _, h in ipairs({ b.LeftArt, b.RightArt }) do
 			if h then
 				h.Instance.Visible = art ~= nil
@@ -1260,6 +1273,22 @@ function H.Start(ctx)
 	Bus.On("CandyGain", H.CandyGain)
 
 	--------------------------------------------------------------------------------------------------------------------
+	-- 5c. CHAPTER II (WP-L): HUD.Chapter2 with the helpers above
+	--------------------------------------------------------------------------------------------------------------------
+	do
+		local mod = script:FindFirstChild("Chapter2")
+		if mod then
+			local okC, err = pcall(function()
+				require(mod).Start(H, { Player = player, Gui = gui, Hud = hud, U = U, Kit = Kit, Bus = Bus, Shared = Shared, Icons = Icons, Label = label,
+					New = new, TextStroke = textStroke, Glass = glass, Audio = audio, FlyLayer = flyLayer, Reduced = reduced, Low = low, Pill = pill })
+			end)
+			if not okC then
+				warn("Halloween HUD Chapter II: " .. tostring(err))
+			end
+		end
+	end
+
+	--------------------------------------------------------------------------------------------------------------------
 	-- 5b. Server Exorcism milestone: the whole server's moment on the HUD (ZoneFX plays the world part in the Dead Yard)
 	--     the strip shows for everyone, the reached badge pops with a ring and soul motes, a shimmer runs along the bar,
 	--     the strip rim flashes neon and the screen edges glow green (red for the Gravekeeper). ReducedMotion: colours only.
@@ -1382,7 +1411,7 @@ function H.Start(ctx)
 			audio("QuestDone")
 			tileBadge()
 		elseif kind == "Milestone" and type(data) == "table" then
-			local SHORT = { CandyRush = "SERVER CANDY RUSH x2", Block = "A PUMPKIN BLOCK FOR EVERYONE", Mutation = "EVENT MUTATIONS x2", Boss = "THE GRAVEKEEPER RISES" }
+			local SHORT = { CandyRush = "SERVER CANDY RUSH x2", Block = "A PUMPKIN BLOCK FOR THE EXORCISTS", Mutation = "EVENT MUTATIONS x2", Boss = "THE GRAVEKEEPER RISES" }
 			H.Banner({ Title = T("EXORCISM MILESTONE"), Subtitle = T(data.Name or SHORT[data.Kind] or ""), Style = data.Kind == "Boss" and "Boss" or "Exorcism",
 				Seconds = 4.5, NoTranslate = true })
 			audio("ExorcismMilestone")

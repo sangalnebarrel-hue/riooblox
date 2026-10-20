@@ -148,6 +148,21 @@ L.UI = {
 	["Every story beat of both chapters. Replays never change your progress."] =
 		"Все сюжетные моменты обеих глав. Повторы никогда не меняют твой прогресс.",
 	["Go to the Haunted Cauldron in the Dead Yard to replay the brew"] = "Подойди к котлу с привидениями на Мёртвом дворе, чтобы повторить варево",
+	-- HUD rail tile / currency pills (UITheme)
+	["Below the church: Bell Seals, daily contracts, the Black Coffin and the Dex II"] =
+		"Под церковью: печати колокола, ежедневные контракты, Чёрный гроб и Догдекс II",
+	["Earned in THE UNDERYARD. Offer them at the Bell Seal altars and open the Black Coffin."] =
+		"Добываются в ПОДДВОРЬЕ. Приноси их к алтарям печатей колокола и открывай Чёрный гроб.",
+	["Dismantle Lucky Blocks for it in your bag and forge new Lucky Blocks with it."] =
+		"Разбирай счастливые блоки в сумке, чтобы получить её, и куй из неё новые счастливые блоки.",
+	-- HUD: objective line, Coffin Key pill, server-wide announcements
+	["Open the Underyard window"] = "Открыть окно Поддворья",
+	["Open the Black Coffin in Bell Square with one. Never sold."] = "Им открывают Чёрный гроб на Колокольной площади. Никогда не продаётся.",
+	["THE HOLLOW KING HAS RISEN"] = "ПОЛЫЙ КОРОЛЬ ВОССТАЛ",
+	["A MYTHIC FIND"] = "МИФИЧЕСКАЯ НАХОДКА",
+	["THE LAST BELL FALLS SILENT"] = "ПОСЛЕДНИЙ КОЛОКОЛ УМОЛКАЕТ",
+	["The Black Bell is ringing: join the assault in the Black Bell Arena"] =
+		"Чёрный колокол звонит: присоединяйся к штурму на Арене Чёрного колокола",
 	-- HALLOWEEN window / HUD (Chapter I labels this package relabels)
 	["PUMPKIN BLOCK FOR EXORCISTS"] = "ТЫКВЕННЫЙ БЛОК ЭКЗОРЦИСТАМ",
 	["A PUMPKIN BLOCK FOR THE EXORCISTS"] = "ТЫКВЕННЫЙ БЛОК ДЛЯ ЭКЗОРЦИСТОВ",
@@ -215,6 +230,10 @@ L.Templates = {
 		"ПОРТНОЙ МЁРТВЫХ сошьёт: %s за %d фрагмента. Это останется у тебя навсегда.",
 		"ПОРТНОЙ МЁРТВЫХ сошьёт: %s за %d фрагментов. Это останется у тебя навсегда." },
 	["CRAFT · %d FRAGMENTS"] = { "СОЗДАТЬ · %d ФРАГМЕНТ", "СОЗДАТЬ · %d ФРАГМЕНТА", "СОЗДАТЬ · %d ФРАГМЕНТОВ" },
+	-- HUD announcements (C2Announce)
+	["%s pulled the Hollow King from the Black Coffin"] = "%s достаёт Полого короля из Чёрного гроба",
+	["%s pulled %s from the Black Coffin"] = "%s достаёт из Чёрного гроба: %s",
+	["%s and the party broke the Gravekeeper's last stand"] = "%s и отряд сломили последний бой Смотрителя кладбища",
 	["DEX II reward for %d dogs: %s"] = { "Награда Догдекса II за %d собаку: %s", "Награда Догдекса II за %d собаки: %s",
 		"Награда Догдекса II за %d собак: %s" },
 }
