@@ -106,6 +106,11 @@ local function projectMining(player,p)
  -- Stored Stone (p.Resources.Stone) for the mining HUD, the pickaxe market and plot decor.
  local stone=type(p.Resources)=='table'and tonumber(p.Resources.Stone)or 0
  player:SetAttribute('Stone',stone==stone and math.max(0,math.floor(stone))or 0)
+ -- Chapter II resources (Resources.BellShards / LuckyDust) for the HUD pills and the Underyard window
+ for _,kind in ipairs({'BellShards','LuckyDust'})do
+  local n=type(p.Resources)=='table'and tonumber(p.Resources[kind])or 0
+  player:SetAttribute(kind,n==n and math.max(0,math.floor(n))or 0)
+ end
 end
 
 function Runtime.Project(player,p)

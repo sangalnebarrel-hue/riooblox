@@ -30,6 +30,30 @@ function S.Enabled(): boolean
 	return v == true
 end
 
+-- Chapter switches: the master switch, the config flag and the server's replicated State attribute of the same name
+-- (written at boot by HalloweenServer; nil = trust the config).
+local function flag(name: string): boolean
+	if not S.Enabled() or Config[name] ~= true then
+		return false
+	end
+	local st = stateFolder()
+	local v = st and st:GetAttribute(name)
+	return v == nil or v == true
+end
+function S.Chapter1Enabled(): boolean
+	return flag("HalloweenChapter1Enabled")
+end
+function S.Chapter2Enabled(): boolean
+	return flag("HalloweenChapter2Enabled")
+end
+function S.CalendarEnabled(): boolean
+	-- the calendar dresses the main map even without the event chapters, but never when the master switch is off
+	return flag("HalloweenCalendarEnabled")
+end
+function S.BossFinaleEnabled(): boolean
+	return flag("HalloweenBossFinaleEnabled")
+end
+
 function S.FastTimers(): boolean
 	return S.IsStudio and Config.Studio and Config.Studio.FastTimers == true and game.GameId == 0
 end

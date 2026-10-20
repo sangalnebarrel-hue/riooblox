@@ -168,11 +168,9 @@ function Sim.new(game)
 		end
 		assert(not self.loading[module], "cyclic require of " .. module:GetFullName())
 		self.loading[module] = true
-		local env = setmetatable({ script = module }, {
-			__index = function(_, key)
-				return globals[key]
-			end,
-		})
+		-- luau.load installs its own globals metatable on the environment, so the shims are copied in as plain keys
+		local env = table.clone(globals)
+		env.script = module
 		env.require = function(target)
 			return self:require(target)
 		end

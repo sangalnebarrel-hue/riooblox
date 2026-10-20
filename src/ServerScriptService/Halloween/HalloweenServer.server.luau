@@ -1,7 +1,8 @@
 -- NIGHT OF THE BURIED MOON — server bootstrap (ServerScriptService.Halloween.HalloweenServer).
 -- Config: ReplicatedStorage.Halloween.Config (HalloweenEventEnabled = the off switch).
 -- Order: World switch -> Core (data, requests, activity, curse, rush) -> Blood Moon -> Exorcism -> Actions ->
--- gameplay modules (Strike, Ores, DigSpots, Boss, Houses) -> Studio debug. A missing or failing gameplay module is
+-- gameplay modules (Strike, Ores, DigSpots, Boss, Houses) -> Chapter II (EventHP, Chapter2, Underyard, seals, coffin,
+-- resonance, finale) -> Calendar -> Studio debug. A missing or failing gameplay module is
 -- reported and skipped; the rest of the event keeps running.
 local RS = game:GetService("ReplicatedStorage")
 local Halloween = RS:WaitForChild("Halloween")
@@ -47,12 +48,26 @@ local function start(name: string, ...)
 	return m
 end
 
+-- chapter switches replicate as State attributes (Shared.Chapter1Enabled & co. read them on both sides)
+local stateFolder = Halloween:FindFirstChild("State")
+if stateFolder then
+	for _, key in ipairs({ "HalloweenChapter1Enabled", "HalloweenChapter2Enabled", "HalloweenCalendarEnabled", "HalloweenBossFinaleEnabled" }) do
+		stateFolder:SetAttribute(key, Config[key] == true)
+	end
+end
+
 World.Start(Core)
 Core.Start()
 start("BloodMoon", Core)
 start("Exorcism", Core)
 start("Actions", Core)
 for _, name in ipairs({ "Strike", "Ores", "DigSpots", "Boss", "Houses" }) do
+	start(name, Core, modules)
+end
+-- CHAPTER II · THE UNDERYARD (docs/halloween2/DESIGN.md §4.1) + the calendar. Modules that are not in the place yet
+-- are reported and skipped like any other.
+for _, name in ipairs({ "EventHP", "Chapter2", "Underyard", "Seals", "SealEcho", "SealRun", "SealMirror", "SealMine",
+	"SealDoors", "SealChoir", "SealBell", "Coffin", "Resonance", "BossFinale", "Calendar" }) do
 	start(name, Core, modules)
 end
 start("Debug", Core, modules)

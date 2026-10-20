@@ -1,5 +1,5 @@
 -- NIGHT OF THE BURIED MOON — client bootstrap (StarterPlayerScripts.HalloweenClient).
--- Starts the child modules with one shared ctx = {Player, Shared, Config, Layout, Bus, FX, Audio, State}.
+-- Starts the child modules with one shared ctx = {Player, Shared, Config, Layout, Bus, FX, Audio, State, Modules}.
 -- Contract for every child module: `return {Start = function(ctx) ... end}`. A missing or failing module is reported
 -- and skipped. Nothing runs when the event is switched off (Config.HalloweenEventEnabled / State.Enabled).
 local Players = game:GetService("Players")
@@ -30,7 +30,12 @@ ctx.State = require(script:WaitForChild("State"))
 ctx.Modules = {}
 
 local ORDER = { "State", "Lighting", "ZoneFX", "Soundscape", "BloodMoonFX", "CurseFX", "RushFX", "GateFX", "CauldronFX", "HouseFX",
-	"AmbientFX", "SpotFX", "BossFX", "MainMapLayer", "ParticleGovernor", "HUD", "Onboarding" }
+	"AmbientFX", "SpotFX", "Cinema", "CombatFX", "BossFX", "FinaleFX", "MainMapLayer", "ParticleGovernor", "HUD",
+	"CombatHUD", "Onboarding",
+	-- CHAPTER II · THE UNDERYARD + calendar (docs/halloween2/DESIGN.md); missing modules are skipped
+	"Chapter2State", "Reveal", "UnderyardFX", "Trials", "CoffinFX", "Chapter2Guide", "CalendarFX", "DecorIdle" }
+-- modules that only exist when their chapter is switched on are still required (they check Shared.*Enabled
+-- themselves), so a server-side switch at boot never needs a client change
 
 for _, name in ipairs(ORDER) do
 	local mod = script:FindFirstChild(name)

@@ -10,6 +10,11 @@
 local C = {}
 
 C.HalloweenEventEnabled = true
+-- Chapter switches (docs/halloween2/DESIGN.md §2). Every one of them only stops systems; saved data is never deleted.
+C.HalloweenChapter1Enabled = true -- THE DEAD YARD activities: candy, ores, dig spots, houses, cauldron, quests, Blood Moon, boss
+C.HalloweenChapter2Enabled = true -- THE UNDERYARD: reveal, church portal, seals, Black Coffin, contracts, resonance, dex II
+C.HalloweenCalendarEnabled = true -- main-map Halloween calendar (D-7 .. October 31, HalloweenCalendarConfig)
+C.HalloweenBossFinaleEnabled = true -- Gravekeeper difficulty V: false victory + post-death phases
 C.MainMapDecorations = true -- temporary Halloween layer on the main DOGROTS map (players can also hide it in SETTINGS)
 C.EventId = "BuriedMoon2026"
 C.Season = "NOTBM_2026"

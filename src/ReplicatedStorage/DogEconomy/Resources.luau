@@ -4,13 +4,18 @@
 --   Resources.Get(p, "Stone") -> integer
 --   Resources.Add(p, "Stone", n) -> added (clamped to Max)
 --   Resources.CanSpend(p, cost) / Resources.Spend(p, cost)   cost = {Stone = 12, ...}
--- Saved data: p.Resources = {Stone = n}; missing table or keys mean 0 (old profiles).
+-- Saved data: p.Resources = {Stone = n, BellShards = n, LuckyDust = n}; missing table or keys mean 0 (old profiles).
 local Resources = {}
 
 Resources.Kinds = {
 	Stone = { Name = "Stone", RU = "Камень", Icon = "🪨", Color = Color3.fromRGB(176, 170, 160), Max = 1000000000 },
+	-- CHAPTER II · THE UNDERYARD currency: earned only by active play there (daily diminishing returns applied by
+	-- ServerScriptService.Halloween.Chapter2 before Resources.Add)
+	BellShards = { Name = "Bell Shards", RU = "Осколки колокола", Icon = "🔔", Color = Color3.fromRGB(150, 200, 255), Max = 1000000000 },
+	-- from dismantling Lucky Blocks (Economy.Features.LuckyDust) and Underyard rewards; spent at the Dust Forge
+	LuckyDust = { Name = "Lucky Dust", RU = "Счастливая пыль", Icon = "✨", Color = Color3.fromRGB(255, 214, 110), Max = 1000000000000 },
 }
-Resources.Order = { "Stone" }
+Resources.Order = { "Stone", "BellShards", "LuckyDust" }
 
 local function amount(v: any): number
 	if type(v) ~= "number" or v ~= v or v < 0 then
