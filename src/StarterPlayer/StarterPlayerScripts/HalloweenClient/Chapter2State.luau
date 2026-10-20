@@ -65,6 +65,21 @@ function CS.T(en: string): string
 	if out then
 		return out
 	end
+	-- [WP-J] the other Chapter II dictionaries (Localization.Seals2, ...): Translate(en, "ru") or Exact[en]
+	local folder = RS:FindFirstChild("Localization")
+	for _, inst in ipairs(folder and folder:GetChildren() or {}) do
+		if inst:IsA("ModuleScript") and inst.Name ~= "Underyard" then
+			local ok, d = pcall(require, inst)
+			if ok and type(d) == "table" then
+				local okT, hit = pcall(function()
+					return (type(d.Translate) == "function" and d.Translate(en, "ru")) or (type(d.Exact) == "table" and d.Exact[en]) or nil
+				end)
+				if okT and type(hit) == "string" then
+					return hit
+				end
+			end
+		end
+	end
 	return Shared.T(en)
 end
 
