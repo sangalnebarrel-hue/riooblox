@@ -229,8 +229,10 @@ end
 local isClient: boolean? = nil
 local function client(): boolean
 	if isClient == nil then
+		-- FindService: never creates anything (the offline builder runs this module on a place file)
 		local ok, v = pcall(function()
-			return game:GetService("RunService"):IsClient()
+			local rs = game:FindService("RunService")
+			return rs ~= nil and rs:IsClient()
 		end)
 		isClient = ok and v == true
 	end
@@ -252,6 +254,14 @@ end
 local cache: { [string]: Instance } = {}
 local bases = setmetatable({}, { __mode = "k" }) -- SoundGroup -> baseline volume
 local ensured = false
+-- the client only builds missing pieces once the place has loaded: before that the replicated folders may simply not
+-- have arrived yet, and a client-made DOGROTS_AUDIO next to the replicated one would split the buses
+local function loaded(): boolean
+	local ok, v = pcall(function()
+		return game:IsLoaded()
+	end)
+	return ok and v == true
+end
 
 local function lookup(name: string): Instance?
 	local ss = soundService()
@@ -277,7 +287,7 @@ local function resolve(name: string): Instance?
 		return g
 	end
 	g = lookup(name)
-	if not g and client() and not ensured then
+	if not g and client() and not ensured and loaded() then
 		-- the place has no bus layout (an old build) or it has not replicated yet: build the missing pieces locally
 		ensured = true
 		local ss = soundService()
@@ -457,6 +467,24 @@ function Mixer._Reset()
 		bases[g] = nil
 	end
 	ensured = false
+end
+
+-- the client registers every bus once the place has loaded, so each baseline is taken before anything ducks (and a
+-- place without the layout gets it repaired, the pickaxe group moved under its bus)
+if client() then
+	task.spawn(function()
+		if not loaded() then
+			pcall(function()
+				game.Loaded:Wait()
+			end)
+		end
+		for _, name in ipairs(Mixer.Order) do
+			pcall(resolve, name)
+		end
+		for name in pairs(Mixer.Spec.Children) do
+			pcall(resolve, name)
+		end
+	end)
 end
 
 return Mixer

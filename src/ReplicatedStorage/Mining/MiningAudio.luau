@@ -84,16 +84,20 @@ local function mixer()
  return Mixer or nil
 end
 local function soundGroup()
- if group and group.Parent then return group end
+ -- the bus layout first: DOGROTS_SFX.Pickaxe.DOGROTS_MiningSFX (compressor, no makeup); a group made here before the
+ -- place had loaded is left for it as soon as the bus is there
  local m=mixer()
- local g=m and m.Child(GROUP_NAME) -- the bus layout: DOGROTS_SFX.Pickaxe.DOGROTS_MiningSFX (compressor, no makeup)
+ local bus=m and m.Child(GROUP_NAME)
+ if bus and bus:IsA('SoundGroup')then
+  if group~=bus then group=bus;table.clear(tails)end
+  return bus
+ end
+ if group and group.Parent then return group end
+ local g=SoundService:FindFirstChild(GROUP_NAME)
  if not(g and g:IsA('SoundGroup'))then
-  g=SoundService:FindFirstChild(GROUP_NAME)
-  if not(g and g:IsA('SoundGroup'))then
-   g=Instance.new('SoundGroup');g.Name=GROUP_NAME;g.Volume=1
-   local c=Instance.new('CompressorSoundEffect');c.Threshold=-14;c.Ratio=3;c.Attack=.004;c.Release=.12;c.GainMakeup=0;c.Parent=g
-   g.Parent=SoundService
-  end
+  g=Instance.new('SoundGroup');g.Name=GROUP_NAME;g.Volume=1
+  local c=Instance.new('CompressorSoundEffect');c.Threshold=-14;c.Ratio=3;c.Attack=.004;c.Release=.12;c.GainMakeup=0;c.Parent=g
+  g.Parent=SoundService
  end
  group=g;table.clear(tails)
  return g
