@@ -26,7 +26,7 @@ do
 	end
 	if not audioGroup then
 		local folder = SoundService:WaitForChild("DOGROTS_AUDIO", 10)
-		audioGroup = folder and (folder:FindFirstChild("Ambience") or folder:FindFirstChild("Ambient"))
+		audioGroup = folder and (folder:WaitForChild("Ambience", 5) or folder:FindFirstChild("Ambient"))
 		if not (audioGroup and audioGroup:IsA("SoundGroup")) then
 			audioGroup = nil
 		end
