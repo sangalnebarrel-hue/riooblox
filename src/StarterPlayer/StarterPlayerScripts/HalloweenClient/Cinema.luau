@@ -29,6 +29,8 @@
 --   Cinema.Fade(alpha, dur?, {Color, MaxHold}) · Cinema.Title(en, ru, opts) -> {Hide(fade?)}
 --     Title opts {Sub = {en, ru}, Duration = 3.4, Delay, Color, SubColor, Size = "Huge"|"Large"|"Medium",
 --     Position = "Center"|"Lower"|"Upper"}
+--   Shot helpers (pure, return a Shot): Cinema.Dolly(fromCF, toCF, t1?, t0?), Cinema.Orbit(center, radius, height, a0,
+--     a1, duration, lookOffset?), Cinema.Path({{t, CFrame}, ...}), Cinema.LookAt(from, to) -> CFrame, Cinema.Smooth(x)
 -- Exception safety: everything a cinematic builds registers its undo first; error, death, character removal, Cancel,
 -- a menu opening or the end all run the same teardown (camera Custom + subject + FOV, controls, UI, duck, DoF, bars,
 -- the main gui attribute CinemaActive). Nothing Cinema shows is input-sinking (bars, fades, titles are inactive
@@ -802,6 +804,61 @@ function Cinema.Impulse(strength: number?, dir: Vector3?)
 end
 
 ---------------------------------------------------------------------------------------------------------------------
+-- shot helpers (pure: they return Shot functions for Cinema.Play)
+---------------------------------------------------------------------------------------------------------------------
+Cinema.Smooth = smooth
+
+-- a camera at `from` looking at `to`, safe when the direction is (almost) vertical
+function Cinema.LookAt(from: Vector3, to: Vector3): CFrame
+	local d = to - from
+	if d.Magnitude < 1e-4 then
+		return CFrame.new(from)
+	end
+	local up = math.abs(d.Unit.Y) > .99 and Vector3.zAxis or Vector3.yAxis
+	return CFrame.lookAt(from, to, up)
+end
+
+-- a straight move from one framing to another over [t0, t1] (smoothstep), holding before / after
+function Cinema.Dolly(fromCF: CFrame, toCF: CFrame, t1: number?, t0: number?): (number) -> CFrame
+	local a, b = t0 or 0, math.max((t0 or 0) + .01, t1 or 1)
+	return function(t: number): CFrame
+		return fromCF:Lerp(toCF, smooth((t - a) / (b - a)))
+	end
+end
+
+-- an orbit around `center` from angle a0 to a1 (radians, 0 = +X, counter-clockwise seen from above) over `duration`
+-- seconds at `radius` / `height`, looking at center + lookOffset
+function Cinema.Orbit(center: Vector3, radius: number, height: number, a0: number, a1: number, duration: number,
+	lookOffset: Vector3?): (number) -> CFrame
+	local target = center + (lookOffset or Vector3.zero)
+	return function(t: number): CFrame
+		local a = a0 + (a1 - a0) * smooth(t / math.max(.01, duration))
+		local pos = center + Vector3.new(math.cos(a) * radius, height, math.sin(a) * radius)
+		return Cinema.LookAt(pos, target)
+	end
+end
+
+-- keyframes {{t, CFrame}, ...} (sorted or not): smoothstep between neighbours, held at both ends
+function Cinema.Path(keys: { { any } }): (number) -> CFrame
+	local list = table.clone(keys)
+	table.sort(list, function(a, b)
+		return a[1] < b[1]
+	end)
+	return function(t: number): CFrame
+		if t <= list[1][1] then
+			return list[1][2]
+		end
+		for i = 1, #list - 1 do
+			local a, b = list[i], list[i + 1]
+			if t <= b[1] then
+				return a[2]:Lerp(b[2], smooth((t - a[1]) / math.max(.001, b[1] - a[1])))
+			end
+		end
+		return list[#list][2]
+	end
+end
+
+---------------------------------------------------------------------------------------------------------------------
 -- the cinematic runner
 ---------------------------------------------------------------------------------------------------------------------
 local active: any = nil
@@ -1265,11 +1322,11 @@ function Cinema.Play(opts: { [string]: any }): (any, string?)
 				-- the shot
 				if run.Scripted then
 					local sampleT = rm and math.floor(t / cutEvery) * cutEvery or t
-					local okS, cf = pcall(o.Shot, math.min(sampleT, duration), dt)
-					if okS and typeof(cf) == "CFrame" then
-						run.ShotCF = cf
+					local okS, shotCF = pcall(o.Shot, math.min(sampleT, duration), dt)
+					if okS and typeof(shotCF) == "CFrame" then
+						run.ShotCF = shotCF
 					elseif not okS then
-						warnOnce("shot" .. id, tostring(cf))
+						warnOnce("shot" .. id, tostring(shotCF))
 					end
 					local goal = run.ShotCF or run.LastCF or c.CFrame
 					local k = 1

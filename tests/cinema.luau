@@ -725,4 +725,25 @@ test("a shot-less cinematic keeps the player camera (letterbox + lock + duck onl
 	restored("overlay")
 end)
 
+test("shot helpers: Dolly holds and eases, Orbit circles the centre, Path interpolates keyframes", function()
+	local V = roblox.Vector3
+	local a, b = roblox.CFrame.new(0, 0, 0), roblox.CFrame.new(10, 0, 0)
+	local dolly = Cinema.Dolly(a, b, 3, 1)
+	assert(dolly(0).Position.X == 0 and dolly(1).Position.X == 0, "holds before t0")
+	assert(math.abs(dolly(2).Position.X - 5) < 1e-6, "halfway")
+	assert(dolly(9).Position.X == 10, "holds after t1")
+	local orbit = Cinema.Orbit(V.new(0, 0, 100), 20, 8, 0, math.pi, 4)
+	local p0, p1 = orbit(0).Position, orbit(4).Position
+	assert((p0 - V.new(20, 8, 100)).Magnitude < 1e-4, "starts at angle 0")
+	assert((p1 - V.new(-20, 8, 100)).Magnitude < 1e-4, "ends at angle pi")
+	for t = 0, 4, .5 do
+		local p = orbit(t).Position
+		assert(math.abs((V.new(p.X, 0, p.Z) - V.new(0, 0, 100)).Magnitude - 20) < 1e-4, "stays on the circle")
+	end
+	local path = Cinema.Path({ { 2, b }, { 0, a }, { 4, roblox.CFrame.new(10, 10, 0) } })
+	assert(path(-1).Position.X == 0 and path(1).Position.X == 5 and path(3).Position.Y == 5 and path(9).Position.Y == 10, "keys")
+	local up = Cinema.LookAt(V.new(0, 0, 0), V.new(0, 10, 0))
+	assert(up and (up.Position - V.new(0, 0, 0)).Magnitude < 1e-9, "vertical look-at is safe")
+end)
+
 print(string.format("cinema: %d passed, %d failed", passed, failed))

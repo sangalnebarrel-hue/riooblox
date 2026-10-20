@@ -631,7 +631,14 @@ function Strike.new(ctx)
   -- carry BossDamage): its own juicy cue (crack + low punch + bright tick) and a short camera kick
   if extra and extra.Weak==true and not extra.Miss then
    Audio.Play('WeakPoint')
-   if HFX and HFX.Punch and not reducedMotion()then HFX.Punch(result.Crit and .9 or .65)end
+   if not reducedMotion()then
+    local hc=script.Parent.Parent:FindFirstChild('HalloweenClient')
+    local cinemaMod=hc and hc:FindFirstChild('Cinema')
+    local okC,Cinema=pcall(function()return cinemaMod and require(cinemaMod)end)
+    local root=player.Character and player.Character:FindFirstChild('HumanoidRootPart')
+    if okC and Cinema and Cinema.Impulse then Cinema.Impulse(result.Crit and 1.2 or .85,pos and root and(pos-root.Position)or nil)
+    elseif HFX and HFX.Punch then HFX.Punch(result.Crit and .9 or .65)end
+   end
   end
   candyGain(result.Candy,pos)
   fire('StrikeResult',{Part=view and view.Part,TargetId=view and view.Id,Kind=view and view.Kind,Quality=result.Quality,Crit=result.Crit,Damage=result.Damage,
