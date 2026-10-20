@@ -464,9 +464,22 @@ local function kit()
  return KitModule or nil
 end
 -- Self-localized HUD text (labels carry NoTranslate): Localization.UI has the Russian.
+-- CHAPTER II words (UNDERYARD tile, Bell Shards / Lucky Dust pills): ReplicatedStorage.Halloween.UnderyardView (WP-L)
+local underyardView=nil
+local function uyText(en)
+ if underyardView==nil then
+  -- never yields (labels are localized from tooltips and layout code): a module that is not there yet is tried again later
+  local folder=game:GetService('ReplicatedStorage'):FindFirstChild('Halloween')
+  local mod=folder and folder:FindFirstChild('UnderyardView')
+  if not mod then return en end
+  local ok,m=pcall(require,mod)
+  underyardView=ok and type(m)=='table'and m or false
+ end
+ return underyardView and underyardView.T(en,'ru')or en
+end
 function U.L(en)
  local k=kit()
- if k and k.Lang()=='ru'then return UIText.Words[en]or UIText.Exact[en]or en end
+ if k and k.Lang()=='ru'then return UIText.Words[en]or UIText.Exact[en]or uyText(en)end
  return en
 end
 U.RailSpecs={
@@ -482,6 +495,10 @@ U.RailSpecs={
 -- NIGHT OF THE BURIED MOON (Halloween event, WP9): the HALLOWEEN tile and the Moon Candy / Curse pills while the event is on.
 U.HalloweenEnabled=(function()local ok,HC=pcall(function()return require(game:GetService('ReplicatedStorage'):WaitForChild('Halloween',2):WaitForChild('Config',2))end);return ok and type(HC)=='table'and HC.HalloweenEventEnabled==true end)()
 if U.HalloweenEnabled then table.insert(U.RailSpecs,{key='Halloween',label='HALLOWEEN',color=C(255,128,24),glyph='🎃',tip='Night of the Buried Moon: candy, quests, the cauldron and the Dead Yard'})end
+-- CHAPTER II · THE UNDERYARD (WP-L): the UNDERYARD tile once Chapter I is complete (when = player attribute that must be
+-- true: U.LayoutHUD hides the tile until then) and the Bell Shards pill; the Lucky Dust pill whenever you have some.
+U.Chapter2Enabled=U.HalloweenEnabled and(function()local ok,HC=pcall(function()return require(game:GetService('ReplicatedStorage'):WaitForChild('Halloween',2):WaitForChild('Config',2))end);return ok and type(HC)=='table'and HC.HalloweenChapter2Enabled==true end)()
+if U.Chapter2Enabled then table.insert(U.RailSpecs,{key='Underyard',label='UNDERYARD',color=C(150,80,230),glyph='🔔',tip='Below the church: Bell Seals, daily contracts, the Black Coffin and the Dex II',when='HalloweenChapter1Complete'})end
 U.ClusterSpecs={
  {key='Navigate',name='QuickNavigate',title='NAVIGATE',glyph='🧭',tip='Where to go? Show me the way'},
  {key='Titles',name='QuickTitles',title='TITLES',glyph='👑',tip='Pick the title shown over your head',module='TitlesScreen'},
@@ -497,6 +514,9 @@ U.PillSpecs={
 }
 -- Halloween pills (built by StarterPlayerScripts.HalloweenClient.HUD); before LEVEL: the tooltips above index 1..3.
 if U.HalloweenEnabled then table.insert(U.PillSpecs,4,{key='MoonCandy',name='MoonCandyPill',units=3,always=true,title='MOON CANDY'});table.insert(U.PillSpecs,5,{key='MoonCurse',name='MoonCursePill',units=3.6,title='CURSE'})end
+-- Chapter II pills before LEVEL (WP-L): Bell Shards (in the Underyard or when > 0), Lucky Dust (when > 0)
+if U.Chapter2Enabled then table.insert(U.PillSpecs,(#U.PillSpecs),{key='BellShards',name='QuickShards',units=3,title='BELL SHARDS',tip='Earned in THE UNDERYARD. Offer them at the Bell Seal altars and open the Black Coffin.'})end
+table.insert(U.PillSpecs,(#U.PillSpecs),{key='LuckyDust',name='QuickDust',units=3,title='LUCKY DUST',tip='Dismantle Lucky Blocks for it in your bag and forge new Lucky Blocks with it.'})
 local queuedLayout=setmetatable({},{__mode='k'})
 -- Coalesced U.LayoutHUD (several changes in one frame lay out once).
 function U.RequestHUDLayout(screen:any)
@@ -710,6 +730,37 @@ local function buildPills(screen:any,hud:any)
  end
  local function bones()local n=math.max(0,tonumber(player:GetAttribute('Bones'))or 0);setBones(n);showPill(bonesRoot,n)end
  player:GetAttributeChangedSignal('Bones'):Connect(bones);bones()
+ -- Chapter II (WP-L): Lucky Dust (when > 0) and Bell Shards (in the Underyard or when > 0), with the built Underyard icons.
+ local function uyArt(root,kind)
+  local holder=find(root,'CandyPillIcon');if not holder then return end
+  local folder=game:GetService('ReplicatedStorage'):FindFirstChild('Halloween')
+  local mod=folder and folder:FindFirstChild('UnderyardIcons')
+  if not mod then return end
+  pcall(function()
+   local UI=require(mod)
+   UI.New(holder,kind,{Size=40,ZIndex=14,FrameSize=UDim2.fromScale(1.05,1.05),Position=UDim2.fromScale(.5,.5),AnchorPoint=Vector2.new(.5,.5)})
+   if holder:IsA('TextLabel')then holder.TextTransparency=1 end
+  end)
+ end
+ local dustRoot,dustValue=simplePill('QuickDust','LuckyDust','✨',C(255,228,150))
+ uyArt(dustRoot,'Dust')
+ local setDust=counter(dustRoot,dustValue,shortNumber)
+ local function dust()local n=math.max(0,tonumber(player:GetAttribute('LuckyDust'))or 0);setDust(n);showPill(dustRoot,n)end
+ player:GetAttributeChangedSignal('LuckyDust'):Connect(dust);dust()
+ local shardRoot=nil
+ if U.Chapter2Enabled then
+  local shardValue
+  shardRoot,shardValue=simplePill('QuickShards','BellShards','🔔',C(222,196,255))
+  uyArt(shardRoot,'Shard')
+  local setShards=counter(shardRoot,shardValue,shortNumber)
+  local function shards()
+   local n=math.max(0,tonumber(player:GetAttribute('BellShards'))or 0);setShards(n)
+   -- in the Underyard the pill stays up even at 0 (offerings, the coffin and the Toll Box are priced in shards)
+   showPill(shardRoot,(n>0 or player:GetAttribute('UyInZone')==true)and math.max(n,1)or 0)
+  end
+  player:GetAttributeChangedSignal('BellShards'):Connect(shards);player:GetAttributeChangedSignal('UyInZone'):Connect(shards);shards()
+ end
+ U.ChapterPills={Dust=dustRoot,Shards=shardRoot}
  -- Stone: p.Resources.Stone from a player attribute when the server publishes one, otherwise
  -- from any economy snapshot (Modules.Net), refreshed after ores break at the Mining Corner.
  local lastStone=nil
@@ -743,6 +794,10 @@ local function buildPills(screen:any,hud:any)
    k.Tooltip(bonesRoot,function()return U.L(U.PillSpecs[2].tip),U.L('BONES')end)
    k.Tooltip(stoneRoot,function()return U.L(U.PillSpecs[3].tip),U.L('STONE')end)
    k.Tooltip(xp,function()return xm.XPText.Text,U.L('LEVEL')..' '..tostring(player:GetAttribute('Level')or 1)end)
+   for _,spec in ipairs(U.PillSpecs)do
+    local root=(spec.key=='LuckyDust'and dustRoot)or(spec.key=='BellShards'and shardRoot)or nil
+    if root then k.Tooltip(root,function()return U.L(spec.tip),U.L(spec.title)end)end
+   end
   end)
  end
 end
@@ -791,6 +846,11 @@ function U.BuildHUD(screen:any)
   table.insert(tiles,buildTile(hud,spec,root,b))
  end
  U.QuickTiles=tiles
+ -- tiles shown only while a player attribute is true (spec.when, e.g. the UNDERYARD tile after Chapter I)
+ local player0=Players.LocalPlayer
+ for _,spec in ipairs(U.RailSpecs)do
+  if spec.when then player0:GetAttributeChangedSignal(spec.when):Connect(function()U.RequestHUDLayout(screen)end)end
+ end
  local dig=find(hud,'GlobalDigWidget');if dig then dig.Visible=false end
  -- A tooltip shown over a tile must not stay on screen once a menu (or Hide UI) hides the HUD.
  hud:GetPropertyChangedSignal('Visible'):Connect(function()
@@ -837,7 +897,13 @@ function U.LayoutHUD(screen:any)
  local hud=find(screen,'HUD');if not hud then return end
  local left,top,width,height=U.SafeArea(screen);local touch=UserInput.TouchEnabled
  local jx,jy,thumb=U.TouchReserve(screen,left,top,width,height)
- local tiles=U.QuickTiles or{}
+ local tiles={}
+ local lp=Players.LocalPlayer
+ for _,t in ipairs(U.QuickTiles or{})do
+  local on=not(t.spec and t.spec.when)or(lp~=nil and lp:GetAttribute(t.spec.when)==true)
+  t.root.Visible=on
+  if on then table.insert(tiles,t)end
+ end
  local cluster={}
  for _,spec in ipairs(U.ClusterSpecs)do
   local root=find(hud,spec.name)

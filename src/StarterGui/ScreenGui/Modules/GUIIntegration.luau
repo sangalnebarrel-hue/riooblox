@@ -288,6 +288,7 @@ end
 local kitScreens={Inventory='InventoryScreen',Trade='TradeScreen',Navigate='NavigatorScreen',Titles='TitlesScreen',
  Showcase='ShowcaseScreen',Decor='DecorScreen',Mine='MineScreen',Halloween='HalloweenScreen'}
 kitScreens.Shelter='ShelterScreen' -- [WP-D2] DOG SHELTER (DogEconomyOpen('Shelter') from the ShelterPrompt)
+kitScreens.Underyard='UnderyardScreen' -- [WP-L] THE UNDERYARD (rail tile, HALLOWEEN window, DogEconomyOpen('Underyard', {Tab, Seal}) from Bell Square)
 N.KitScreens=kitScreens
 local function kitScreen(page,arg)
  local name=kitScreens[aliases[page]or page];if not name then return false end

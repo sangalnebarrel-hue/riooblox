@@ -12,6 +12,10 @@
 --               reward track (ReplicatedStorage.Halloween.Config.DexRewards, claimed through the Halloween remote
 --               Request "DexClaim" {Count}; ledger snapshot.Features.Halloween.DexClaims) and a grid of the 8 dogs.
 --               Event dogs are never part of COLLECTION / the 100 / BONUS. S.OpenEvent() opens this tab.
+--   EVENT · THE UNDERYARD COLLECTION  (WP-L, while Chapter II is on) the Underyard dogs H09-H16 (EventDex "Underyard2026"):
+--               the same page for the Dex II milestones (Chapter2Config.Dex2Rewards, request "C2DexClaim" {Count}; ledger
+--               snapshot.Features.Underyard.Dex2.Claims; the reply's View goes to the Halloween Bus "StateChanged" and the
+--               rewards to the HALLOWEEN reward card). S.OpenEvent("Underyard2026") opens it.
 -- Entry points (GUIIntegration): N.OpenPage('DogDex') / N.OpenScreen('DogDex' | 'DexEntry') on every
 -- device; VIEW IN DEX of MY DOGS opens the entry over MY DOGS. Requests: DexClaim, DexFavorite (Modules.Net).
 local RS = game:GetService("ReplicatedStorage")
@@ -28,6 +32,23 @@ local EVENT_DEX = "BuriedMoon2026"
 local EVENT_TAB = "buriedmoon"
 local EVENT_ACCENT = Color3.fromRGB(122, 62, 200)
 local EVENT_PUMPKIN = Color3.fromRGB(255, 128, 24)
+-- the event dex tabs (WP-L: THE UNDERYARD COLLECTION, Chapter2Config.EventId, only while Chapter II is switched on)
+local EVENTS = {
+	{ Id = EVENT_DEX, Tab = EVENT_TAB, Request = "DexClaim", Accent = EVENT_ACCENT, Accent2 = EVENT_PUMPKIN, Glyph = "🌕" },
+	{ Id = (Info.Chapter2Config() and Info.Chapter2Config().EventId) or "Underyard2026", Tab = "underyard", Request = "C2DexClaim",
+		Accent = Color3.fromRGB(150, 80, 230), Accent2 = Color3.fromRGB(150, 200, 255),
+		Glyph = "🔔", Chapter = 2 },
+}
+-- Chapter II names / labels (RS.Halloween.UnderyardView: Localization.UnderyardUI + .Underyard)
+local UV = nil
+do
+	local ok, m = pcall(function()
+		local folder = RS:FindFirstChild("Halloween")
+		local module = folder and folder:FindFirstChild("UnderyardView")
+		return module and require(module) or nil
+	end)
+	UV = ok and type(m) == "table" and m or nil
+end
 local HDict = nil
 do
 	local ok, dict = pcall(function()
@@ -63,6 +84,23 @@ local function F(en: string, ...: any): string
 		pattern = Dict.Templates[en] or (HDict and HDict.Templates and HDict.Templates[en]) or en
 	end
 	return string.format(pattern, ...)
+end
+-- Chapter II labels (UnderyardView) and config pairs {en, ru}
+local function UT(en: string): string
+	return UV and UV.T(en, Kit.Lang()) or en
+end
+local function UF(en: string, ...: any): string
+	if UV then
+		return UV.F(en, Kit.Lang(), ...)
+	end
+	local ok, out = pcall(string.format, en, ...)
+	return ok and out or en
+end
+local function UL(pair: any): string
+	if UV then
+		return UV.L(pair, Kit.Lang())
+	end
+	return type(pair) == "table" and tostring(pair[1]) or tostring(pair or "")
 end
 local function said(text: any): string
 	text = tostring(text or "")
@@ -199,9 +237,9 @@ local st: any = {
 	Claiming = false,
 	Rows = {},
 	Count = 0,
-	EventEntries = {}, -- event dex entries (Info.EventSpecies[EVENT_DEX])
-	EventRows = {},
-	EventClaims = {}, -- claims confirmed by the Halloween remote since the last snapshot
+	EventEntries = {}, -- eventId -> event dex entries (Info.EventSpecies[eventId])
+	EventRows = {}, -- eventId -> reward rows
+	EventClaims = {}, -- eventId -> claims confirmed by the Halloween remote since the last snapshot
 	EventClaiming = false,
 }
 S.State = st
@@ -218,18 +256,38 @@ local function dexView(): any
 	local features = st.Snapshot and st.Snapshot.Features
 	return type(features) == "table" and features.Dogdex or nil
 end
--- The Halloween view (snapshot.Features.Halloween) with the claims the remote confirmed since.
-local function eventView(): any
+-- The claims of an event dex (Chapter I: snapshot.Features.Halloween.DexClaims; Chapter II: snapshot.Features.Underyard
+-- .Dex2.Claims) with the claims the remote confirmed since.
+local function eventView(ev: any?): any
+	local id = ev and ev.Id or EVENT_DEX
 	local features = st.Snapshot and st.Snapshot.Features
-	local view = type(features) == "table" and type(features.Halloween) == "table" and features.Halloween or {}
+	local ledger = {}
+	if type(features) == "table" then
+		if ev and ev.Chapter == 2 then
+			local uy = type(features.Underyard) == "table" and features.Underyard or {}
+			ledger = type(uy.Dex2) == "table" and type(uy.Dex2.Claims) == "table" and uy.Dex2.Claims or {}
+		else
+			local view = type(features.Halloween) == "table" and features.Halloween or {}
+			ledger = type(view.DexClaims) == "table" and view.DexClaims or {}
+		end
+	end
 	local claims = {}
-	for k, v in pairs(type(view.DexClaims) == "table" and view.DexClaims or {}) do
+	for k, v in pairs(ledger) do
 		claims[k] = v
 	end
-	for k, v in pairs(st.EventClaims) do
+	for k, v in pairs(st.EventClaims[id] or {}) do
 		claims[k] = v
 	end
 	return { DexClaims = claims }
+end
+-- The event a species belongs to (nil: COLLECTION).
+local function eventOf(id: string?): any
+	for _, ev in ipairs(EVENTS) do
+		if id ~= nil and id == ev.Id then
+			return ev
+		end
+	end
+	return nil
 end
 
 ------------------------------------------------------------------------------------------------
@@ -307,9 +365,11 @@ local function entryOf(id: string?): any
 			return e
 		end
 	end
-	for _, e in ipairs(st.EventEntries) do
-		if e.Id == id then
-			return e
+	for _, list in pairs(st.EventEntries) do
+		for _, e in ipairs(list) do
+			if e.Id == id then
+				return e
+			end
 		end
 	end
 	return nil
@@ -319,7 +379,7 @@ end
 local function stepList(): { any }
 	local def = st.Entry and Defs[st.Entry]
 	if def and def.EventDex then
-		return st.EventEntries
+		return st.EventEntries[def.EventDex] or {}
 	end
 	return (win and win.IsOpen and #st.List > 0) and st.List or st.Entries
 end
@@ -330,17 +390,23 @@ local function cardData(e: any): any
 	if e.Found and e.Stats then
 		stats = { { Text = "$" .. short(e.Stats.C) }, { Text = "x" .. fixed(e.Stats.E, 2), Color = (tonumber(e.Stats.E) or 0) >= 3 and P.gold or nil } }
 	end
-	local number = def.EventDex and string.format("🌕 #%02d", def.EventIndex or 0) or def.MuseumExcluded and T("BONUS") or string.format("#%03d", def.Index or 0)
+	local evDef = eventOf(def.EventDex)
+	local number = def.EventDex and string.format("%s #%02d", evDef and evDef.Glyph or "🌕", def.EventIndex or 0) or def.MuseumExcluded and T("BONUS")
+		or string.format("#%03d", def.Index or 0)
+	-- Underyard dogs show their self-localized Chapter2Config name (stub rows have no translation entry)
+	local c2 = def.EventDex and Info.IsChapter2(def.EventDex) and Info.Chapter2Config()
+	local c2def = c2 and c2.Dogs and c2.Dogs.Defs and c2.Dogs.Defs[def.Id]
 	return {
 		Id = e.Id,
-		Name = e.Found and def.DisplayName or "???",
+		Name = e.Found and (c2def and UL(c2def.Name) or def.DisplayName) or "???",
 		Rarity = def.Rarity,
 		Preview = { Kind = "Dog", DogId = def.Id, Variant = "Normal", Silhouette = not e.Found },
 		Stats = stats,
 		Subtitle = e.Found and "" or T("Not discovered yet"),
 		Count = e.Owned > 1 and e.Owned or nil,
 		Badge = number,
-		BadgeColor = def.EventDex and (e.Found and EVENT_ACCENT or Theme.Disabled) or def.MuseumExcluded and P.gold or (e.Found and ACCENT or Theme.Disabled),
+		BadgeColor = def.EventDex and (e.Found and (evDef and evDef.Accent or EVENT_ACCENT) or Theme.Disabled) or def.MuseumExcluded and P.gold
+			or (e.Found and ACCENT or Theme.Disabled),
 		-- ★ favourite, ✓ owned (the ×N badge only shows from two copies).
 		Tag = (e.Favorite or e.Owned > 0) and ((e.Favorite and "★" or "") .. (e.Favorite and e.Owned > 0 and " " or "") .. (e.Owned > 0 and "✓" or "")) or nil,
 		TagColor = e.Favorite and P.gold or P.green,
@@ -435,9 +501,29 @@ local function eventSkinName(id: string): string
 	return T(name)
 end
 
--- What an event tier pays, as text parts.
+local UY_GLYPH = { Shards = "🔔", Key = "🗝", Dust = "✨", Fragments = "🧩", Find = "💎", Decor = "🪦", Skin = "⛏", Dog = "🐶", Title = "🏷" }
+local EVENT_OVER_TEXT = "The event is over. Event dogs can still be traded." -- Localization.HalloweenDogs (UI)
+-- What an event tier pays, as text parts (Chapter II tiers carry reward rows).
 local function eventRewardParts(tier: any): { string }
 	local parts = {}
+	if type(tier.Rows) == "table" then
+		for _, row in ipairs(tier.Rows) do
+			local kind = row.Kind
+			local text
+			if UV and (kind == "Shards" or kind == "Key" or kind == "Dust" or kind == "Fragments") then
+				text = Format.Number(math.floor(tonumber(row.Amount) or 0)) .. " " .. UL(UV.KindName[kind])
+			elseif UV then
+				text = UV.RowName(row, Kit.Lang())
+				if kind == "Title" then
+					text = "“" .. text .. "”"
+				end
+			else
+				text = tostring(row.Id or kind)
+			end
+			table.insert(parts, (UY_GLYPH[kind] or "🎁") .. " " .. text)
+		end
+		return parts
+	end
 	if tier.Candy then
 		table.insert(parts, F("🍬 %d Candy", tier.Candy))
 	end
@@ -457,10 +543,12 @@ local function eventRewardParts(tier: any): { string }
 end
 S.EventRewardParts = eventRewardParts
 
-function S.EventClaim(count: number, button: any?): boolean
+-- eventId: the event dex (default BURIED MOON 2026; "Underyard2026" claims a Dex II milestone through C2DexClaim)
+function S.EventClaim(count: number, button: any?, eventId: string?): boolean
 	if st.EventClaiming then
 		return false
 	end
+	local ev = eventOf(eventId or EVENT_DEX) or EVENTS[1]
 	local folder = RS:FindFirstChild("Halloween")
 	local remotes = folder and folder:FindFirstChild("Remotes")
 	local request = remotes and remotes:FindFirstChild("Request")
@@ -473,24 +561,51 @@ function S.EventClaim(count: number, button: any?): boolean
 		button:SetBusy(true)
 	end
 	local called, ok, result = pcall(function()
-		return request:InvokeServer("DexClaim", { Count = count })
+		return request:InvokeServer(ev.Request, { Count = count })
 	end)
 	st.EventClaiming = false
 	if button then
 		button:SetBusy(false)
 	end
 	if called and ok == true then
-		st.EventClaims[tostring(count)] = true
-		local cfg = Info.HalloweenConfig()
+		st.EventClaims[ev.Id] = st.EventClaims[ev.Id] or {}
+		st.EventClaims[ev.Id][tostring(count)] = true
 		local tier = nil
-		for _, row in ipairs(cfg and cfg.DexRewards or {}) do
+		for _, row in ipairs(Info.EventTiers(ev.Id)) do
 			if row.Count == count then
 				tier = row
 			end
 		end
-		local text = tier and F("BURIED MOON reward for %d dogs: %s", count, table.concat(eventRewardParts(tier), " · ")) or T("Reward claimed!")
-		Kit.Toast(text, { Kind = "success", NoTranslate = true, Duration = 4 })
-		local row = ui and ui.EvTiers and ui.EvTiers[count]
+		if ev.Chapter == 2 then
+			-- the fresh Chapter II view for the Underyard window / HUD, the rewards on the HALLOWEEN reward card
+			local res = type(result) == "table" and result or {}
+			local folderH = RS:FindFirstChild("Halloween")
+			local busMod = folderH and folderH:FindFirstChild("Bus")
+			if type(res.View) == "table" and busMod then
+				local okB, Bus = pcall(require, busMod)
+				if okB and type(Bus) == "table" and Bus.Fire then
+					pcall(Bus.Fire, "StateChanged", { View = res.View })
+				end
+			end
+			local rows = type(res.Rewards) == "table" and table.clone(res.Rewards) or (tier and table.clone(tier.Rows or {})) or {}
+			local shown = false
+			local hsMod = script.Parent:FindFirstChild("HalloweenScreen")
+			if hsMod and #rows > 0 then
+				local okH, HS = pcall(require, hsMod)
+				if okH and type(HS) == "table" and HS.RewardReveal then
+					shown = pcall(HS.RewardReveal, UF("%d UNDERYARD DOGS FOUND", count), rows, { Kicker = UT("DEX II REWARD"), Accent = ev.Accent })
+				end
+			end
+			if not shown then
+				local text = tier and UF("DEX II reward for %d dogs: %s", count, table.concat(eventRewardParts(tier), " · ")) or UT("DEX II REWARD")
+				Kit.Toast(text, { Kind = "success", NoTranslate = true, Duration = 4 })
+			end
+		else
+			local text = tier and F("BURIED MOON reward for %d dogs: %s", count, table.concat(eventRewardParts(tier), " · ")) or T("Reward claimed!")
+			Kit.Toast(text, { Kind = "success", NoTranslate = true, Duration = 4 })
+		end
+		local evUI = ui and ui.Events and ui.Events[ev.Id]
+		local row = evUI and evUI.Tiers[count]
 		if row then
 			row.Pop.Scale = 1.3
 			Kit.Motion.Tween(row.Pop, 0.35, { Scale = 1 }, Enum.EasingStyle.Back)
@@ -549,6 +664,17 @@ local function build()
 	if win then
 		return
 	end
+	local tabs = {
+		{ Id = "collection", Text = T("COLLECTION"), NoTranslate = true },
+		{ Id = "rewards", Text = T("REWARDS"), NoTranslate = true },
+		{ Id = EVENT_TAB, Text = T("EVENT · BURIED MOON 2026"), NoTranslate = true },
+	}
+	-- THE UNDERYARD COLLECTION (Chapter II on)
+	local events = { EVENTS[1] }
+	if Info.EventEnabled(EVENTS[2].Id) then
+		table.insert(tabs, { Id = EVENTS[2].Tab, Text = UT("THE UNDERYARD COLLECTION"), NoTranslate = true })
+		table.insert(events, EVENTS[2])
+	end
 	win = Kit.Window.new({
 		Key = "DogDex",
 		Title = T("DOGDEX"),
@@ -557,11 +683,7 @@ local function build()
 		Icon = "DogDex",
 		NoTranslate = true,
 		MaxSize = Vector2.new(1120, 780),
-		Tabs = {
-			{ Id = "collection", Text = T("COLLECTION"), NoTranslate = true },
-			{ Id = "rewards", Text = T("REWARDS"), NoTranslate = true },
-			{ Id = EVENT_TAB, Text = T("EVENT · BURIED MOON 2026"), NoTranslate = true },
-		},
+		Tabs = tabs,
 		Tab = "collection",
 		OnOpen = function()
 			S._opened()
@@ -574,7 +696,7 @@ local function build()
 		end,
 	})
 	S.Window = win
-	ui = { RewardRows = {}, Lang = Kit.Lang() }
+	ui = { RewardRows = {}, Lang = Kit.Lang(), Events = {}, EventOrder = {} }
 	S.UI = ui
 	local collection = win:Page("collection")
 	local rewards = win:Page("rewards")
@@ -583,8 +705,10 @@ local function build()
 	local probeFrame = Kit.New("Frame", { Name = "NameProbes", BackgroundTransparency = 1, Visible = false, Size = UDim2.fromOffset(1, 1) }, win.Body)
 	local pending = false
 	local probeDefs = table.clone(Info.Species)
-	for _, def in ipairs(Info.EventSpecies[EVENT_DEX] or {}) do
-		table.insert(probeDefs, def)
+	for _, ev in ipairs(events) do
+		for _, def in ipairs(Info.EventSpecies[ev.Id] or {}) do
+			table.insert(probeDefs, def)
+		end
 	end
 	for _, def in ipairs(probeDefs) do
 		local probe = Kit.New("TextLabel", { Name = def.Id, Text = def.DisplayName, BackgroundTransparency = 1, Size = UDim2.fromOffset(1, 1) }, probeFrame)
@@ -729,112 +853,120 @@ local function build()
 		Wrap = true,
 		AlignY = "Top",
 	})
-	-- EVENT · BURIED MOON 2026
-	local eventPage = win:Page(EVENT_TAB)
-	ui.EventPage = eventPage
-	ui.EvHead = panel(eventPage, "EventHeader", Theme.White)
-	ui.EvStripe = Kit.New("Frame", { Name = "Stripe", BackgroundColor3 = EVENT_ACCENT, BorderSizePixel = 0, ZIndex = Z + 1 }, ui.EvHead)
-	Kit.Corner(ui.EvStripe, Theme.Radius.Card)
-	Kit.New("UIGradient", { Color = ColorSequence.new(EVENT_ACCENT, EVENT_PUMPKIN), Rotation = 90 }, ui.EvStripe)
-	ui.EvMoon = label(ui.EvHead, { Name = "Moon", Text = "🌕", TextSize = 34, AlignX = "Center", Scaled = true, MinTextSize = 16 })
-	ui.EvTitle = label(ui.EvHead, { Name = "Title", Text = T("BURIED MOON 2026"), TextSize = 22, Color = EVENT_ACCENT, Scaled = true, MinTextSize = 12 })
-	ui.EvSub = label(ui.EvHead, { Name = "Sub", Text = T("NIGHT OF THE BURIED MOON · event dogs"), TextSize = 14, Color = Theme.InkMuted, Scaled = true, MinTextSize = 9 })
-	ui.EvCount = label(ui.EvHead, { Name = "Count", TextSize = 28, Font = "numeric", AlignX = "Right", Scaled = true, MinTextSize = 14 })
-	ui.EvBar = Kit.ProgressBar(ui.EvHead, { Name = "Bar", Value = 0, Height = 16, Color = EVENT_ACCENT, ZIndex = Z + 1, NoTranslate = true })
-	ui.EvNote = label(ui.EvHead, { Name = "Note", TextSize = 13, Color = Theme.InkMuted, Scaled = true, MinTextSize = 9 })
-	ui.EvTiers = {}
-	ui.EvTierOrder = {}
-	local cfg = Info.HalloweenConfig()
-	for _, tier in ipairs(cfg and cfg.DexRewards or {}) do
-		local r: any = { Tier = tier }
-		r.Root = panel(eventPage, "EventTier_" .. tier.Count, Theme.White)
-		r.Medal = Kit.New("Frame", { Name = "Medal", BackgroundColor3 = Theme.Disabled, BorderSizePixel = 0, ZIndex = Z + 2 }, r.Root)
-		Kit.Corner(r.Medal, "pill")
-		Kit.Stroke(r.Medal, P.edge, 2)
-		r.Pop = Kit.New("UIScale", { Name = "Pop" }, r.Medal)
-		r.Number = label(r.Medal, { Name = "Count", Text = tostring(tier.Count), TextSize = 20, Font = "numeric", AlignX = "Center", Color = Theme.White, Stroke = 0.2, Scaled = true, MinTextSize = 10, ZIndex = Z + 3 })
-		r.Title = label(r.Root, { Name = "Title", TextSize = 15, Scaled = true, MinTextSize = 9, ZIndex = Z + 2 })
-		r.Gift = label(r.Root, { Name = "Rewards", TextSize = 12, Color = Theme.InkMuted, Wrap = true, AlignY = "Top", ZIndex = Z + 2 })
-		r.Button = Kit.Button(r.Root, {
-			Name = "Claim",
-			Text = T("CLAIM"),
-			Style = "success",
-			TextSize = 14,
-			ZIndex = Z + 2,
-			NoTranslate = true,
-			OnClick = function()
-				task.spawn(function()
-					S.EventClaim(tier.Count, r.Button)
-				end)
+	-- EVENT · BURIED MOON 2026 / THE UNDERYARD COLLECTION (one page per event dex)
+	for _, evDef in ipairs(events) do
+		local chapter2 = evDef.Chapter == 2
+		local ev: any = { Def = evDef, Id = evDef.Id, Tab = evDef.Tab, Tiers = {}, TierOrder = {} }
+		local eventPage = win:Page(evDef.Tab)
+		ev.Page = eventPage
+		ev.Head = panel(eventPage, "EventHeader", Theme.White)
+		ev.Stripe = Kit.New("Frame", { Name = "Stripe", BackgroundColor3 = evDef.Accent, BorderSizePixel = 0, ZIndex = Z + 1 }, ev.Head)
+		Kit.Corner(ev.Stripe, Theme.Radius.Card)
+		Kit.New("UIGradient", { Color = ColorSequence.new(evDef.Accent, evDef.Accent2), Rotation = 90 }, ev.Stripe)
+		ev.Moon = label(ev.Head, { Name = "Moon", Text = evDef.Glyph, TextSize = 34, AlignX = "Center", Scaled = true, MinTextSize = 16 })
+		ev.Title = label(ev.Head, { Name = "Title", Text = chapter2 and UT("THE UNDERYARD COLLECTION") or T("BURIED MOON 2026"), TextSize = 22, Color = evDef.Accent,
+			Scaled = true, MinTextSize = 12, NoTranslate = chapter2 or nil })
+		ev.Sub = label(ev.Head, { Name = "Sub", Text = chapter2 and UT("THE UNDERYARD · BENEATH THE LAST BELL") or T("NIGHT OF THE BURIED MOON · event dogs"),
+			TextSize = 14, Color = Theme.InkMuted, Scaled = true, MinTextSize = 9, NoTranslate = chapter2 or nil })
+		ev.Count = label(ev.Head, { Name = "Count", TextSize = 28, Font = "numeric", AlignX = "Right", Scaled = true, MinTextSize = 14 })
+		ev.Bar = Kit.ProgressBar(ev.Head, { Name = "Bar", Value = 0, Height = 16, Color = evDef.Accent, ZIndex = Z + 1, NoTranslate = true })
+		ev.Note = label(ev.Head, { Name = "Note", TextSize = 13, Color = Theme.InkMuted, Scaled = true, MinTextSize = 9 })
+		for _, tier in ipairs(Info.EventTiers(evDef.Id)) do
+			local r: any = { Tier = tier }
+			r.Root = panel(eventPage, "EventTier_" .. tier.Count, Theme.White)
+			r.Medal = Kit.New("Frame", { Name = "Medal", BackgroundColor3 = Theme.Disabled, BorderSizePixel = 0, ZIndex = Z + 2 }, r.Root)
+			Kit.Corner(r.Medal, "pill")
+			Kit.Stroke(r.Medal, P.edge, 2)
+			r.Pop = Kit.New("UIScale", { Name = "Pop" }, r.Medal)
+			r.Number = label(r.Medal, { Name = "Count", Text = tostring(tier.Count), TextSize = 20, Font = "numeric", AlignX = "Center", Color = Theme.White, Stroke = 0.2, Scaled = true, MinTextSize = 10, ZIndex = Z + 3 })
+			r.Title = label(r.Root, { Name = "Title", TextSize = 15, Scaled = true, MinTextSize = 9, ZIndex = Z + 2 })
+			r.Gift = label(r.Root, { Name = "Rewards", TextSize = 12, Color = Theme.InkMuted, Wrap = true, AlignY = "Top", ZIndex = Z + 2 })
+			r.Button = Kit.Button(r.Root, {
+				Name = "Claim",
+				Text = T("CLAIM"),
+				Style = "success",
+				TextSize = 14,
+				ZIndex = Z + 2,
+				NoTranslate = true,
+				OnClick = function()
+					task.spawn(function()
+						S.EventClaim(tier.Count, r.Button, evDef.Id)
+					end)
+				end,
+			})
+			ev.Tiers[tier.Count] = r
+			table.insert(ev.TierOrder, r)
+		end
+		ev.GridHost = Kit.New("Frame", { Name = "EventGridHost", BackgroundTransparency = 1, ZIndex = Z }, eventPage)
+		ev.Grid = Kit.CardGrid(ev.GridHost, {
+			Name = "EventGrid",
+			Kind = "Dog",
+			CardSize = Vector2.new(164, 214),
+			RowHeight = 78,
+			ZIndex = Z,
+			Map = cardData,
+			Key = function(e)
+				return e.Id
 			end,
+			OnClick = function(e)
+				S.OpenEntry(e.Id, { Stack = true })
+			end,
+			Empty = { Icon = "DogDex", Title = T("NO DOGS MATCH"), Body = T("Try another search or filter."), NoTranslate = true },
 		})
-		ui.EvTiers[tier.Count] = r
-		table.insert(ui.EvTierOrder, r)
+		ui.Events[evDef.Id] = ev
+		table.insert(ui.EventOrder, ev)
 	end
-	ui.EvGridHost = Kit.New("Frame", { Name = "EventGridHost", BackgroundTransparency = 1, ZIndex = Z }, eventPage)
-	ui.EvGrid = Kit.CardGrid(ui.EvGridHost, {
-		Name = "EventGrid",
-		Kind = "Dog",
-		CardSize = Vector2.new(164, 214),
-		RowHeight = 78,
-		ZIndex = Z,
-		Map = cardData,
-		Key = function(e)
-			return e.Id
-		end,
-		OnClick = function(e)
-			S.OpenEntry(e.Id, { Stack = true })
-		end,
-		Empty = { Icon = "DogDex", Title = T("NO DOGS MATCH"), Body = T("Try another search or filter."), NoTranslate = true },
-	})
+	-- the BURIED MOON page under its WP4 names
+	local moon = ui.Events[EVENT_DEX]
+	ui.EventPage, ui.EvHead, ui.EvTiers, ui.EvTierOrder, ui.EvGrid = moon.Page, moon.Head, moon.Tiers, moon.TierOrder, moon.Grid
 	win.Resized:Connect(function()
 		relayout()
 	end)
 end
 
-local function layoutEvent(w: number, h: number, phone: boolean, landscape: boolean)
-	if not ui.EvHead then
+local function layoutEvent(ev: any, w: number, h: number, phone: boolean, landscape: boolean)
+	if not (ev and ev.Head) then
 		return
 	end
 	local gap = phone and 6 or 10
 	local y = 0
 	local headH = landscape and 52 or (phone and 84 or 80)
-	ui.EvHead.Position = UDim2.fromOffset(0, y)
-	ui.EvHead.Size = UDim2.fromOffset(w, headH)
-	ui.EvStripe.Position = UDim2.fromOffset(0, 0)
-	ui.EvStripe.Size = UDim2.new(0, 8, 1, 0)
+	ev.Head.Position = UDim2.fromOffset(0, y)
+	ev.Head.Size = UDim2.fromOffset(w, headH)
+	ev.Stripe.Position = UDim2.fromOffset(0, 0)
+	ev.Stripe.Size = UDim2.new(0, 8, 1, 0)
 	local moon = landscape and 36 or 52
-	ui.EvMoon.Position = UDim2.fromOffset(14, math.floor((headH - moon) / 2))
-	ui.EvMoon.Size = UDim2.fromOffset(moon, moon)
+	ev.Moon.Position = UDim2.fromOffset(14, math.floor((headH - moon) / 2))
+	ev.Moon.Size = UDim2.fromOffset(moon, moon)
 	local x = 20 + moon
 	local countW = phone and 86 or 120
 	if landscape then
-		ui.EvTitle.Position = UDim2.fromOffset(x, 6)
-		ui.EvTitle.Size = UDim2.fromOffset(math.floor(w * 0.3), 22)
-		ui.EvSub.Visible = false
-		ui.EvNote.Position = UDim2.fromOffset(x, 30)
-		ui.EvNote.Size = UDim2.fromOffset(math.floor(w * 0.3), 16)
+		ev.Title.Position = UDim2.fromOffset(x, 6)
+		ev.Title.Size = UDim2.fromOffset(math.floor(w * 0.3), 22)
+		ev.Sub.Visible = false
+		ev.Note.Position = UDim2.fromOffset(x, 30)
+		ev.Note.Size = UDim2.fromOffset(math.floor(w * 0.3), 16)
 		local barX = x + math.floor(w * 0.3) + 10
-		ui.EvBar.Instance.Position = UDim2.fromOffset(barX, 17)
-		ui.EvBar.Instance.Size = UDim2.fromOffset(math.max(40, w - barX - countW - 18), 18)
-		ui.EvCount.Position = UDim2.new(1, -(countW + 10), 0, 10)
-		ui.EvCount.Size = UDim2.fromOffset(countW, 32)
+		ev.Bar.Instance.Position = UDim2.fromOffset(barX, 17)
+		ev.Bar.Instance.Size = UDim2.fromOffset(math.max(40, w - barX - countW - 18), 18)
+		ev.Count.Position = UDim2.new(1, -(countW + 10), 0, 10)
+		ev.Count.Size = UDim2.fromOffset(countW, 32)
 	else
 		local textW = w - x - countW - 22
-		ui.EvTitle.Position = UDim2.fromOffset(x, 6)
-		ui.EvTitle.Size = UDim2.fromOffset(textW, 24)
-		ui.EvSub.Visible = not phone
-		ui.EvSub.Position = UDim2.fromOffset(x, 31)
-		ui.EvSub.Size = UDim2.fromOffset(textW, 16)
-		ui.EvBar.Instance.Position = UDim2.fromOffset(x, 50)
-		ui.EvBar.Instance.Size = UDim2.fromOffset(textW, 14)
-		ui.EvNote.Position = UDim2.fromOffset(x, phone and 66 or 64)
-		ui.EvNote.Size = UDim2.fromOffset(w - x - 14, phone and 16 or 14)
-		ui.EvCount.Position = UDim2.new(1, -(countW + 12), 0, 8)
-		ui.EvCount.Size = UDim2.fromOffset(countW, 36)
+		ev.Title.Position = UDim2.fromOffset(x, 6)
+		ev.Title.Size = UDim2.fromOffset(textW, 24)
+		ev.Sub.Visible = not phone
+		ev.Sub.Position = UDim2.fromOffset(x, 31)
+		ev.Sub.Size = UDim2.fromOffset(textW, 16)
+		ev.Bar.Instance.Position = UDim2.fromOffset(x, 50)
+		ev.Bar.Instance.Size = UDim2.fromOffset(textW, 14)
+		ev.Note.Position = UDim2.fromOffset(x, phone and 66 or 64)
+		ev.Note.Size = UDim2.fromOffset(w - x - 14, phone and 16 or 14)
+		ev.Count.Position = UDim2.new(1, -(countW + 12), 0, 8)
+		ev.Count.Size = UDim2.fromOffset(countW, 36)
 	end
 	y += headH + gap
-	local n = #ui.EvTierOrder
+	local n = #ev.TierOrder
 	if n > 0 then
 		local cols = (phone and not landscape) and 2 or n
 		local rows = math.ceil(n / cols)
@@ -843,11 +975,11 @@ local function layoutEvent(w: number, h: number, phone: boolean, landscape: bool
 		local medalH = landscape and 30 or 36
 		-- every card as tall as the longest reward text needs
 		local giftH = 0
-		for _, r in ipairs(ui.EvTierOrder) do
+		for _, r in ipairs(ev.TierOrder) do
 			giftH = math.max(giftH, textHeight(r.Gift.Text ~= "" and r.Gift.Text or "x", 12, cardW - 20))
 		end
 		local cardH = math.max(landscape and 66 or 84, medalH + 14 + giftH)
-		for i, r in ipairs(ui.EvTierOrder) do
+		for i, r in ipairs(ev.TierOrder) do
 			local col, line = (i - 1) % cols, math.floor((i - 1) / cols)
 			r.Root.Position = UDim2.fromOffset(col * (cardW + gap), y + line * (cardH + gap))
 			r.Root.Size = UDim2.fromOffset(cardW, cardH)
@@ -868,9 +1000,9 @@ local function layoutEvent(w: number, h: number, phone: boolean, landscape: bool
 		end
 		y += rows * (cardH + gap)
 	end
-	ui.EvGridHost.Position = UDim2.fromOffset(0, y)
-	ui.EvGridHost.Size = UDim2.fromOffset(w, math.max(40, h - y))
-	ui.EvGrid:Relayout()
+	ev.GridHost.Position = UDim2.fromOffset(0, y)
+	ev.GridHost.Size = UDim2.fromOffset(w, math.max(40, h - y))
+	ev.Grid:Relayout()
 end
 
 local function layoutRewards(w: number, h: number, phone: boolean)
@@ -988,7 +1120,9 @@ relayout = function()
 	ui.GridHost.Size = UDim2.fromOffset(w, math.max(40, h - y))
 	ui.Grid:Relayout()
 	layoutRewards(w, h, phone)
-	layoutEvent(w, h, phone, landscape)
+	for _, ev in ipairs(ui.EventOrder or {}) do
+		layoutEvent(ev, w, h, phone, landscape)
+	end
 end
 
 refreshRewards = function()
@@ -1072,20 +1206,18 @@ refreshRewards = function()
 	layoutRewards(layout.Width, layout.Height, layout.Phone)
 end
 
-refreshEvent = function()
-	if not ui or not ui.EvHead then
-		return
-	end
-	local total = Info.EventTotal(EVENT_DEX)
-	local rows, count = Info.EventRewardRows(eventView(), profile(), EVENT_DEX)
-	st.EventRows = rows
-	local live = Info.EventLive()
-	ui.EvCount.Text = string.format("%d / %d", count, total)
-	ui.EvBar:SetValue(total > 0 and math.clamp(count / total, 0, 1) or 0)
-	ui.EvBar:SetText(F("%d / %d DISCOVERED", count, total))
+local function refreshOneEvent(ev: any)
+	local evDef = ev.Def
+	local total = Info.EventTotal(ev.Id)
+	local rows, count = Info.EventRewardRows(eventView(evDef), profile(), ev.Id)
+	st.EventRows[ev.Id] = rows
+	local live = Info.EventLive(ev.Id)
+	ev.Count.Text = string.format("%d / %d", count, total)
+	ev.Bar:SetValue(total > 0 and math.clamp(count / total, 0, 1) or 0)
+	ev.Bar:SetText(F("%d / %d DISCOVERED", count, total))
 	local ready = 0
 	for _, row in ipairs(rows) do
-		local r = ui.EvTiers[row.Count]
+		local r = ev.Tiers[row.Count]
 		if r then
 			r.Title.Text = F("%d DOGS", row.Count)
 			r.Gift.Text = table.concat(eventRewardParts(row.Tier), "   ")
@@ -1097,11 +1229,11 @@ refreshEvent = function()
 				r.Root.BackgroundColor3 = Theme.Lighten(P.green, 0.85)
 			elseif row.State == "ready" then
 				ready += 1
-				r.Medal.BackgroundColor3 = EVENT_PUMPKIN
+				r.Medal.BackgroundColor3 = evDef.Accent2
 				r.Button:SetText(T("CLAIM"))
 				r.Button:SetStyle("success")
 				r.Button:SetDisabled(st.EventClaiming)
-				r.Root.BackgroundColor3 = Theme.Lighten(EVENT_PUMPKIN, 0.82)
+				r.Root.BackgroundColor3 = Theme.Lighten(evDef.Accent2, 0.82)
 			elseif row.State == "over" then
 				r.Medal.BackgroundColor3 = Theme.Disabled
 				r.Button:SetText(T("EVENT OVER"))
@@ -1109,7 +1241,7 @@ refreshEvent = function()
 				r.Button:SetDisabled(true)
 				r.Root.BackgroundColor3 = Theme.White
 			else
-				r.Medal.BackgroundColor3 = EVENT_ACCENT
+				r.Medal.BackgroundColor3 = evDef.Accent
 				r.Button:SetText(F("%d MORE", row.Missing))
 				r.Button:SetStyle("secondary")
 				r.Button:SetDisabled(true)
@@ -1118,20 +1250,32 @@ refreshEvent = function()
 		end
 	end
 	if not live then
-		ui.EvNote.Text = T("The event is over. Event dogs can still be traded.")
-		ui.EvNote.TextColor3 = Theme.InkMuted
+		ev.Note.Text = T("The event is over. Event dogs can still be traded.")
+		ev.Note.TextColor3 = Theme.InkMuted
 	elseif ready > 0 then
-		ui.EvNote.Text = F("%d rewards ready to claim!", ready)
-		ui.EvNote.TextColor3 = GREEN_TEXT
+		ev.Note.Text = F("%d rewards ready to claim!", ready)
+		ev.Note.TextColor3 = GREEN_TEXT
+	elseif evDef.Chapter == 2 then
+		ev.Note.Text = UT("Bell Seals, the Black Coffin, the Gravekeeper and a hidden room")
+		ev.Note.TextColor3 = Theme.InkMuted
 	else
-		ui.EvNote.Text = T("Pumpkin Lucky Blocks, the Haunted Cauldron and the Gravekeeper drop them")
-		ui.EvNote.TextColor3 = Theme.InkMuted
+		ev.Note.Text = T("Pumpkin Lucky Blocks, the Haunted Cauldron and the Gravekeeper drop them")
+		ev.Note.TextColor3 = Theme.InkMuted
 	end
-	win:SetBadge(EVENT_TAB, ready > 0 and tostring(ready) or nil)
-	ui.EvGrid:SetItems(st.EventEntries, { ResetScroll = false })
+	win:SetBadge(ev.Tab, ready > 0 and tostring(ready) or nil)
+	ev.Grid:SetItems(st.EventEntries[ev.Id] or {}, { ResetScroll = false })
 	local layout = win:GetLayout()
 	if layout.Width > 2 and layout.Height > 2 then
-		layoutEvent(layout.Width, layout.Height, layout.Phone, layout.Landscape)
+		layoutEvent(ev, layout.Width, layout.Height, layout.Phone, layout.Landscape)
+	end
+end
+
+refreshEvent = function()
+	if not ui or not ui.Events then
+		return
+	end
+	for _, ev in ipairs(ui.EventOrder) do
+		refreshOneEvent(ev)
 	end
 end
 
@@ -1154,7 +1298,9 @@ refresh = function(snapshot: any?)
 		return
 	end
 	st.Entries = Info.SpeciesEntries(profile(), dexView(), names())
-	st.EventEntries = Info.SpeciesEntries(profile(), dexView(), names(), Info.EventSpecies[EVENT_DEX] or {})
+	for _, ev in ipairs(EVENTS) do
+		st.EventEntries[ev.Id] = Info.SpeciesEntries(profile(), dexView(), names(), Info.EventSpecies[ev.Id] or {})
+	end
 	refreshList(false)
 	refreshRewards()
 	refreshEvent()
@@ -1367,6 +1513,16 @@ local function sourceRow(source: any): (string, string, string?)
 		return T("DOG-O-MATIC"), T("A possible prize of the machine"), "DOG-O-MATIC PLAZA"
 	elseif source.Key == "Jackpot" then
 		return T("DOG-O-MATIC JACKPOT"), T("Exclusive: only the machine's jackpot gives it"), "DOG-O-MATIC PLAZA"
+	elseif source.Key == "Event" and Info.IsChapter2(source.Event) then
+		-- THE UNDERYARD: Bell Seals, the Black Coffin, the Gravekeeper's last stand, the hidden room behind a Crooked Door
+		if not Info.EventLive(source.Event) then
+			return UT("THE UNDERYARD"), T(EVENT_OVER_TEXT), nil
+		end
+		local parts = {}
+		for _, pair in ipairs(UV and source.DogId and UV.DogSources(source.DogId) or {}) do
+			table.insert(parts, UL(pair))
+		end
+		return UT("THE UNDERYARD"), #parts > 0 and table.concat(parts, " · ") or UT("Descend through the church in the Dead Yard"), "DeadYard"
 	elseif source.Key == "Event" then
 		if not Info.EventLive() then
 			return T("NIGHT OF THE BURIED MOON"), T("The event is over. Event dogs can still be traded."), nil
@@ -1691,8 +1847,8 @@ end)
 local function rebuildIfLanguageChanged()
 	if win and ui and ui.Lang ~= Kit.Lang() and not win.IsOpen and not (entryWin and entryWin.IsOpen) then
 		ui.Grid:Destroy()
-		if ui.EvGrid then
-			ui.EvGrid:Destroy()
+		for _, ev in ipairs(ui.EventOrder or {}) do
+			ev.Grid:Destroy()
 		end
 		win:Destroy()
 		win, ui = nil, nil
@@ -1717,10 +1873,16 @@ function S.Open(opts: any?)
 	win:Open()
 end
 
--- The NIGHT OF THE BURIED MOON event dex tab (Halloween window "OPEN IN DOGDEX").
-function S.OpenEvent()
-	S.Open({ Tab = EVENT_TAB })
+-- An event dex tab (Halloween window "OPEN IN DOGDEX"): eventId nil / "BuriedMoon2026" = NIGHT OF THE BURIED MOON,
+-- "Underyard2026" = THE UNDERYARD COLLECTION (the Underyard window's OPEN DOGDEX; the BURIED MOON tab while Chapter II is off)
+function S.OpenEvent(eventId: string?)
+	local ev = eventOf(eventId or EVENT_DEX) or EVENTS[1]
+	if ev.Chapter == 2 and not Info.EventEnabled(ev.Id) then
+		ev = EVENTS[1]
+	end
+	S.Open({ Tab = ev.Tab })
 end
+S.EventTab = EVENT_TAB
 
 function S.Close()
 	if entryWin and entryWin.IsOpen then
@@ -1765,8 +1927,10 @@ function S.OpenEntry(dogId: string, opts: any?)
 	if #st.Entries == 0 then
 		st.Entries = Info.SpeciesEntries(profile(), dexView(), names())
 	end
-	if #st.EventEntries == 0 then
-		st.EventEntries = Info.SpeciesEntries(profile(), dexView(), names(), Info.EventSpecies[EVENT_DEX] or {})
+	for _, ev in ipairs(EVENTS) do
+		if not st.EventEntries[ev.Id] or #st.EventEntries[ev.Id] == 0 then
+			st.EventEntries[ev.Id] = Info.SpeciesEntries(profile(), dexView(), names(), Info.EventSpecies[ev.Id] or {})
+		end
 	end
 	if not entryWin.IsOpen then
 		entryWin:Open()
@@ -1795,7 +1959,8 @@ function S.Step(direction: number)
 				refreshEntry()
 				ew.Scroll.CanvasPosition = Vector2.zero
 				if win and win.IsOpen then
-					local grid = (target.Def and target.Def.EventDex and ui.EvGrid) or ui.Grid
+					local evUI = target.Def and target.Def.EventDex and ui.Events and ui.Events[target.Def.EventDex]
+					local grid = (evUI and evUI.Grid) or ui.Grid
 					grid:ScrollToKey(target.Id, true)
 				end
 			end
