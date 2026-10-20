@@ -946,3 +946,85 @@ WP-E also owns `SSS/Economy/EventBlocks.luau` (Dust reward kind for the filler) 
 (MinuteCap order, EarnCandy, `Dust` kind in ctx.Reward); it may make a marked minimal edit in `Shared.BrewSeconds` and in
 HS to display `View.Cauldron.TrickPrice`. WP-K2 may edit the `C.Skins` block of Config.luau. WP-P owns `Music.luau`
 (new themes); WP-H2 wires them in `Soundscape.luau`. WP-M may edit the `ROOTS` table of `tools/verify_world.luau`.
+
+------------------------------------------------------------------------------------------------------------------------
+## 23. Gravekeeper endgame + finale protocol (binding for WP-C server ↔ WP-N client)
+
+Existing `BossEvent` kinds and `State.Boss` attributes stay compatible (A02 §5.8, A05 §7.2). Additions:
+
+### 23.1 Combat integration
+* Fighters = alive players inside the pit (`Layout.InPit` or the arena floor box) — rim/bell players no longer count and
+  cannot hit plates/weak points. EventHP zone id `"Boss"`; fighters are entered on fight start / pit entry.
+* Telegraphed attacks that hurt are sent as EventHP hazards (CombatFX draws them). The `BossEvent Attack {Stage =
+  "Telegraph", ...}` signal is kept for the boss animation and carries `HazardId` (or `HazardIds`) → BossFX must NOT draw
+  its own telegraph when `HazardId` is present (it still plays wind-up/impact animation + impact FX).
+* Endgame patterns (difficulties III-V): `BossEvent Pattern {Name = "GraveLines"|"LanternWalk"|"BoneRain", StartAt,
+  Duration, HazardIds}` (banner + boss pose); hazards do the rest.
+* `BossEvent Wiped {}` when the team wipes (then the usual `Escaped {Reason = "Wiped"}`).
+
+### 23.2 Finale (difficulty V, `Shared.BossFinaleEnabled()`)
+`RS.Halloween.State.Finale` attributes: `State` ("" | "FakeDeath" | "Bell" | "Choir" | "Hound" | "Victory" | "Fail"),
+`StageStart`, `StageUntil` (server time), `Chain` (active chain key "N"|"E"|"S"|"W"|""), `ChainsLeft`, `ChainHits`,
+`ChainNeed`, `Candles` (string of "1"/"0" for 6 candles), `Pattern` (target string), `Round`, `Rounds`, `HoundHP`,
+`HoundMax`, `CounterUntil`, `Bpm`, `Revision`. `State.Boss` keeps its attributes (Phase stays 5, Mode "Finale").
+`BossEvent Finale {Stage = ..., ...}` sub-kinds:
+| Stage | Payload | Client meaning |
+|---|---|---|
+| `FakeDeath` | At, Seconds (6) | music hard stop; boss collapse; at At+1.2 fake reward flash "THE GRAVEKEEPER FALLS!"; silence to At+3.9; rumble + shake + bell toll; At+4.8 the fake card cracks into ash ("…not yet" / "…ещё нет"); At+5.4 the spirit tears out |
+| `Bell` | StartAt, BellCF (CFrame of the bell centre), Chains {N,E,S,W = Vector3 rim anchors}, Pulse (1.2), Bright (0.55 = fraction of each pulse that counts), Need | the Black Bell descends to BellCF over 2.5 s; chains attach |
+| `ChainActive` | Key, Since (server time, pulse phase 0), Pulse, Bright, Need, Hits | that chain glows and pulses; bright half = hits count |
+| `ChainHit` | Key, Hits, Need, UserId, Counted (bool) | crack FX; "IMMUNE"/"MISSED THE TOLL" when not counted |
+| `ChainBreak` | Key, Left | chain shatters |
+| `BellToll` | At | bell swing + toll sound (the shockwave itself is a Ring hazard) |
+| `Choir` | StartAt, Candles {[i] = {Position, Lit}}, Pattern, Round, Rounds | arena changes: fog, candles rise on the terrace, choir |
+| `Candle` | Index, Lit, UserId | flame on/off |
+| `Round` | Round, Pattern, Cleared (bool) | new target pattern shown on the bell / round cleared |
+| `WeakOpen` | Points {{Id, Position}}, Until | buried weak points glow (Strike targets kind `FinaleWeak`) |
+| `Ghosts` | Count | ghost dog adds spawned (Strike targets kind `FinaleGhost`; client renders a ghost dog on each target part) |
+| `Hound` | StartAt, Bpm (100), HoundCF, MoonDir, HP, Max | the spectral hound rises behind the pit, Black Moon behind it; music FINALE_HOUND anchored at StartAt |
+| `HoundPattern` | Name ("Circles"|"Lines"|"Waves"|"SafeDance"), BeatAt, Beats | hound animation for that pattern (hazards carry the damage) |
+| `Bark` | At, CounterUntil, JawPos | stagger; jaw weak point opens (Strike kind `HoundJaw`, Perfect only) |
+| `Counter` | HP, Max, UserId, Hits | jaw hit feedback |
+| `Victory` | At, Top {{UserId, Name, Score}} | hound howls, shatters into moths, Black Moon cracks, dawn-blue light |
+| `Fail` | Reason ("Wipe"|"Time") | "THE BELL SILENCES YOU" |
+Strike target kinds (invisible target parts with attributes, client renders visuals): `FinaleChain` (attr Key),
+`FinaleCandle` (attr Index, Lit), `FinaleWeak`, `FinaleGhost`, `HoundJaw`. All finale hazards use EventHP zone "Boss".
+Journal replay of the finale intro: Bus `C2Replay {Id = "Finale"}` → client-only replay of FakeDeath → Bell rise.
+
+------------------------------------------------------------------------------------------------------------------------
+## 24. Trials client contract, world animation ownership, replays (binding for Wave 2)
+
+### 24.1 `HC/Trials.luau` (WP-I) + presenters in `HC/Trials/<Name>.luau` (WP-I seals I-IV, WP-J V-VII + Assault)
+`Trials.luau` listens to `C2Trial` signals (via Chapter2State Bus "C2Signal"), owns the generic trial HUD (timer bar,
+Score/Goal, Gold target, party list with HP, LEAVE (Activated, confirm), countdown 3-2-1, results card Won/Failed with
+rewards and Gold), and the generic seal-clear cinematic on `C2Seal {Stage = "Cleared"|"Gold"}` (Cinema orbit of the
+tower, altar ignition, the next gate veil dissolving, district lights on) + its journal replay (`C2Replay {Id = "Seal",
+Seal = i}`). It requires every ModuleScript child of `Trials` as a presenter:
+```lua
+return { Ids = { "Echo" }, -- trial ids (Chapter2Config.Seals[i].Trial.Id / Trials.Defs keys)
+  Start = function(ctx, run) end,          -- run = C2Trial payload (TrialId, Seal, RunId, EndsAt, Players, Data, ...)
+  Update = function(ctx, run) end,         -- every C2Trial Score/Tick
+  Signal = function(ctx, kind, data, run) end, -- any other C2Trial Kind for this trial (activity specific)
+  Stop = function(ctx, run, result) end,   -- Won/Failed/Left
+  HudLines = function(run) -> {string}? }  -- optional extra objective lines
+-- ctx = Halloween client ctx + ctx.Trials = {Request(action, args) (C2Trial wrapper), Run(), Banner(en, ru, opts),
+--        Toast(en, ru), Mark(pos, labelEn, labelRu) -> handle, Cinema, Mixer}
+```
+### 24.2 World animation ownership (client)
+`HC/UnderyardFX.luau` (WP-H2) animates every generic world attribute in `40_Underyard`: `UySpin` (carousel), pendulums
+`UySwingAmp/UySwingPeriod` with angle = Amp·sin(2π·(serverTime mod Period)/Period) — the SERVER pendulum hazard in
+SealRun (WP-I) uses the same formula and time base —, `UySwing` (Black Bell sway), `UyBlink` eyes, `UyShowAtSeal /
+UyHideAtSeal / UyLightAtSeal`, gate veils + SEALED text, `HwLantern`/candles flicker, ambient motes/moths/residents at FX
+markers. Activity-state visuals belong to the presenters: mirror grave stone rotation (I), door leaves opening (J), chain
+glow in the Last Bell Trial (J), echo point visuals (I), hollow ore (I), choir spirits (J).
+### 24.3 Replays (Event Journal)
+Bus `C2Replay {Id}`: "Reveal" (notification), "Church" (church cinematic), "Portal" (transition) → WP-F; "Seal" {Seal}
+→ WP-I Trials; "Finale" → WP-N; "Guide" → Chapter I guide (`Bus Onboarding {Replay=true}`), "Brew" → CauldronFX
+(A04 §11.A recipe) — both fired by the UI (WP-L). Replays never send requests that grant or set flags.
+### 24.4 Server-wide announcements
+`Signal "C2Announce" {Kind = "HollowKing"|"Mythic"|"FinaleClear"|"Assault", Name, UserId, DogId?}` to all players
+(WP-K4 coffin secret/mythic, WP-C finale first clear, WP-J assault start) → banner in HUD (WP-L) + Secret show (WP-K4).
+### 24.5 Music overrides
+Soundscape (WP-H2) decides themes: BOSS/FINALE_* from State.Boss/State.Finale > TRIAL (player attribute UyTrial ≠ "")
+> UNDERYARD (in zone) > Blood Moon > ZONE > NIGHT. One-shot stings and short overrides: Bus `MusicOverride {Theme,
+Seconds, Fade}` (COFFIN, REVEAL) handled by Soundscape.
