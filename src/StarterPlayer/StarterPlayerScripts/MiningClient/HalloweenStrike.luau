@@ -371,7 +371,7 @@ function Strike.new(ctx)
     HFX.Burst(pos,{Color=C3(190,110,255),Color2=C3(255,255,255),Count=8,Speed={4,9},Lifetime={.4,.8},Size={.25,.5,0},Drag=3,Acceleration=Vector3.zero})
    end
   end
-  if HAudio then HAudio.Play('Sparkle',nil,{Volume=.8})end
+  -- [WP-P] the sparkle is part of the kit's Perfect stack now (MiningAudio PERFECT_STACK): no second Sparkle cue
   if not reducedMotion()then holdUntil=os.clock()+HIT_STOP end
  end
  local function judge(c)
@@ -625,6 +625,19 @@ function Strike.new(ctx)
     if HFX then HFX.Shake(.9,.4)end
    else
     FX.Popup(pos,'-'..Text.Short(math.max(1,math.floor((result.Damage or 0)+.5))),result.Quality==2 and U.Colors.gold or C3(150,235,255),result.Quality==2)
+   end
+  end
+  -- [WP-P] a weak point took the hit (Boss weak spots and Chapter II weak kinds reply Extra.Weak = true; plates only
+  -- carry BossDamage): its own juicy cue (crack + low punch + bright tick) and a short camera kick
+  if extra and extra.Weak==true and not extra.Miss then
+   Audio.Play('WeakPoint')
+   if not reducedMotion()then
+    local hc=script.Parent.Parent:FindFirstChild('HalloweenClient')
+    local cinemaMod=hc and hc:FindFirstChild('Cinema')
+    local okC,Cinema=pcall(function()return cinemaMod and require(cinemaMod)end)
+    local root=player.Character and player.Character:FindFirstChild('HumanoidRootPart')
+    if okC and Cinema and Cinema.Impulse then Cinema.Impulse(result.Crit and 1.2 or .85,pos and root and(pos-root.Position)or nil)
+    elseif HFX and HFX.Punch then HFX.Punch(result.Crit and .9 or .65)end
    end
   end
   candyGain(result.Candy,pos)

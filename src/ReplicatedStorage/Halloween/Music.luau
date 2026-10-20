@@ -6,10 +6,17 @@
 --
 -- API
 --   Music.Start()                         create the voice pools + Heartbeat sequencer (idempotent)
---   Music.SetTheme(name|nil, opts?)       crossfade to NIGHT | ZONE | BLOOD_WARN | BLOOD_MOON | BOSS | nil (silence)
+--   Music.SetTheme(name|nil, opts?)       crossfade to NIGHT | ZONE | BLOOD_WARN | BLOOD_MOON | BOSS | nil (silence), or a
+--                                         CHAPTER II theme: UNDERYARD | TRIAL | COFFIN | FINALE_BELL | FINALE_CHOIR |
+--                                         FINALE_HOUND | REVEAL
 --                                         opts {Fade = seconds (default Config.Music.Crossfade = 3), Elapsed = seconds
---                                         since the theme's musical start (anchors BLOOD_WARN to the warning timestamp)}
---   Music.SetLayer(theme, layer, gain)    optional layers inside a theme (BOSS "Enrage")
+--                                         since the theme's musical start (anchors BLOOD_WARN to the warning timestamp;
+--                                         FINALE_HOUND to the server's stage start so every client shares one beat)}
+--   Music.SetLayer(theme, layer, gain)    optional layers inside a theme (BOSS "Enrage", TRIAL "Urgent",
+--                                         FINALE_HOUND "Frenzy")
+--   Music.Beat(theme?) -> bpm, phase, beat  the theme's beat clock (default: the current theme): beat = beats since its
+--                                         musical origin, phase = beat % 1 (0 on the beat). A theme that is not playing
+--                                         counts beats on the server clock, so clients still agree.
 --   Music.SetMaster(v)                    0..1 (music setting x world-event-track-audible), smoothed over 1.5 s
 --   Music.Stop(fade?)                     fade everything out and stop the sequencer
 --   Music.Snapshot()                      {Theme, Gains = {name = gain}, Voices, Master, Uploads}
@@ -63,6 +70,16 @@ I.Stab = { Id = SRC.PING, Speed = 1, Volume = .17, Dur = .75, Fade = .3, Pool = 
 	Fx = { DistortionSoundEffect = { Level = .55 }, EqualizerSoundEffect = EQ(6, 3, -12) } }
 I.Alarm = { Id = SRC.PING, Speed = 1, Volume = .1, Dur = .5, Fade = .2, Pool = 2, Tail = "Hall", Melodic = true,
 	Fx = { EqualizerSoundEffect = EQ(-6, 2, 4) } }
+-- CHAPTER II (WP-P): a plucked string (the Underyard's pizzicato waltz), a soft choir pad (Attack = fade-in seconds), a
+-- tight low kick for the hound's beat, a high celesta sparkle
+I.Pizz = { Id = SRC.PING, Speed = 1, Volume = .12, Dur = .32, Fade = .14, Pool = 4, Tail = "Hall", Melodic = true,
+	Fx = { EqualizerSoundEffect = EQ(4, 3, -8) } }
+I.Pad = { Id = SRC.PING, Speed = .5, Volume = .07, Dur = 7.5, Fade = 1.6, Attack = .7, Loop = true, Pool = 6, Tail = "Crypt", Melodic = true,
+	Fx = { ChorusSoundEffect = { Depth = .45, Mix = .7, Rate = 1.1 }, TremoloSoundEffect = { Frequency = 4.5, Depth = .2, Duty = .5 },
+		EqualizerSoundEffect = EQ(2, 3, -12) } }
+I.Kick = { Id = SRC.LAND, Speed = .32, Volume = .3, Dur = .4, Fade = .12, Pool = 3, Fx = { EqualizerSoundEffect = EQ(10, -4, -26) } }
+I.Celesta = { Id = SRC.PING, Speed = 2, Volume = .05, Dur = 1.2, Fade = .5, Pool = 3, Tail = "Hall", Melodic = true, Rich = true,
+	Fx = { EqualizerSoundEffect = EQ(-10, 0, 4) } }
 
 -- Looped beds inside themes. Vol/Speed: number or {from, to} ramp over Ramp seconds of theme time; Lfo = {depth, period}.
 local L = {}
@@ -84,6 +101,16 @@ L.ChoirThird = { Id = SRC.PING, Speed = .5 * 2 ^ (3 / 12), Vol = .022, Rich = tr
 L.Low = { Id = SRC.WIND, Speed = .3, Vol = .06, Lfo = { .3, 5 }, Fx = { EqualizerSoundEffect = EQ(10, -6, -30) } }
 L.BossDrone = { Id = SRC.PING, Speed = .33, Vol = .05, Rich = true, Lfo = { .2, 4 },
 	Fx = { TremoloSoundEffect = { Frequency = 6, Depth = .35, Duty = .5 }, DistortionSoundEffect = { Level = .3 }, EqualizerSoundEffect = EQ(8, -2, -16) } }
+-- CHAPTER II beds: the low choir drone on D (+ its fifth), sub drones of the reveal, a cavern air bed
+L.ChoirD = { Id = SRC.PING, Speed = .5 * 2 ^ (5 / 12), Vol = .03, Lfo = { .45, 7 },
+	Fx = { ChorusSoundEffect = { Depth = .45, Mix = .7, Rate = 1 }, TremoloSoundEffect = { Frequency = .35, Depth = .5, Duty = .5 }, EqualizerSoundEffect = EQ(4, 2, -14) } }
+L.ChoirA = { Id = SRC.PING, Speed = .5, Vol = .02, Rich = true, Lfo = { .5, 9 },
+	Fx = { ChorusSoundEffect = { Depth = .5, Mix = .7, Rate = .8 }, TremoloSoundEffect = { Frequency = .28, Depth = .5, Duty = .5 }, EqualizerSoundEffect = EQ(4, 2, -14) } }
+L.Sub = { Id = SRC.WIND, Speed = .27, Vol = .07, Lfo = { .35, 6 }, Fx = { EqualizerSoundEffect = EQ(10, -8, -30) } }
+L.SubSine = { Id = SRC.PING, Speed = .25, Vol = { .01, .04 }, Ramp = 12, Lfo = { .3, 5 },
+	Fx = { EqualizerSoundEffect = EQ(10, -6, -30), ChorusSoundEffect = { Depth = .3, Mix = .5, Rate = .25 } } }
+L.Cavern = { Id = SRC.WIND, Speed = .4, Vol = .028, Lfo = { .4, 13 },
+	Fx = { EqualizerSoundEffect = EQ(5, -3, -14), FlangeSoundEffect = { Depth = .7, Mix = .5, Rate = .08 } } }
 
 ---------------------------------------------------------------------------------------------------------------------
 -- Themes. Notes = {beat, semitone (A = 0), length in beats, velocity}.
@@ -249,6 +276,209 @@ T.BOSS = { Bpm = 120, Beats = 32, Parts = {
 	{ Inst = "Alarm", Notes = BOSS_ALARM, Layer = "Enrage" },
 	{ Inst = "Hit", Notes = BOSS_ENRAGE_HIT, Layer = "Enrage" },
 }, Loops = { "BossDrone", "Low" } }
+
+---------------------------------------------------------------------------------------------------------------------
+-- CHAPTER II · THE UNDERYARD themes (WP-P, docs/halloween2/DESIGN.md §16.4). Soundscape (WP-H2) picks them:
+-- BOSS / FINALE_* > TRIAL > UNDERYARD > Blood Moon > ZONE > NIGHT; COFFIN and REVEAL are set by their presentations.
+-- D minor throughout (D = semitone -7 / 5 relative to A = 0).
+---------------------------------------------------------------------------------------------------------------------
+local function sorted(notes)
+	table.sort(notes, function(a, b)
+		return a[1] < b[1]
+	end)
+	return notes
+end
+
+-- UNDERYARD: 66 BPM waltz (16 bars of 3/4): a music box over a pizzicato "oom-pah-pah" and a low choir drone on D
+local UY_MELODY = {
+	{ 0, 0, 1.5, .8 }, { 1.5, 1, .5, .6 }, { 2, 0, 1, .6 }, { 3, -4, 2, .7 }, { 5, -2, 1, .55 },
+	{ 6, -2, 1, .7 }, { 7, 1, 1, .6 }, { 8, 5, 1, .65 }, { 9, 4, 2, .75 }, { 11, 0, 1, .5 },
+	{ 12, 5, 1.5, .8 }, { 13.5, 7, .5, .6 }, { 14, 8, 1, .65 }, { 15, 5, 2, .7 }, { 17, 1, 1, .5 },
+	{ 18, -2, 1, .65 }, { 19, 0, 1, .6 }, { 20, 1, 1, .6 }, { 21, 4, 3, .8 },
+	{ 24, 0, 1, .75 }, { 25, -4, 1, .55 }, { 26, -7, 1, .6 }, { 27, 3, 2, .7 }, { 29, 0, 1, .55 },
+	{ 30, 1, 1.5, .75 }, { 31.5, 0, .5, .55 }, { 32, -2, 1, .6 }, { 33, -4, 2, .7 }, { 35, -7, 1, .5 },
+	{ 36, -2, 1, .65 }, { 37, 1, 1, .6 }, { 38, 5, 1, .7 }, { 39, 3, 1, .65 }, { 40, 1, 1, .6 }, { 41, -2, 1, .6 },
+	{ 42, 4, 2, .75 }, { 44, 7, 1, .6 }, { 45, 5, 3, .85 },
+}
+-- bar chords: {bass root, two "pah" tones}
+local UY_CHORDS = {
+	{ -19, -4, 0 }, { -19, -4, 0 }, { -14, -2, 1 }, { -12, -8, -2 }, { -19, -4, 0 }, { -11, -7, -4 }, { -14, -5, -2 }, { -12, -8, -5 },
+	{ -19, -4, 0 }, { -16, 0, 3 }, { -14, -2, 1 }, { -19, -4, 0 }, { -11, -7, -4 }, { -14, -2, 1 }, { -12, -8, -2 }, { -19, -4, 0 },
+}
+local UY_WALTZ = {}
+for bar, ch in ipairs(UY_CHORDS) do
+	local b = (bar - 1) * 3
+	table.insert(UY_WALTZ, { b, ch[1], 1, .85 })
+	table.insert(UY_WALTZ, { b + 1, ch[2], .5, .45 })
+	table.insert(UY_WALTZ, { b + 1, ch[3], .5, .4 })
+	table.insert(UY_WALTZ, { b + 2, ch[2], .5, .38 })
+	table.insert(UY_WALTZ, { b + 2, ch[3], .5, .34 })
+end
+sorted(UY_WALTZ)
+-- the celesta answers the second half of every phrase an octave up (Rich: dropped on Low)
+local UY_ECHO = pick(UY_MELODY, function(n)
+	local bar = math.floor(n[1] / 3)
+	if bar % 4 == 2 or bar % 4 == 3 then
+		return { n[1] + .5, n[2] + 12, n[3], n[4] * .5 }
+	end
+	return nil
+end)
+T.UNDERYARD = { Bpm = 66, Beats = 48, Parts = {
+	{ Inst = "Box", Notes = UY_MELODY, Priority = 1 },
+	{ Inst = "Pizz", Notes = UY_WALTZ, Priority = 2 },
+	{ Inst = "Celesta", Notes = UY_ECHO, Rich = true },
+}, Loops = { "ChoirD", "ChoirA" } }
+
+-- TRIAL: 108 BPM tense ostinato in 8ths (8 bars of 4/4), a ticking clock, bell on every second bar, the snare enters in
+-- the second half; layer "Urgent" (the last seconds of a trial) adds the alarm and a driving pulse
+local TRIAL_PAT = { 0, 0, 3, 0, 1, 0, -1, 0 }
+local TRIAL_SHIFT = { 0, 0, -4, -4, -2, -2, -1, -1 }
+local TRIAL_OST = grid(32, .5, function(i, b)
+	local bar = math.floor(b / 4)
+	return { b, -19 + TRIAL_PAT[i % 8 + 1] + TRIAL_SHIFT[bar + 1], .5, (i % 8 == 0) and .85 or (i % 2 == 0) and .6 or .48 }
+end)
+local TRIAL_CLOCK = grid(32, .5, function(i, b)
+	if i % 2 == 0 then
+		return nil
+	end
+	return { b, 0, .25, .45 }
+end)
+local TRIAL_BELL = { { 0, 5, 4, .8 }, { 8, 1, 4, .7 }, { 16, 3, 4, .75 }, { 24, 4, 4, .8 } }
+local TRIAL_PULSE = grid(32, 1, function(_, b)
+	return { b, 0, .5, .6 }
+end)
+local TRIAL_SNARE = grid(32, 2, function(_, b)
+	if b < 16 then
+		return nil
+	end
+	return { b + 1, 0, .5, .5 }
+end)
+local TRIAL_ALARM = grid(32, 1, function(i, b)
+	return { b, (i % 2 == 0) and 5 or 11, .5, (i % 4 == 0) and .75 or .5 }
+end)
+T.TRIAL = { Bpm = 108, Beats = 32, Parts = {
+	{ Inst = "Ost", Notes = TRIAL_OST, Priority = 1 },
+	{ Inst = "Clock", Notes = TRIAL_CLOCK },
+	{ Inst = "Bell", Notes = TRIAL_BELL, Priority = 2 },
+	{ Inst = "Heart", Notes = TRIAL_PULSE, Priority = 2 },
+	{ Inst = "Snare", Notes = TRIAL_SNARE },
+	{ Inst = "Alarm", Notes = TRIAL_ALARM, Layer = "Urgent" },
+	{ Inst = "Kick", Notes = TRIAL_PULSE, Layer = "Urgent" },
+}, Loops = { "Tension", "Low" } }
+
+-- COFFIN: a one-shot sting (80 BPM, 8 beats, NoLoop): a D-minor bell chord, a rising music-box run, a timpani hit, the
+-- choir holds under it while the theme stays set
+T.COFFIN = { Bpm = 80, Beats = 8, NoLoop = true, Parts = {
+	{ Inst = "Bell", Notes = { { 0, 5, 4, .9 }, { 0, -7, 4, .5 }, { 4, 1, 4, .7 } }, Priority = 1 },
+	{ Inst = "Hit", Notes = { { 0, 0, 1, .8 }, { 4, 0, 1, .6 } }, Priority = 1 },
+	{ Inst = "Box", Notes = { { .5, 5, .5, .6 }, { 1, 8, .5, .62 }, { 1.5, 12, .5, .66 }, { 2, 17, 1, .75 }, { 4.5, 13, .5, .55 },
+		{ 5, 16, .5, .6 }, { 5.5, 17, 2, .7 } }, Priority = 2 },
+}, Loops = { "Choir", "ChoirThird" } }
+
+-- FINALE_BELL: phase I, the bell ostinato (92 BPM, 8 bars): bells in quarters, timpani on every bar, a pulsing bass, the
+-- low ostinato in 8ths, snares in the second half
+local FB_BELLS = {}
+do
+	local bars = { { 5, 0, 8, 0 }, { 5, 0, 10, 0 }, { 1, 8, 5, 8 }, { 0, -5, 4, -5 }, { 5, 0, 8, 0 }, { 5, 0, 10, 0 }, { 1, 8, 5, 8 }, { 4, 0, 4, 7 } }
+	for bar, notes in ipairs(bars) do
+		for beat, semi in ipairs(notes) do
+			table.insert(FB_BELLS, { (bar - 1) * 4 + beat - 1, semi, 1, beat == 1 and .85 or .55 })
+		end
+	end
+end
+local FB_BASS = grid(32, 2, function(i, b)
+	local roots = { -19, -19, -11, -12, -19, -14, -11, -12 }
+	return { b, roots[math.floor(b / 4) + 1], 2, (i % 2 == 0) and .85 or .6 }
+end)
+local FB_OST = grid(32, .5, function(i, b)
+	local bar = math.floor(b / 4)
+	local shift = ({ 0, 0, -4, -5, 0, 0, -4, -5 })[bar + 1]
+	return { b, -19 + shift + ((i % 4 == 2) and 7 or 0), .5, (i % 2 == 0) and .5 or .38 }
+end)
+local FB_HIT = grid(32, 4, function(_, b)
+	return { b, 0, 1, .8 }
+end)
+local FB_SNARE = grid(32, 1, function(i, b)
+	if b < 16 or i % 2 == 0 then
+		return nil
+	end
+	return { b, 0, .5, .5 }
+end)
+T.FINALE_BELL = { Bpm = 92, Beats = 32, Parts = {
+	{ Inst = "Bell", Notes = FB_BELLS, Priority = 1 },
+	{ Inst = "Hit", Notes = FB_HIT, Priority = 1 },
+	{ Inst = "Bass", Notes = FB_BASS, Priority = 2 },
+	{ Inst = "Ost", Notes = FB_OST, Rich = true },
+	{ Inst = "Snare", Notes = FB_SNARE },
+}, Loops = { "BossDrone", "Choir" } }
+
+-- FINALE_CHOIR: phase II, the buried choir (70 BPM, 8 bars): slow choir pad chords (Dm, Bb, Gm, A), a heartbeat under
+-- them, a few high music-box notes
+local FC_CHORDS = { { -7, -4, 0 }, { -11, -7, -4 }, { -14, -11, -7 }, { -12, -8, -5 } }
+local FC_PAD = {}
+for i, ch in ipairs(FC_CHORDS) do
+	for v, semi in ipairs(ch) do
+		table.insert(FC_PAD, { (i - 1) * 8, semi + 12, 8, ({ .85, .7, .7 })[v] })
+	end
+end
+sorted(FC_PAD)
+local FC_HEART = {}
+for b = 0, 31, 2 do
+	table.insert(FC_HEART, { b, 0, .3, (b % 8 == 0) and .85 or .65 })
+	table.insert(FC_HEART, { b + .32, 0, .3, (b % 8 == 0) and .6 or .45 })
+end
+local FC_BOX = { { 3, 12, 2, .5 }, { 6, 10, 2, .45 }, { 11, 13, 2, .5 }, { 14, 8, 2, .45 }, { 19, 10, 2, .5 }, { 22, 5, 2, .45 },
+	{ 27, 16, 2, .5 }, { 30, 12, 2, .45 } }
+T.FINALE_CHOIR = { Bpm = 70, Beats = 32, Parts = {
+	{ Inst = "Pad", Notes = FC_PAD, Priority = 1 },
+	{ Inst = "Heart", Notes = FC_HEART, Priority = 1 },
+	{ Inst = "Box", Notes = FC_BOX, Rich = true },
+}, Loops = { "Choir", "ChoirThird", "Low" } }
+
+-- FINALE_HOUND: phase III, THE LAST BARK (100 BPM, 8 bars, the beat clock of the hound's patterns, see Music.Beat): a
+-- four-on-the-floor kick, snares on 2 and 4, a driving octave ostinato, stabs on every bar; layer "Frenzy" adds the
+-- alarm and an offbeat hit
+local FH_KICK = grid(32, 1, function(i, b)
+	return { b, 0, .5, (i % 4 == 0) and .9 or .7 }
+end)
+local FH_SNARE = grid(32, 1, function(i, b)
+	if i % 2 == 0 then
+		return nil
+	end
+	return { b, 0, .5, .6 }
+end)
+local FH_PAT = { 0, 12, 0, 3, 0, 12, 1, 0 }
+local FH_SHIFT = { 0, 0, -4, -4, -2, -2, -1, 1 }
+local FH_OST = grid(32, .5, function(i, b)
+	local bar = math.floor(b / 4)
+	return { b, -19 + FH_PAT[i % 8 + 1] + FH_SHIFT[bar + 1], .5, (i % 4 == 0) and .85 or .55 }
+end)
+local FH_STAB = grid(32, 4, function(i, b)
+	return { b, ({ -7, -7, -11, -11, -9, -9, -8, -6 })[i + 1], 1, .7 }
+end)
+local FH_ALARM = grid(32, .5, function(i, b)
+	if i % 2 == 0 then
+		return nil
+	end
+	return { b, (i % 4 == 1) and 5 or 6, .25, .55 }
+end)
+local FH_OFFHIT = grid(32, 1, function(_, b)
+	return { b + .5, 0, .5, .45 }
+end)
+T.FINALE_HOUND = { Bpm = 100, Beats = 32, Parts = {
+	{ Inst = "Kick", Notes = FH_KICK, Priority = 1 },
+	{ Inst = "Ost", Notes = FH_OST, Priority = 1 },
+	{ Inst = "Snare", Notes = FH_SNARE, Priority = 2 },
+	{ Inst = "Stab", Notes = FH_STAB, Priority = 2 },
+	{ Inst = "Alarm", Notes = FH_ALARM, Layer = "Frenzy" },
+	{ Inst = "Hit", Notes = FH_OFFHIT, Layer = "Frenzy" },
+}, Loops = { "BossDrone", "Low" } }
+
+-- REVEAL: sub drones (50 BPM, 16 beats): the sub rises out of silence, a far bell every 8 beats, a dark bass under it
+T.REVEAL = { Bpm = 50, Beats = 16, Parts = {
+	{ Inst = "Bell", Notes = { { 0, -7, 6, .55 }, { 8, -12, 6, .45 } }, Priority = 1 },
+	{ Inst = "Bass", Notes = { { 0, -19, 8, .7 }, { 8, -20, 8, .6 } }, Priority = 2 },
+}, Loops = { "Sub", "SubSine", "Cavern" } }
 
 ---------------------------------------------------------------------------------------------------------------------
 -- Pure sequencer: one Player per theme (gain ramp + note cursors on a shared musical clock)
@@ -449,7 +679,7 @@ local function pool(instName: string)
 	local def = I[instName]
 	p = { Def = def, Voices = {}, Next = 1 }
 	for i = 1, def.Pool or 2 do
-		p.Voices[i] = { Sound = newSound(def.Id, def.Fx, tail(def.Tail), false), EndAt = 0, Token = 0 }
+		p.Voices[i] = { Sound = newSound(def.Id, def.Fx, tail(def.Tail), def.Loop == true), EndAt = 0, Token = 0 }
 	end
 	state.Pools[instName] = p
 	return p
@@ -486,9 +716,18 @@ local function sound(instName: string, semi: number, volume: number, len: number
 	end
 	local speed = def.Speed * 2 ^ (semi / 12) * (def.Melodic and Music.ROOT or 1)
 	s.PlaybackSpeed = math.clamp(speed, .05, 8)
-	s.Volume = math.clamp(volume, 0, 1.5)
+	local level = math.clamp(volume, 0, 1.5)
 	s.TimePosition = 0
-	s:Play()
+	if def.Attack and def.Attack > 0 then
+		-- a pad swells in (Attack seconds); a looped voice (Loop = true) sustains until its fade below
+		s.Volume = 0
+		s:Play()
+		v.Tween = TweenService:Create(s, TweenInfo.new(def.Attack, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), { Volume = level })
+		v.Tween:Play()
+	else
+		s.Volume = level
+		s:Play()
+	end
 	local dur = math.min(def.Dur, math.max(def.Fade + .05, (len or def.Dur) + def.Fade))
 	v.EndAt = os.clock() + dur
 	task.delay(math.max(0, dur - def.Fade), function()
@@ -707,6 +946,28 @@ end
 
 function Music.Theme(): string?
 	return state.Theme
+end
+
+-- the beat clock of a theme (FINALE_HOUND drives the hound's pattern rhythm on the client): bpm, phase 0..1, beat
+function Music.Beat(theme: string?): (number, number, number)
+	local name = theme or state.Theme
+	local player = name and players[name]
+	if not player then
+		return 0, 0, 0
+	end
+	local bpm = player.Theme.Bpm
+	local spb = 60 / bpm
+	local beat
+	if player.Origin and (player.Gain > 0 or player.Target > 0) then
+		beat = (os.clock() - player.Origin) / spb
+	else
+		local ok, now = pcall(function()
+			return workspace:GetServerTimeNow()
+		end)
+		beat = ((ok and type(now) == "number") and now or os.clock()) / spb
+	end
+	beat = math.max(0, beat)
+	return bpm, beat % 1, beat
 end
 
 function Music.SetLayer(theme: string, layer: string, gain: number)

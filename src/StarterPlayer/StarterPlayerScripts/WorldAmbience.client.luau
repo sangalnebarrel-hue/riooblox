@@ -12,9 +12,28 @@ local state = ReplicatedStorage
 	:WaitForChild("WorldEvents")
 	:WaitForChild("State")
 
-local audioGroup = SoundService
-	:WaitForChild("DOGROTS_AUDIO")
-	:FindFirstChild("Ambient")
+-- [WP-P] the track plays in the Ambience bus of ReplicatedStorage.AudioMixer (SoundService.DOGROTS_AUDIO.Ambience,
+-- ducked with the island's music by Secret arrivals and cinematics); the old lookup ("Ambient") never existed
+local audioGroup = nil
+local busGain = 1 -- the bus level the track is heard through: its volumes are divided by it, so it sounds as before
+do
+	local ok, Mixer = pcall(function()
+		return require(ReplicatedStorage:WaitForChild("AudioMixer", 10))
+	end)
+	if ok and type(Mixer) == "table" then
+		audioGroup = Mixer.Group("Ambience")
+		busGain = audioGroup and (Mixer.Base("Ambience") or audioGroup.Volume) or 1
+	end
+	if not audioGroup then
+		local folder = SoundService:WaitForChild("DOGROTS_AUDIO", 10)
+		audioGroup = folder and (folder:WaitForChild("Ambience", 5) or folder:FindFirstChild("Ambient"))
+		if not (audioGroup and audioGroup:IsA("SoundGroup")) then
+			audioGroup = nil
+		end
+		busGain = audioGroup and audioGroup.Volume or 1
+	end
+	busGain = math.clamp(busGain, .25, 1)
+end
 
 local music = Instance.new("Sound")
 music.Name = "DOGROTS_BackgroundMusic"
@@ -50,7 +69,7 @@ local function updateMusic()
 	currentTween = TweenService:Create(
 		music,
 		TweenInfo.new(1.5),
-		{Volume = targetVolume}
+		{Volume = targetVolume / busGain}
 	)
 
 	currentTween:Play()
