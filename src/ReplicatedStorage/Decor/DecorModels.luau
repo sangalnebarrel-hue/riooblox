@@ -278,7 +278,7 @@ recipes.windmill = function(b)
 		b:Box(V(0.7, 0.8, 0.2), CF(1.6, 4.2, -1.4) * ANG(0, rad(-35), 0), C(150, 210, 240), "Glass")
 	end)
 	-- Hub and four lattice sails (an X, so the span stays inside the spot)
-	local hub = CF(0, 8.0, -1.7)
+	local hub = CF(0, 8.0, -2.0) -- in front of the tower, so the turning sails never cut into it
 	b:CylZ(1.2, 0.9, hub * CF(0, 0, 0.3), wood, "Wood")
 	b:Accent(b:Ball(0.6, hub * CF(0, 0, -0.35), Pal.Gold, "Metal"))
 	local sails = b:Folder("Sails")
@@ -295,6 +295,11 @@ recipes.windmill = function(b)
 	end
 	b:Into(b.Model)
 	sails:SetAttribute("SpinAxis", "Z")
+	-- the sails turn on the client (PlotCosmetics idle animations, see THE UNDERYARD section)
+	sails:SetAttribute("IdleAnim", "Spin")
+	sails:SetAttribute("IdlePivot", hub)
+	sails:SetAttribute("IdleAxis", "Z")
+	sails:SetAttribute("IdlePeriod", 9)
 	-- Balcony
 	b:Ring(CF(0, 3.45, 0.8), 3.1, 0.14, wood, "Wood", 12)
 	b:Detail(function()
@@ -1716,6 +1721,784 @@ recipes.hw_bone_arch = function(b)
 end
 
 ------------------------------------------------------------------------------------------------
+-- THE UNDERYARD (Halloween Chapter II rewards; DecorCatalog categories UnderyardSmall / UnderyardLarge)
+------------------------------------------------------------------------------------------------
+-- The crooked gothic stop-motion look of the Underyard district: leaning silhouettes, stretched lancet
+-- windows, dog motifs everywhere; palette ink / bone / moon blue / violet / sickly green / candle orange.
+-- Idle animations (StarterPlayerScripts.PlotCosmetics) are attributes on a part or on a sub-model (b:Folder):
+--   IdleAnim    "Swing" | "Sway" | "Bob" | "Spin"  move the parts about a pivot
+--               "Flicker" | "Pulse" | "Blink"      glow / visibility only (nothing moves)
+--   IdlePivot   CFrame in the build frame (model space); default the part's own CFrame / the group's centre
+--   IdleAxis    "X" | "Y" | "Z" axis of IdlePivot (defaults: Swing X, Sway Z, Spin Y)
+--   IdleAmp     degrees (Swing, Sway), studs (Bob), 0..1 strength (Flicker, Pulse)
+--   IdlePeriod  seconds per cycle (per turn for Spin, mean gap between blinks for Blink)
+--   IdlePhase   0..1 offset of the cycle; IdleTurn: extra yaw (degrees) of a Bob
+-- Moving parts are never collidable, moving groups never nest, and every pose of a swing stays inside the
+-- slot footprint (tests/underyard_cosmetics.luau). DecorModels.Build tags a model that has any with DecorIdle = n.
+local UY = {
+	Ink = C(16, 12, 26),
+	Night = C(40, 34, 56),
+	Slate = C(62, 58, 78),
+	Stone = C(96, 92, 112),
+	StoneLight = C(150, 146, 166),
+	Bone = C(230, 222, 200),
+	BoneShade = C(192, 180, 154),
+	Iron = C(42, 40, 52),
+	Bronze = C(138, 104, 66),
+	Wood = C(58, 44, 46),
+	WoodLight = C(92, 72, 66),
+	Bark = C(56, 46, 52),
+	Moss = C(70, 98, 66),
+	Soil = C(48, 38, 40),
+	Violet = C(150, 80, 230),
+	Glow = C(190, 132, 255),
+	Moon = C(150, 200, 255),
+	MoonCore = C(226, 240, 255),
+	Ghost = C(120, 255, 140),
+	Spirit = C(150, 236, 255),
+	Candle = C(255, 170, 80),
+	Wax = C(232, 224, 206),
+	Rose = C(64, 112, 232),
+	RoseDark = C(36, 64, 168),
+	Leaf = C(52, 78, 60),
+}
+local function idle(target: Instance, kind: string, o: { [string]: any }?)
+	target:SetAttribute("IdleAnim", kind)
+	if o then
+		for k, v in o do
+			target:SetAttribute("Idle" .. k, v)
+		end
+	end
+end
+
+-- A flat triangle in the XY plane of cf (base centre at cf, apex towards +Y), t thick along Z.
+local function spike(b: Builder, cf: CFrame, w: number, h: number, t: number, color: Color3, mat: string?, props: { [string]: any }?): { BasePart }
+	return {
+		b:Wedge(V(t, h, w / 2), cf * CF(-w / 4, h / 2, 0) * ANG(0, math.pi / 2, 0), color, mat, props),
+		b:Wedge(V(t, h, w / 2), cf * CF(w / 4, h / 2, 0) * ANG(0, -math.pi / 2, 0), color, mat, props),
+	}
+end
+
+-- A stretched gothic lancet window on a wall (cf = bottom centre, looking along cf -Z): glowing glass.
+local function lancet(b: Builder, cf: CFrame, w: number, h: number, color: Color3): { BasePart }
+	local out = spike(b, cf * CF(0, h, 0), w, w * 0.85, 0.1, color, "Neon")
+	table.insert(out, b:Box(V(w, h, 0.1), cf * CF(0, h / 2, 0), color, "Neon"))
+	return out
+end
+
+-- A dog skull looking along cf -Z (gargoyles, finials, lanterns), about 1.1 * s long, glowing eye sockets.
+local function dogSkull(b: Builder, cf: CFrame, s: number, bone: Color3, eye: Color3, ears: boolean?)
+	b:Ball(0.8 * s, cf, bone, "SmoothPlastic")
+	b:Ellipsoid(V(0.46, 0.38, 0.66) * s, cf * CF(0, -0.14 * s, -0.46 * s), bone, "SmoothPlastic")
+	for _, x in ipairs({ -1, 1 }) do
+		b:Accent(b:Ball(0.2 * s, cf * CF(x * 0.17 * s, 0.04 * s, -0.31 * s), eye, "Neon"))
+		if ears then
+			b:Wedge(V(0.12, 0.36, 0.26) * s, cf * CF(x * 0.24 * s, 0.4 * s, 0.06 * s) * ANG(0, 0, rad(x * -14)), bone, "SmoothPlastic")
+		end
+	end
+end
+
+-- A wax candle standing on cf (base centre); returns the flame.
+local function candle(b: Builder, cf: CFrame, h: number, d: number, wax: Color3?): BasePart
+	b:CylY(h, d, cf * CF(0, h / 2, 0), wax or UY.Wax, "SmoothPlastic")
+	return b:Accent(b:Ellipsoid(V(d * 0.6, d * 1.25, d * 0.6), cf * CF(0, h + d * 0.55, 0), UY.Candle, "Neon"))
+end
+
+-- A ghost wisp: a glowing head with a curling tail trailing along cf +Z; returns the head.
+local function wisp(b: Builder, cf: CFrame, s: number, color: Color3): BasePart
+	local head = b:Accent(b:Ball(0.44 * s, cf, color, "Neon", { Transparency = 0.12 }))
+	b:Ellipsoid(V(0.32, 0.3, 0.66) * s, cf * CF(0, -0.05 * s, 0.4 * s) * ANG(rad(14), 0, 0), color, "Neon", { Transparency = 0.38 })
+	b:Ellipsoid(V(0.17, 0.16, 0.5) * s, cf * CF(0.06 * s, -0.18 * s, 0.8 * s) * ANG(rad(28), rad(16), 0), color, "Neon", { Transparency = 0.58 })
+	return head
+end
+
+-- A rounded headstone standing on cf (bottom centre), facing cf -Z.
+local function headstone(b: Builder, cf: CFrame, w: number, h: number, t: number, color: Color3)
+	b:Box(V(w, h - w / 2, t), cf * CF(0, (h - w / 2) / 2, 0), color, "Slate")
+	b:CylZ(t, w, cf * CF(0, h - w / 2, 0), color, "Slate")
+end
+
+-- A paw print lying on the ground (cf = pad centre), toes towards cf -Z.
+local function pawPrint(b: Builder, cf: CFrame, s: number, color: Color3, mat: string)
+	b:Ellipsoid(V(0.72, 0.06, 0.6) * s, cf, color, mat)
+	for i, x in ipairs({ -0.36, -0.13, 0.13, 0.36 }) do
+		local lift = (i == 2 or i == 3) and 0.1 or 0
+		b:Ellipsoid(V(0.24, 0.06, 0.3) * s, cf * CF(x * s, 0, (-0.52 - lift) * s), color, mat)
+	end
+end
+
+-- Round rods through points (crooked iron, trunks, branches); ds = diameters per segment.
+local function path(b: Builder, pts: { Vector3 }, ds: { number }, color: Color3, mat: string, props: { [string]: any }?)
+	for i = 1, #pts - 1 do
+		b:Rod(pts[i], pts[i + 1], ds[math.min(i, #ds)], color, mat, props)
+	end
+end
+
+-- Crooked Bell Tower (Large, Seal VII): a leaning three-tier tower on a plinth, violet lancets, a stopped clock, dog
+-- gargoyles, an open belfry whose bronze bell swings, and a bent spire crowned by a crescent moon.
+recipes.uy_crooked_bell_tower = function(b)
+	b:Box(V(9.0, 0.24, 9.0), CF(0, 0.12, 0.4), UY.Night, "Slate")
+	b:Box(V(4.8, 1.0, 4.8), CF(0, 0.74, 0.8), UY.Slate, "Cobblestone", SOLID)
+	b:Box(V(2.6, 0.5, 0.8), CF(0, 0.49, -2.0), UY.Slate, "Cobblestone")
+	b:Detail(function()
+		pawPrint(b, CF(0.25, 0.25, -3.25) * ANG(0, rad(-8), 0), 0.9, UY.Stone, "Slate")
+	end)
+	-- tier 1: crooked door with an iron knocker, a violet lancet over it
+	local f1 = CF(0, 1.24, 0.9)
+	b:Box(V(3.6, 4.4, 3.6), f1 * CF(0, 2.2, 0), UY.Stone, "Slate", SOLID)
+	b:Box(V(4.1, 0.32, 4.1), f1 * CF(0, 4.56, 0), UY.Slate, "Slate")
+	b:Box(V(1.3, 1.7, 0.14), f1 * CF(0, 0.85, -1.82), UY.Wood, "WoodPlanks")
+	b:CylZ(0.14, 1.3, f1 * CF(0, 1.7, -1.82), UY.Wood, "WoodPlanks")
+	b:Ball(0.24, f1 * CF(0.38, 0.95, -1.92), UY.Iron, "Metal")
+	b:Accent(lancet(b, f1 * CF(0, 2.75, -1.81), 0.7, 0.9, UY.Glow))
+	b:Detail(function()
+		for _, side in ipairs({ -1, 1 }) do
+			b:Accent(lancet(b, f1 * CF(side * 1.81, 1.5, 0.2) * ANG(0, side * -math.pi / 2, 0), 0.6, 1.5, UY.Glow))
+		end
+		b:Accent(b:Box(V(0.07, 0.8, 0.07), f1 * CF(-1.2, 3.25, -1.81) * ANG(0, 0, rad(24)), UY.Ghost, "Neon"))
+		b:Accent(b:Box(V(0.07, 0.5, 0.07), f1 * CF(-1.02, 2.72, -1.81) * ANG(0, 0, rad(-18)), UY.Ghost, "Neon"))
+		b:Ellipsoid(V(1.3, 0.55, 0.3), f1 * CF(1.15, 0.3, -1.8), UY.Moss, "Grass")
+		b:Ellipsoid(V(0.3, 1.5, 0.9), f1 * CF(1.8, 0.8, -1.0), UY.Moss, "Grass")
+	end)
+	-- tier 2 leans and twists: a stopped clock, two slits, dog gargoyles on the ledge
+	b:Detail(function()
+		for _, x in ipairs({ -1.72, 1.72 }) do
+			for k = 0, 2 do
+				b:Box(V(0.3, 0.62, 0.3), f1 * CF(x, 0.55 + k * 1.35, -1.72), UY.StoneLight, "Slate")
+			end
+		end
+	end)
+	local f2 = f1 * CF(0.18, 4.72, 0) * ANG(0, rad(7), rad(-4.5))
+	b:Box(V(3.1, 4.05, 3.1), f2 * CF(0, 1.78, 0), UY.Stone, "Slate")
+	b:Box(V(3.6, 0.3, 3.6), f2 * CF(0, 3.9, 0), UY.Slate, "Slate")
+	local clock = f2 * CF(0, 2.35, -1.56)
+	b:CylZ(0.16, 1.95, clock, UY.Iron, "Metal")
+	b:CylZ(0.12, 1.62, clock * CF(0, 0, -0.06), UY.Bone, "SmoothPlastic")
+	b:Box(V(0.12, 0.5, 0.05), clock * CF(0, 0, -0.14) * ANG(0, 0, rad(160)) * CF(0, 0.22, 0), UY.Ink, "SmoothPlastic")
+	b:Box(V(0.08, 0.7, 0.05), clock * CF(0, 0, -0.15) * ANG(0, 0, rad(-12)) * CF(0, 0.32, 0), UY.Ink, "SmoothPlastic")
+	b:Accent(b:Ball(0.18, clock * CF(0, 0, -0.16), UY.Glow, "Neon"))
+	b:Detail(function()
+		for _, x in ipairs({ -0.8, 0.8 }) do
+			b:Accent(lancet(b, f2 * CF(x, 0.3, -1.56), 0.36, 0.6, UY.Glow))
+		end
+	end)
+	local t2 = f2 * CF(0, 4.05, 0)
+	for _, side in ipairs({ -1, 1 }) do
+		dogSkull(b, t2 * CF(side * 1.55, 0.14, -1.55) * ANG(0, rad(side * -40), 0) * ANG(rad(-18), 0, 0), 1.0, UY.StoneLight, UY.Ghost, true)
+	end
+	-- belfry: four posts, a violet glow on the floor (the tower's light) and the swinging bell
+	local f3 = t2 * CF(0.22, 0, 0) * ANG(0, rad(-6), rad(-5))
+	b:Box(V(3.3, 0.52, 3.3), f3 * CF(0, 0.02, 0), UY.Slate, "Slate")
+	local glow = b:Accent(b:CylY(0.06, 2.1, f3 * CF(0, 0.31, 0), UY.Violet, "Neon", { Transparency = 0.3 }))
+	for _, x in ipairs({ -1.35, 1.35 }) do
+		for _, z in ipairs({ -1.35, 1.35 }) do
+			b:Box(V(0.5, 3.5, 0.5), f3 * CF(x, 1.95, z), UY.Stone, "Slate")
+		end
+	end
+	b:Box(V(3.8, 0.42, 3.8), f3 * CF(0, 3.85, 0), UY.Slate, "Slate")
+	b:Box(V(3.0, 0.34, 0.34), f3 * CF(0, 3.47, 0), UY.Wood, "Wood")
+	b:Light(glow, UY.Violet, 16, 1.1)
+	local pivot = f3 * CF(0, 3.3, 0)
+	local bell = b:Folder("Bell")
+	b:Box(V(0.3, 0.4, 0.3), pivot * CF(0, -0.15, 0), UY.Iron, "Metal")
+	b:Ellipsoid(V(1.3, 0.7, 1.3), pivot * CF(0, -0.6, 0), UY.Bronze, "Metal")
+	b:Cone(pivot * CF(0, -2.25, 0), 1.7, 1.95, 1.2, 4, UY.Bronze, "Metal")
+	b:Disc(pivot * CF(0, -2.2, 0), 2.1, 0.18, C(104, 78, 50), "Metal")
+	b:Accent(b:Disc(pivot * CF(0, -1.72, 0), 1.82, 0.1, UY.Glow, "Neon"))
+	b:Rod((pivot * CF(0, -0.9, 0)).Position, (pivot * CF(0, -2.25, 0)).Position, 0.12, UY.Iron, "Metal")
+	b:Ball(0.36, pivot * CF(0, -2.42, 0), UY.Iron, "Metal")
+	b:Detail(function()
+		b:Accent(b:Box(V(0.07, 0.6, 0.07), pivot * CF(0.32, -1.3, -0.74) * ANG(rad(-14), 0, rad(18)), UY.Glow, "Neon"))
+	end)
+	b:Into(b.Model)
+	idle(bell, "Swing", { Pivot = pivot, Axis = "Z", Amp = 14, Period = 2.8 })
+	-- bent spire: a slate pyramid, a crooked needle and a crescent-moon finial
+	local f4 = f3 * CF(0.12, 3.92, 0) * ANG(0, rad(10), rad(-7))
+	for i = 0, 3 do
+		b:Wedge(V(3.5, 2.85, 1.75), f4 * ANG(0, i * math.pi / 2, 0) * CF(0, 1.42, -0.875), UY.Night, "Slate")
+	end
+	local apex = f4 * CF(0, 2.3, 0)
+	local p1, p2, p3 = (apex * CF(0.06, 0.8, 0)).Position, (apex * CF(0.32, 1.5, 0.04)).Position, (apex * CF(0.72, 2.0, 0.08)).Position
+	path(b, { apex.Position, p1, p2 }, { 0.5, 0.32 }, UY.Night, "Slate")
+	b:Rod(p2, p3, 0.16, UY.Iron, "Metal")
+	local moon = CF(p3) * CF(0.12, 0.5, 0)
+	for k = 0, 3 do
+		local a0, a1 = rad(70 + k * 55), rad(70 + (k + 1) * 55)
+		b:Accent(b:Rod((moon * CF(math.cos(a0) * 0.42, math.sin(a0) * 0.42, 0)).Position, (moon * CF(math.cos(a1) * 0.42, math.sin(a1) * 0.42, 0)).Position, 0.17 - math.abs(k - 1.5) * 0.04, UY.Moon, "Neon"))
+	end
+	-- dog-skull lanterns on the plaza corners, candles on the plinth, two old graves at the back
+	for _, x in ipairs({ -3.6, 3.6 }) do
+		local at = CF(x, 0.24, -3.4)
+		b:CylY(0.3, 0.6, at * CF(0, 0.15, 0), UY.Iron, "Metal")
+		b:CylY(2.7, 0.2, at * CF(0, 1.5, 0), UY.Iron, "Metal")
+		dogSkull(b, at * CF(0, 3.1, 0) * ANG(0, rad(x > 0 and -18 or 18), 0), 0.8, UY.Bone, UY.Ghost, true)
+	end
+	for i, p in ipairs({ V(-1.95, 1.24, -1.2), V(-1.55, 1.24, -1.42), V(2.0, 1.24, -1.3) }) do
+		candle(b, CF(p), 0.5 + (i % 2) * 0.28, 0.2)
+	end
+	b:Detail(function()
+		headstone(b, CF(-3.4, 0.24, 3.4) * ANG(0, rad(12), 0) * ANG(rad(-6), 0, rad(5)), 0.9, 1.3, 0.22, UY.Stone)
+		headstone(b, CF(3.5, 0.24, 3.2) * ANG(0, rad(-20), 0) * ANG(rad(4), 0, rad(-7)), 0.8, 1.1, 0.22, UY.Stone)
+	end)
+end
+
+-- Whispering Tree (Large): a twisted dead tree on a grave mound with a hollow face that whispers (eyes blink,
+-- mouth glows), four swaying branches with lanterns and a crow, and whisper wisps circling the trunk.
+recipes.uy_whispering_tree = function(b)
+	local T = V(0, 0, 1.2) -- trunk foot
+	b:Ellipsoid(V(8.8, 1.0, 9.2), CF(0, 0.05, 0.6), UY.Soil, "Ground")
+	b:Ellipsoid(V(5.6, 0.5, 5.8), CF(0.2, 0.32, 0.9), UY.Moss:Lerp(UY.Soil, 0.45), "Grass")
+	for i = 0, 4 do
+		local a = rad(i * 72 + 20)
+		local tip = V(math.cos(a) * 2.6, 0.12, T.Z + math.sin(a) * 2.6)
+		path(b, { T + V(0, 1.0, 0), T + V(math.cos(a) * 1.3, 0.55, math.sin(a) * 1.3), tip }, { 0.62, 0.36 }, UY.Bark, "Wood")
+	end
+	-- the twisted trunk (S-curve) with knots at the joints, splitting at the top
+	local pts = { T + V(0, 0.1, 0), T + V(0.35, 2.0, -0.1), T + V(-0.15, 3.8, 0.05), T + V(0.3, 5.4, -0.1), T + V(0.05, 6.9, 0) }
+	local ds = { 2.0, 1.7, 1.4, 1.1 }
+	path(b, pts, ds, UY.Bark, "Wood")
+	for i = 2, 4 do
+		b:Ball((ds[i - 1] + ds[i]) / 2, CF(pts[i]), UY.Bark, "Wood")
+	end
+	path(b, { pts[5], pts[5] + V(-0.4, 1.1, 0.1) }, { 0.32 }, UY.Bark, "Wood")
+	path(b, { pts[5], pts[5] + V(0.5, 0.9, -0.2) }, { 0.26 }, UY.Bark, "Wood")
+	-- the hollow face (front): blinking eyes and a whispering mouth
+	local face = CF(0.12, 2.8, T.Z - 0.86)
+	b:Ellipsoid(V(1.05, 1.35, 0.5), face, UY.Ink, "SmoothPlastic")
+	for _, x in ipairs({ -0.22, 0.22 }) do
+		idle(b:Accent(b:Ball(0.2, face * CF(x, 0.28, -0.18), UY.Spirit, "Neon")), "Blink", { Period = 4.5 })
+	end
+	idle(b:Accent(b:Ellipsoid(V(0.46, 0.2, 0.12), face * CF(0, -0.3, -0.2), UY.Spirit, "Neon")), "Pulse", { Amp = 0.7, Period = 1.7 })
+	-- four branches, each a swaying group: crooked limb, a twig, two claw twigs and what hangs from it
+	local function branch(name: string, h: number, yaw: number, reach: number, period: number, phase: number, extra: ((CFrame, Vector3) -> ())?)
+		local base = CF(T + V(0, h, 0)) * ANG(0, rad(yaw), 0)
+		local group = b:Folder(name)
+		local b1 = (base * CF(0, 0.85, -1.35 * reach)).Position
+		local b2 = (base * CF(0.1, 1.1, -2.6 * reach)).Position
+		local b3 = (base * CF(-0.05, 0.6, -3.4 * reach)).Position
+		path(b, { base.Position, b1, b2, b3 }, { 0.58, 0.4, 0.24 }, UY.Bark, "Wood")
+		path(b, { b1, (base * CF(0.45, 1.75, -1.6 * reach)).Position }, { 0.17 }, UY.Bark, "Wood")
+		b:Detail(function()
+			path(b, { b3, (base * CF(0.25, 0.75, -3.85 * reach)).Position }, { 0.1 }, UY.Bark, "Wood")
+			path(b, { b3, (base * CF(-0.3, 0.3, -3.8 * reach)).Position }, { 0.1 }, UY.Bark, "Wood")
+		end)
+		if extra then
+			extra(base, b2)
+		end
+		b:Into(b.Model)
+		idle(group, "Sway", { Pivot = base, Axis = "X", Amp = 3.5, Period = period, Phase = phase })
+	end
+	local function lantern(_: CFrame, at: Vector3)
+		local bottom = at - V(0, 1.15, 0)
+		b:Rod(at, bottom, 0.05, UY.Iron, "Metal")
+		b:CylY(0.12, 0.5, CF(bottom - V(0, 0.06, 0)), UY.Iron, "Metal")
+		idle(b:Accent(b:Box(V(0.36, 0.5, 0.36), CF(bottom - V(0, 0.36, 0)), UY.Ghost, "Neon", { Transparency = 0.15 })), "Flicker", { Amp = 0.55 })
+		b:CylY(0.1, 0.46, CF(bottom - V(0, 0.66, 0)), UY.Iron, "Metal")
+	end
+	branch("BranchFrontLeft", 4.9, 70, 1.1, 4.6, 0, lantern)
+	branch("BranchFrontRight", 5.5, -62, 1.05, 5.3, 0.4, lantern)
+	branch("BranchBackLeft", 6.1, 135, 0.95, 4.9, 0.7, function(base: CFrame)
+		-- a crow perched on the limb, looking out to the yard
+		local crow = base * CF(0, 1.3, -1.95) * ANG(0, rad(-150), 0)
+		b:Ellipsoid(V(0.42, 0.46, 0.78), crow, UY.Ink, "SmoothPlastic")
+		b:Ball(0.36, crow * CF(0, 0.3, -0.32), UY.Ink, "SmoothPlastic")
+		b:Wedge(V(0.1, 0.12, 0.26), crow * CF(0, 0.28, -0.6) * ANG(0, math.pi, 0), C(170, 150, 90), "SmoothPlastic")
+		b:Accent(b:Ball(0.08, crow * CF(0.1, 0.36, -0.45), UY.Ghost, "Neon"))
+		b:Wedge(V(0.3, 0.1, 0.5), crow * CF(0, -0.05, 0.55), UY.Ink, "SmoothPlastic")
+	end)
+	branch("BranchBackRight", 6.6, -125, 0.95, 5.8, 0.2)
+	-- whisper wisps circling the trunk
+	local ring = b:Folder("Whispers")
+	for i, h in ipairs({ 1.7, 2.6, 3.2, 2.1 }) do
+		local a = rad(i * 90 + 20)
+		local at = CF(T + V(math.cos(a) * 2.45, h, math.sin(a) * 2.45)) * ANG(0, -a, 0) -- tail trails along the turn
+		idle(wisp(b, at, 0.95, i % 2 == 0 and UY.Spirit or UY.Glow), "Pulse", { Amp = 0.45, Period = 2.2, Phase = i * 0.25 })
+	end
+	b:Into(b.Model)
+	idle(ring, "Spin", { Pivot = CF(T), Axis = "Y", Period = 16 })
+	-- graves at the foot: a headstone, a leaning cross, candles and glowing mushrooms between the roots
+	headstone(b, CF(-2.6, 0.25, -1.9) * ANG(0, rad(18), 0) * ANG(rad(-6), 0, rad(4)), 0.95, 1.3, 0.24, UY.Stone)
+	local cross = CF(2.5, 0.25, -1.7) * ANG(0, rad(-22), 0) * ANG(0, 0, rad(-8))
+	b:Box(V(0.22, 1.5, 0.2), cross * CF(0, 0.75, 0), UY.Wood, "Wood")
+	b:Box(V(0.85, 0.2, 0.2), cross * CF(0, 1.08, 0), UY.Wood, "Wood")
+	candle(b, CF(-1.95, 0.32, -2.3), 0.42, 0.18)
+	candle(b, CF(1.95, 0.32, -2.15), 0.3, 0.16)
+	b:Detail(function()
+		for i, p in ipairs({ V(-1.4, 0.32, 0.0), V(1.5, 0.3, 0.3), V(-0.8, 0.3, 2.6) }) do
+			local h = 0.3 + i * 0.07
+			b:CylY(h, 0.1, CF(p + V(0, h / 2, 0)), UY.Bone, "SmoothPlastic")
+			b:Accent(b:Ellipsoid(V(0.36, 0.16, 0.36), CF(p + V(0, h, 0)), UY.Glow, "Neon"))
+		end
+	end)
+end
+
+-- Haunted Kennel (Small): a crooked doghouse; the door creaks to and fro in front of a dark doorway where two
+-- eyes blink. A dog-skull plaque, a flickering lantern on the gable and a food bowl with a bone.
+recipes.uy_haunted_kennel = function(b)
+	b:Box(V(3.0, 0.16, 1.9), CF(0, 0.08, 0.15), UY.Soil, "Ground")
+	local body = CF(0, 0.94, 0.15) * ANG(0, 0, rad(2))
+	b:Box(V(2.3, 1.56, 1.35), body, UY.WoodLight, "WoodPlanks")
+	for _, x in ipairs({ -1.15, 1.15 }) do
+		b:Box(V(0.18, 1.62, 0.18), body * CF(x, 0, -0.66), UY.Wood, "Wood")
+	end
+	-- gable roof (ridge front to back), the gable wall and a ridge cap
+	local top = body * CF(0, 0.78, 0)
+	for _, side in ipairs({ -1, 1 }) do
+		b:Box(V(1.78, 0.14, 1.75), top * CF(side * 0.66, 0.53, 0) * ANG(0, 0, rad(side * -37)), UY.Night, "Slate")
+	end
+	spike(b, top * CF(0, 0, -0.65), 2.3, 0.88, 0.1, UY.WoodLight, "WoodPlanks")
+	b:Box(V(0.22, 0.16, 1.85), top * CF(0, 1.02, 0), UY.Iron, "Metal")
+	-- the doorway: darkness with two blinking eyes
+	b:Box(V(0.8, 0.82, 0.06), body * CF(0, -0.37, -0.69), UY.Ink, "SmoothPlastic")
+	b:CylZ(0.06, 0.8, body * CF(0, 0.04, -0.69), UY.Ink, "SmoothPlastic")
+	for _, x in ipairs({ -0.15, 0.15 }) do
+		idle(b:Accent(b:Ball(0.14, body * CF(x, 0.02, -0.73), UY.Ghost, "Neon")), "Blink", { Period = 3.6, Phase = 0.2 })
+	end
+	-- the creaking half door (a stable door: the eyes stay visible above it), hinged left, standing ajar
+	local hinge = body * CF(-0.4, -0.52, -0.74)
+	local ajar = hinge * ANG(0, rad(32), 0)
+	local door = b:Folder("Door")
+	b:Box(V(0.78, 0.52, 0.07), ajar * CF(0.39, 0, 0), UY.Wood, "WoodPlanks")
+	for _, y in ipairs({ -0.14, 0.14 }) do
+		b:Box(V(0.8, 0.07, 0.09), ajar * CF(0.4, y, 0), UY.Iron, "Metal")
+	end
+	b:Into(b.Model)
+	idle(door, "Swing", { Pivot = hinge, Axis = "Y", Amp = 9, Period = 3.4 })
+	-- dog-skull plaque and a little lantern on the gable
+	dogSkull(b, top * CF(0, 0.36, -0.74), 0.55, UY.Bone, UY.Glow)
+	path(b, { (top * CF(0.75, -0.06, -0.62)).Position, (top * CF(0.75, -0.06, -0.92)).Position, (top * CF(0.75, -0.24, -0.92)).Position }, { 0.05, 0.04 }, UY.Iron, "Metal")
+	idle(b:Accent(b:Box(V(0.2, 0.26, 0.2), top * CF(0.75, -0.38, -0.92), UY.Candle, "Neon")), "Flicker", { Amp = 0.6 })
+	-- food bowl with a bone
+	b:CylY(0.24, 0.66, CF(1.0, 0.28, -0.58), C(120, 40, 52), "SmoothPlastic")
+	b:CylY(0.04, 0.52, CF(1.0, 0.41, -0.58), UY.Ink, "SmoothPlastic")
+	b:Cyl(0.5, 0.1, CF(1.0, 0.46, -0.58) * ANG(0, rad(30), rad(12)), UY.Bone, "SmoothPlastic")
+	for _, x in ipairs({ -0.26, 0.26 }) do
+		b:Ball(0.15, CF(1.0, 0.46, -0.58) * ANG(0, rad(30), rad(12)) * CF(x, 0, 0), UY.Bone, "SmoothPlastic")
+	end
+	b:Detail(function()
+		-- claw scratches by the door, a round side window, moss
+		for i = 0, 2 do
+			b:Box(V(0.035, 0.4, 0.03), body * CF(0.62 + i * 0.1, -0.35, -0.685) * ANG(0, 0, rad(-14)), C(150, 124, 108), "Wood")
+		end
+		b:Cyl(0.06, 0.42, body * CF(1.16, 0.15, 0.2), UY.Ink, "SmoothPlastic")
+		b:Ellipsoid(V(0.7, 0.2, 0.5), CF(-1.1, 0.18, -0.45), UY.Moss, "Grass")
+	end)
+end
+
+-- Spirit Fence (Small, Dex II milestone 5): a crooked bone fence between two dog-skull posts, a spectral chain,
+-- and three ghost wisps drifting above it.
+recipes.uy_spirit_fence = function(b)
+	b:Box(V(3.1, 0.14, 0.9), CF(0, 0.07, 0), UY.Soil, "Ground")
+	for _, x in ipairs({ -1.24, 1.24 }) do
+		b:Box(V(0.42, 1.95, 0.42), CF(x, 1.1, 0), UY.Stone, "Slate")
+		b:Box(V(0.56, 0.16, 0.56), CF(x, 2.14, 0), UY.Slate, "Slate")
+		dogSkull(b, CF(x, 2.5, -0.02) * ANG(0, rad(x > 0 and -14 or 14), 0), 0.62, UY.Bone, UY.Ghost)
+	end
+	for i, x in ipairs({ -0.66, -0.22, 0.22, 0.66 }) do
+		local h = 1.45 + ((i * 37) % 4) * 0.12
+		local cf = CF(x, 0.14, 0) * ANG(0, 0, rad((i % 2 == 0 and 1 or -1) * (1.5 + i * 0.6)))
+		b:CylY(h, 0.17, cf * CF(0, h / 2, 0), UY.Bone, "SmoothPlastic")
+		b:Ellipsoid(V(0.34, 0.22, 0.24), cf * CF(0, h, 0), UY.BoneShade, "SmoothPlastic")
+	end
+	for _, y in ipairs({ 0.55, 1.3 }) do
+		b:Rod(V(-1.05, y, 0.04), V(1.05, y + 0.05, 0.04), 0.09, UY.Iron, "Metal")
+	end
+	b:Detail(function()
+		for k = 1, 5 do
+			local t = k / 6
+			local p = V(-1.24 + 2.48 * t, 2.12 - math.sin(t * math.pi) * 0.42, -0.24)
+			b:Accent(b:Ellipsoid(V(0.28, 0.14, 0.08), CF(p) * ANG(k % 2 == 0 and math.pi / 2 or 0, 0, rad((t - 0.5) * 60)), UY.Ghost, "Neon", { Transparency = 0.35 }))
+		end
+	end)
+	for i, p in ipairs({ V(-0.55, 3.0, -0.1), V(0.25, 3.45, 0.05), V(0.85, 2.85, -0.05) }) do
+		local group = b:Folder("Wisp" .. i)
+		local at = CF(p) * ANG(0, rad(i == 1 and 100 or -100), 0) -- tails trail towards the middle
+		wisp(b, at, 0.78, i == 2 and UY.Spirit or UY.Ghost)
+		b:Into(b.Model)
+		idle(group, "Bob", { Pivot = CF(p), Amp = 0.28, Period = 3.2 + i * 0.45, Phase = i * 0.3, Turn = 12 })
+	end
+end
+
+-- Coffin Flowerbed (Small): an open coffin turned planter, blue funeral roses and glowing bell flowers, a silver
+-- cross on the head board and two candles at its foot.
+recipes.uy_coffin_flowerbed = function(b)
+	local wood, trim = C(58, 40, 46), C(150, 140, 160)
+	local outline = { V(-1.5, 0, -0.42), V(-0.65, 0, -0.72), V(1.5, 0, -0.5), V(1.5, 0, 0.5), V(-0.65, 0, 0.72), V(-1.5, 0, 0.42) }
+	for i = 1, #outline do
+		local a, c = outline[i], outline[i % #outline + 1]
+		local mid = (a + c) / 2
+		local len = (c - a).Magnitude
+		b:Box(V(len + 0.12, 0.6, 0.14), CF(mid.X, 0.3, mid.Z) * ANG(0, -math.atan2(c.Z - a.Z, c.X - a.X), 0), wood, "WoodPlanks")
+	end
+	b:Box(V(2.1, 0.44, 1.12), CF(0.42, 0.24, 0), UY.Soil, "Ground")
+	b:Box(V(0.9, 0.44, 0.92), CF(-1.0, 0.24, 0), UY.Soil, "Ground")
+	b:Box(V(0.08, 0.62, 0.08), CF(-1.5, 0.82, 0), trim, "Metal")
+	b:Box(V(0.08, 0.08, 0.38), CF(-1.5, 0.95, 0), trim, "Metal")
+	for i, p in ipairs({ V(-0.95, 0, -0.18), V(-0.25, 0, 0.22), V(0.55, 0, -0.2), V(1.15, 0, 0.18) }) do
+		local h = 0.5 + ((i * 29) % 3) * 0.13
+		local cf = CF(p.X, 0.46, p.Z) * ANG(rad((i % 2) * 8 - 4), 0, rad((i % 3 - 1) * 7))
+		b:CylY(h, 0.07, cf * CF(0, h / 2, 0), UY.Leaf, "SmoothPlastic")
+		b:Ellipsoid(V(0.36, 0.26, 0.36), cf * CF(0, h + 0.06, 0), UY.Rose, "SmoothPlastic")
+		b:Ball(0.2, cf * CF(0, h + 0.15, 0), UY.RoseDark, "SmoothPlastic")
+	end
+	for i, p in ipairs({ V(-0.55, 0, 0.3), V(0.15, 0, -0.32), V(0.95, 0, 0.32) }) do
+		local h = 0.38 + i * 0.06
+		b:CylY(h, 0.06, CF(p.X, 0.46 + h / 2, p.Z), UY.Leaf, "SmoothPlastic")
+		idle(b:Accent(b:Ellipsoid(V(0.22, 0.28, 0.22), CF(p.X, 0.5 + h, p.Z), i == 2 and UY.Ghost or UY.Glow, "Neon")), "Pulse", { Amp = 0.55, Period = 2.6, Phase = i * 0.3 })
+	end
+	for i, p in ipairs({ V(-0.4, 0.47, -0.42), V(0.85, 0.47, 0.05), V(-1.15, 0.47, 0.32) }) do
+		b:Ellipsoid(V(0.42, 0.06, 0.2), CF(p) * ANG(0, rad(i * 55), 0), UY.Leaf, "SmoothPlastic")
+	end
+	candle(b, CF(1.42, 0, -0.78), 0.5, 0.18)
+	candle(b, CF(1.42, 0, 0.78), 0.34, 0.16)
+	b:Detail(function()
+		for _, x in ipairs({ -0.2, 0.75 }) do
+			b:Box(V(0.36, 0.08, 0.06), CF(x, 0.36, -0.68), trim, "Metal")
+		end
+	end)
+end
+
+-- Floating Tombstones (Small): a grave mound in a violet rune ring; three tombstones (round, cross, small) hover
+-- above it and bob, each trailing a clod of earth and a ghostly glow.
+recipes.uy_floating_tombstones = function(b)
+	b:Ellipsoid(V(3.1, 0.38, 1.85), CF(0, 0.1, 0), UY.Soil, "Ground")
+	b:Ellipsoid(V(2.5, 0.26, 1.4), CF(0, 0.16, 0), UY.Moss:Lerp(UY.Soil, 0.5), "Grass")
+	idle(b:Accent(b:Ellipsoid(V(2.75, 0.04, 1.6), CF(0, 0.29, 0), UY.Violet, "Neon", { Transparency = 0.4 })), "Pulse", { Amp = 0.5, Period = 3.0 })
+	b:Ellipsoid(V(2.45, 0.05, 1.3), CF(0, 0.3, 0), UY.Soil, "Ground")
+	local function float(name: string, at: CFrame, period: number, phase: number, turn: number, build: (CFrame) -> ())
+		local group = b:Folder(name)
+		build(at)
+		b:Ellipsoid(V(0.62, 0.36, 0.34), at * CF(0.04, -0.2, 0) * ANG(0, rad(20), rad(8)), UY.Soil, "Ground")
+		b:Accent(b:Ellipsoid(V(0.6, 0.5, 0.3), at * CF(0, -0.55, 0), UY.Spirit, "Neon", { Transparency = 0.72 }))
+		b:Into(b.Model)
+		idle(group, "Bob", { Pivot = at, Amp = 0.24, Period = period, Phase = phase, Turn = turn })
+	end
+	float("StoneRound", CF(0, 1.15, 0.12) * ANG(rad(-5), 0, rad(4)), 3.6, 0, 5, function(at: CFrame)
+		headstone(b, at, 0.95, 1.4, 0.24, UY.Stone)
+		b:Box(V(0.1, 0.5, 0.04), at * CF(0, 0.72, -0.13), UY.Slate, "Slate")
+		b:Box(V(0.34, 0.1, 0.04), at * CF(0, 0.84, -0.13), UY.Slate, "Slate")
+		b:Accent(b:Box(V(0.05, 0.42, 0.04), at * CF(0.28, 0.36, -0.13) * ANG(0, 0, rad(20)), UY.Glow, "Neon"))
+	end)
+	float("StoneCross", CF(-1.05, 0.8, -0.05) * ANG(0, rad(14), rad(-6)), 4.2, 0.35, -6, function(at: CFrame)
+		b:Box(V(0.5, 0.24, 0.3), at * CF(0, 0.12, 0), UY.Slate, "Slate")
+		b:Box(V(0.24, 1.25, 0.2), at * CF(0, 0.85, 0), UY.Stone, "Slate")
+		b:Box(V(0.78, 0.22, 0.2), at * CF(0, 1.1, 0), UY.Stone, "Slate")
+	end)
+	float("StoneSmall", CF(1.05, 0.88, 0.0) * ANG(rad(4), rad(-18), rad(7)), 3.9, 0.7, 7, function(at: CFrame)
+		headstone(b, at, 0.8, 1.05, 0.22, UY.StoneLight:Lerp(UY.Stone, 0.5))
+		b:Detail(function()
+			b:Ellipsoid(V(0.5, 0.16, 0.3), at * CF(-0.16, 0.95, 0), UY.Moss, "Grass")
+		end)
+	end)
+	b:Detail(function()
+		local skull = CF(0.55, 0.36, -0.62) * ANG(0, rad(-25), 0)
+		b:Ball(0.3, skull, UY.Bone, "SmoothPlastic")
+		for _, x in ipairs({ -0.06, 0.06 }) do
+			b:Ball(0.08, skull * CF(x, 0.02, -0.13), UY.Ink, "SmoothPlastic")
+		end
+	end)
+	candle(b, CF(-0.55, 0.28, -0.62), 0.36, 0.15)
+	candle(b, CF(-0.35, 0.28, -0.7), 0.22, 0.13)
+end
+
+-- Funeral Lantern Set (Small, one light): a crooked iron shepherd's post crowned with a dog skull, two gabled funeral
+-- lanterns swinging from its arms, a third lantern on the ground and candles at the footing; every flame flickers.
+recipes.uy_funeral_lanterns = function(b)
+	local glassColor = C(255, 206, 140)
+	b:Box(V(1.1, 0.4, 0.95), CF(-0.6, 0.2, 0.15), UY.Slate, "Slate")
+	local P = { V(-0.6, 0.35, 0.15), V(-0.5, 2.2, 0.15), V(-0.7, 3.8, 0.2), V(-0.6, 4.85, 0.15) }
+	path(b, P, { 0.3, 0.25, 0.2 }, UY.Iron, "Metal")
+	b:CylY(0.16, 0.42, CF(P[2]), UY.Bronze, "Metal")
+	dogSkull(b, CF(P[4] + V(0, 0.28, -0.04)), 0.58, UY.Bone, UY.Candle)
+	path(b, { V(-0.66, 4.35, 0.17), V(0.2, 4.78, 0.15), V(0.85, 4.62, 0.15), V(0.97, 4.34, 0.15) }, { 0.15, 0.12, 0.1 }, UY.Iron, "Metal")
+	path(b, { V(-0.64, 3.55, 0.18), V(-1.12, 3.86, 0.15), V(-1.27, 3.64, 0.15) }, { 0.13, 0.1 }, UY.Iron, "Metal")
+	-- a gabled lantern hanging from `hook`; returns its flame
+	local function hanging(name: string, hook: Vector3, period: number, phase: number): BasePart
+		local group = b:Folder(name)
+		local top = hook - V(0, 0.3, 0)
+		b:Rod(hook, top, 0.06, UY.Iron, "Metal")
+		b:Wedge(V(0.66, 0.3, 0.33), CF(top - V(0, 0.15, 0.165)), UY.Iron, "Metal")
+		b:Wedge(V(0.66, 0.3, 0.33), CF(top - V(0, 0.15, -0.165)) * ANG(0, math.pi, 0), UY.Iron, "Metal")
+		b:Box(V(0.56, 0.78, 0.56), CF(top - V(0, 0.69, 0)), glassColor, "Glass", { Transparency = 0.4 })
+		local fire = b:Accent(b:Ellipsoid(V(0.22, 0.4, 0.22), CF(top - V(0, 0.7, 0)), UY.Candle, "Neon"))
+		idle(fire, "Flicker", { Amp = 0.6, Phase = phase })
+		b:Box(V(0.64, 0.1, 0.64), CF(top - V(0, 1.12, 0)), UY.Iron, "Metal")
+		b:Detail(function()
+			for _, x in ipairs({ -0.28, 0.28 }) do
+				b:Box(V(0.06, 0.8, 0.06), CF(top + V(x, -0.69, -0.28)), UY.Iron, "Metal")
+			end
+		end)
+		b:Into(b.Model)
+		idle(group, "Swing", { Pivot = CF(hook), Axis = "X", Amp = 7, Period = period, Phase = phase })
+		return fire
+	end
+	local flame = hanging("LanternRight", V(0.97, 4.32, 0.15), 2.7, 0)
+	hanging("LanternLeft", V(-1.27, 3.62, 0.15), 3.2, 0.45)
+	-- a candle lantern on the ground and candles at the footing
+	b:Box(V(0.52, 0.08, 0.52), CF(0.95, 0.04, -0.2), UY.Iron, "Metal")
+	b:Box(V(0.44, 0.58, 0.44), CF(0.95, 0.37, -0.2), glassColor, "Glass", { Transparency = 0.4 })
+	idle(b:Accent(b:Ellipsoid(V(0.16, 0.3, 0.16), CF(0.95, 0.38, -0.2), UY.Candle, "Neon")), "Flicker", { Amp = 0.6, Phase = 0.7 })
+	b:Wedge(V(0.52, 0.28, 0.26), CF(0.95, 0.8, -0.33), UY.Iron, "Metal")
+	b:Wedge(V(0.52, 0.28, 0.26), CF(0.95, 0.8, -0.07) * ANG(0, math.pi, 0), UY.Iron, "Metal")
+	candle(b, CF(-0.95, 0.4, -0.14), 0.44, 0.16)
+	candle(b, CF(-0.3, 0.4, -0.18), 0.28, 0.15)
+	b:Light(flame, UY.Candle, 14, 1.2)
+end
+
+-- Moon Statue (Large): a moonstone dog howling on a stepped plinth; behind it a full moon in an iron ring glows and
+-- breathes (the statue's light), with star charms on wires, candles and moon lamps.
+recipes.uy_moon_statue = function(b)
+	local stone = C(178, 184, 206)
+	local stoneShade = C(150, 156, 182)
+	b:Box(V(9.0, 0.2, 9.0), CF(0, 0.1, 0.4), UY.Night, "Slate")
+	b:Accent(b:CylY(0.04, 7.6, CF(0, 0.21, 0.4), UY.Moon, "Neon", { Transparency = 0.55 }))
+	b:CylY(0.05, 7.0, CF(0, 0.22, 0.4), UY.Night, "Slate")
+	b:Box(V(5.0, 0.5, 5.0), CF(0, 0.45, 0.4), UY.Slate, "Slate", SOLID)
+	b:Box(V(3.8, 1.4, 3.8), CF(0, 1.4, 0.4), UY.Stone, "Slate", SOLID)
+	b:Box(V(4.2, 0.3, 4.2), CF(0, 2.25, 0.4), UY.Slate, "Slate")
+	-- crescent inlay on the plinth front
+	local plaque = CF(0, 1.42, 0.4 - 1.92)
+	for k = 0, 3 do
+		local a0, a1 = rad(75 + k * 52), rad(75 + (k + 1) * 52)
+		b:Accent(b:Rod((plaque * CF(math.cos(a0) * 0.45, math.sin(a0) * 0.45, 0)).Position, (plaque * CF(math.cos(a1) * 0.45, math.sin(a1) * 0.45, 0)).Position, 0.16 - math.abs(k - 1.5) * 0.04, UY.Moon, "Neon"))
+	end
+	-- the howling dog
+	local s = 1.15
+	local d = CF(0, 2.4, 0.45)
+	local function at(x: number, y: number, z: number): CFrame
+		return d * CF(x * s, y * s, z * s)
+	end
+	b:Ellipsoid(V(1.9, 1.45, 2.1) * s, at(0, 0.72, 0.5), stone, "Marble")
+	b:Ellipsoid(V(1.5, 2.1, 1.35) * s, at(0, 1.65, -0.05) * ANG(rad(6), 0, 0), stone, "Marble")
+	for _, x in ipairs({ -0.42, 0.42 }) do
+		b:CylY(1.4 * s, 0.42 * s, at(x, 0.72, -0.62), stone, "Marble")
+		b:Ellipsoid(V(0.5, 0.3, 0.72) * s, at(x, 0.15, -0.82), stoneShade, "Marble")
+		b:Ellipsoid(V(0.55, 0.34, 0.95) * s, at(x * 2.15, 0.17, 0.2), stoneShade, "Marble")
+	end
+	local head = at(0, 3.25, 0.1) * ANG(rad(38), 0, 0)
+	b:Ellipsoid(V(0.95, 1.3, 1.0) * s, at(0, 2.6, 0.0) * ANG(rad(24), 0, 0), stone, "Marble")
+	b:Ball(1.2 * s, head, stone, "Marble")
+	b:Ellipsoid(V(0.6, 0.5, 1.0) * s, head * CF(0, 0.02 * s, -0.68 * s), stone, "Marble")
+	b:Ellipsoid(V(0.48, 0.24, 0.8) * s, head * CF(0, -0.32 * s, -0.55 * s) * ANG(rad(-14), 0, 0), stoneShade, "Marble")
+	b:Ball(0.26 * s, head * CF(0, 0.1 * s, -1.18 * s), UY.Ink, "SmoothPlastic")
+	for _, x in ipairs({ -1, 1 }) do
+		b:Ellipsoid(V(0.3, 0.9, 0.48) * s, head * CF(x * 0.36 * s, 0.32 * s, 0.4 * s) * ANG(rad(-55), 0, rad(x * -12)), stoneShade, "Marble")
+	end
+	b:Detail(function()
+		for _, x in ipairs({ -1, 1 }) do
+			b:Box(V(0.2, 0.05, 0.05) * s, head * CF(x * 0.24 * s, 0.25 * s, -0.5 * s) * ANG(0, 0, rad(x * 12)), UY.Ink, "SmoothPlastic")
+		end
+	end)
+	path(b, { (at(0.3, 0.3, 1.45)).Position, (at(1.2, 0.2, 1.3)).Position, (at(1.5, 0.3, 0.6)).Position }, { 0.36 * s, 0.26 * s }, stone, "Marble")
+	-- the moon in its iron ring, held by a crooked post rising behind the plinth
+	local moonAt = CF(0, 8.7, 2.45)
+	-- the moon turns very slowly in its ring (its craters drift round) while it breathes light
+	local turning = b:Folder("Moon")
+	local moon = b:Accent(b:CylZ(0.42, 4.3, moonAt, UY.MoonCore, "Neon"))
+	idle(moon, "Pulse", { Amp = 0.28, Period = 4.0 })
+	b:Detail(function()
+		for _, c in ipairs({ { -0.8, 0.6, 0.9 }, { 0.75, -0.4, 0.7 }, { 0.2, 1.1, 0.5 }, { -0.5, -0.9, 0.45 } }) do
+			b:CylZ(0.06, c[3], moonAt * CF(c[1], c[2], -0.23), C(172, 200, 236), "SmoothPlastic")
+		end
+	end)
+	b:Into(b.Model)
+	idle(turning, "Spin", { Pivot = moonAt, Axis = "Z", Period = 48 })
+	idle(b:Accent(b:CylZ(0.1, 5.3, moonAt * CF(0, 0, 0.3), UY.Moon, "Neon", { Transparency = 0.7 })), "Pulse", { Amp = 0.6, Period = 4.0 })
+	b:Ring(moonAt * ANG(math.pi / 2, 0, 0), 2.32, 0.18, UY.Iron, "Metal", 14)
+	path(b, { V(0, 2.4, 2.3), V(0.18, 4.4, 2.42), V(-0.1, 6.45, 2.45) }, { 0.32, 0.26 }, UY.Iron, "Metal")
+	for _, x in ipairs({ -1, 1 }) do
+		b:Rod(V(x * 1.2, 2.4, 2.2), V(x * 1.55, 6.95, 2.45), 0.14, UY.Iron, "Metal")
+	end
+	-- star charms on wires
+	for i, p in ipairs({ V(-3.0, 10.4, 2.45), V(3.1, 9.9, 2.45), V(-3.2, 7.2, 2.45) }) do
+		local from = moonAt.Position + (p - moonAt.Position).Unit * 2.4
+		b:Rod(from, p, 0.07, UY.Iron, "Metal")
+		idle(b:Accent(b:Ball(0.4, CF(p), UY.MoonCore, "Neon")), "Pulse", { Amp = 0.7, Period = 2.2, Phase = i * 0.33 })
+	end
+	b:Light(moon, UY.Moon, 20, 1.4)
+	-- candles at the plinth front, moon lamps at the plaza corners, a wreath of blue roses
+	for i, p in ipairs({ V(-1.75, 2.4, -1.25), V(-1.45, 2.4, -1.45), V(1.7, 2.4, -1.35) }) do
+		candle(b, CF(p), 0.42 + (i % 2) * 0.22, 0.18)
+	end
+	for _, x in ipairs({ -3.7, 3.7 }) do
+		b:CylY(2.4, 0.2, CF(x, 1.4, -3.5), UY.Iron, "Metal")
+		b:CylY(0.2, 0.52, CF(x, 0.3, -3.5), UY.Iron, "Metal")
+		idle(b:Accent(b:Ball(0.62, CF(x, 2.85, -3.5), UY.Moon, "Neon")), "Pulse", { Amp = 0.35, Period = 4.0 })
+	end
+	b:Detail(function()
+		for i = 0, 4 do
+			local a = rad(200 + i * 35)
+			b:Ball(0.32, CF(math.cos(a) * 0.55, 0.84, 0.4 - 2.3 + math.sin(a) * 0.12), i % 2 == 0 and UY.Rose or UY.RoseDark, "SmoothPlastic")
+		end
+	end)
+end
+
+-- Ghost Fountain (Large): an octagonal basin of ghost water, a tiered pedestal crowned by a dog skull, ghost-water
+-- arcs that slowly turn around it (top and middle tier), two wisps rising from the water and candles on the rim.
+recipes.uy_ghost_fountain = function(b)
+	local O = V(0, 0, 0.4)
+	b:Box(V(9.0, 0.18, 9.0), CF(0, 0.09, 0.4), UY.Night, "Slate")
+	b:CylY(0.06, 8.6, CF(O + V(0, 0.2, 0)), UY.Slate, "Cobblestone")
+	local R = 3.3
+	for i = 0, 7 do
+		local a = rad(i * 45)
+		local cf = CF(O + V(math.sin(a) * R, 0, math.cos(a) * R)) * ANG(0, a, 0)
+		b:Box(V(2.85, 1.1, 0.42), cf * CF(0, 0.75, 0), UY.Stone, "Slate", SOLID)
+		b:Detail(function()
+			b:Box(V(2.95, 0.18, 0.62), cf * CF(0, 1.38, 0), UY.Slate, "Slate")
+		end)
+	end
+	b:CylY(0.2, 6.5, CF(O + V(0, 0.3, 0)), UY.Ink, "SmoothPlastic")
+	idle(b:Accent(b:CylY(0.06, 6.3, CF(O + V(0, 1.0, 0)), UY.Spirit, "Neon", { Transparency = 0.38 })), "Pulse", { Amp = 0.45, Period = 3.4 })
+	-- tiered pedestal
+	b:CylY(1.0, 1.9, CF(O + V(0, 0.8, 0)), UY.Stone, "Slate")
+	b:CylY(1.6, 0.7, CF(O + V(0, 2.1, 0)), UY.StoneLight, "Slate")
+	b:Cone(CF(O + V(0, 2.8, 0)), 0.6, 0.9, 2.6, 2, UY.Stone, "Slate")
+	b:Disc(CF(O + V(0, 3.42, 0)), 2.75, 0.16, UY.Slate, "Slate")
+	idle(b:Accent(b:Disc(CF(O + V(0, 3.48, 0)), 2.45, 0.06, UY.Spirit, "Neon", { Transparency = 0.3 })), "Pulse", { Amp = 0.45, Period = 3.4, Phase = 0.3 })
+	b:CylY(1.3, 0.48, CF(O + V(0, 4.1, 0)), UY.StoneLight, "Slate")
+	b:Cone(CF(O + V(0, 4.6, 0)), 0.45, 0.6, 1.55, 2, UY.Stone, "Slate")
+	b:Disc(CF(O + V(0, 5.08, 0)), 1.65, 0.12, UY.Slate, "Slate")
+	dogSkull(b, CF(O + V(0, 5.5, 0)) * ANG(rad(-8), 0, 0), 0.9, UY.Bone, UY.Spirit, true)
+	-- turning ghost-water arcs: four from the top bowl, four from the middle bowl (offset by 45 degrees)
+	local arcs = b:Folder("Arcs")
+	local function arc(a: number, r0: number, y0: number, r1: number, y1: number, lift: number, n: number, d0: number)
+		local pts = {}
+		for k = 0, n do
+			local t = k / n
+			local r = r0 + (r1 - r0) * t
+			local y = y0 + (y1 - y0) * t + lift * 4 * t * (1 - t)
+			table.insert(pts, O + V(math.sin(a) * r, y, math.cos(a) * r))
+		end
+		for k = 1, n do
+			b:Accent(b:Rod(pts[k], pts[k + 1], d0 - (k - 1) * 0.03, UY.Spirit, "Neon", { Transparency = 0.32 }))
+		end
+		b:Accent(b:Ellipsoid(V(0.62, 0.12, 0.62), CF(pts[n + 1]), UY.MoonCore, "Neon", { Transparency = 0.45 }))
+	end
+	for i = 0, 3 do
+		arc(rad(i * 90 + 45), 0.72, 5.05, 2.75, 1.05, 1.4, 4, 0.26)
+		arc(rad(i * 90), 1.3, 3.45, 2.35, 1.05, 0.55, 3, 0.2)
+	end
+	b:Into(b.Model)
+	idle(arcs, "Spin", { Pivot = CF(O), Axis = "Y", Period = 14 })
+	-- wisps rising from the water
+	for i, x in ipairs({ -1.55, 1.55 }) do
+		local p = O + V(x, 1.75, (i == 1 and -0.5 or 0.55))
+		local group = b:Folder("Wisp" .. i)
+		wisp(b, CF(p) * ANG(0, rad(i * 120), 0) * ANG(rad(60), 0, 0), 0.9, UY.Spirit)
+		b:Into(b.Model)
+		idle(group, "Bob", { Pivot = CF(p), Amp = 0.35, Period = 3.8 + i * 0.8, Phase = i * 0.4, Turn = 20 })
+	end
+	-- candles on the front rim, lily pads with glowing flowers
+	for i = -1, 1, 2 do
+		local a = rad(180 + i * 45)
+		local p = O + V(math.sin(a) * R, 1.38, math.cos(a) * R)
+		candle(b, CF(p + V(-0.25 * i, 0.09, 0)), 0.5, 0.18)
+		candle(b, CF(p + V(0.22 * i, 0.09, 0.05)), 0.32, 0.16)
+	end
+	b:Detail(function()
+		for i, p in ipairs({ V(-1.9, 1.04, 1.8), V(2.1, 1.04, -1.2), V(0.4, 1.04, 2.5) }) do
+			b:Ellipsoid(V(0.8, 0.06, 0.7), CF(O + p) * ANG(0, rad(i * 70), 0), UY.Leaf, "SmoothPlastic")
+			b:Accent(b:Ball(0.26, CF(O + p + V(0.1, 0.12, 0)), UY.Glow, "Neon"))
+		end
+	end)
+end
+
+-- Grave Gate (Large): two stone pillars crowned with dog skulls, an iron arch with a little bell, and two wrought-iron
+-- gate leaves standing ajar that creak open and shut by themselves; graves and a dead sapling behind.
+recipes.uy_grave_gate = function(b)
+	b:Box(V(9.4, 0.14, 3.0), CF(0, 0.07, 0), UY.Soil, "Ground")
+	b:Box(V(6.4, 0.12, 4.2), CF(0, 0.06, 3.1), UY.Soil:Lerp(UY.Moss, 0.25), "Ground")
+	b:Detail(function()
+		for i, z in ipairs({ -1.0, 0.1, 1.3, 2.5 }) do
+			b:Box(V(1.3 - (i % 2) * 0.2, 0.08, 0.9), CF((i % 2 - 0.5) * 0.2, 0.17, z) * ANG(0, rad((i % 3 - 1) * 7), 0), UY.Stone, "Slate")
+		end
+	end)
+	for _, side in ipairs({ -1, 1 }) do
+		local x = side * 3.35
+		b:Box(V(1.5, 0.5, 1.5), CF(x, 0.39, 0), UY.Slate, "Slate", SOLID)
+		b:Box(V(1.1, 5.0, 1.1), CF(x, 3.14, 0), UY.Stone, "Slate", SOLID)
+		b:Box(V(1.45, 0.35, 1.45), CF(x, 5.8, 0), UY.Slate, "Slate")
+		b:Detail(function()
+			b:Box(V(1.24, 0.2, 1.24), CF(x, 2.2, 0), UY.Slate, "Slate")
+		end)
+		dogSkull(b, CF(x, 6.35, -0.05) * ANG(0, rad(side * -10), 0), 1.05, UY.Bone, UY.Ghost, true)
+		-- a glowing paw sigil on the pillar face
+		local sigil = CF(x, 3.9, -0.56)
+		b:Accent(b:Ellipsoid(V(0.46, 0.4, 0.06), sigil, UY.Glow, "Neon"))
+		for k, t in ipairs({ { -0.26, 0.3 }, { 0, 0.4 }, { 0.26, 0.3 } }) do
+			b:Accent(b:Ellipsoid(V(0.16, 0.2, 0.06), sigil * CF(t[1], t[2], 0) * ANG(0, 0, rad((k - 2) * -18)), UY.Glow, "Neon"))
+		end
+		candle(b, CF(x - side * 0.15, 0.64, -0.62), 0.45, 0.18)
+	end
+	-- the iron arch and its little bell
+	local n = 6
+	local last: Vector3? = nil
+	for k = 0, n do
+		local a = math.pi * k / n
+		local p = V(math.cos(a) * 2.7, 5.95 + math.sin(a) * 1.95, 0)
+		if last then
+			b:Rod(last, p, 0.16, UY.Iron, "Metal")
+		end
+		last = p
+	end
+	local hook = V(0, 7.85, 0)
+	local bell = b:Folder("ArchBell")
+	b:Rod(hook, hook - V(0, 0.35, 0), 0.05, UY.Iron, "Metal")
+	b:Ellipsoid(V(0.46, 0.3, 0.46), CF(hook - V(0, 0.42, 0)), UY.Bronze, "Metal")
+	b:Cone(CF(hook - V(0, 1.0, 0)), 0.58, 0.66, 0.42, 2, UY.Bronze, "Metal")
+	b:Disc(CF(hook - V(0, 0.98, 0)), 0.74, 0.06, C(104, 78, 50), "Metal")
+	b:Ball(0.16, CF(hook - V(0, 1.08, 0)), UY.Iron, "Metal")
+	b:Into(b.Model)
+	idle(bell, "Swing", { Pivot = CF(hook), Axis = "X", Amp = 10, Period = 2.4 })
+	-- the two gate leaves, hinged at the pillars and standing ajar inwards
+	local function leaf(name: string, side: number, rest: number, period: number, phase: number)
+		local hinge = CF(side * 2.78, 0, 0)
+		local f = hinge * ANG(0, rad(rest), 0)
+		local group = b:Folder(name)
+		local dir = -side -- along local X towards the middle
+		local L = 2.62
+		b:Box(V(0.16, 4.0, 0.16), f * CF(dir * 0.08, 2.3, 0), UY.Iron, "Metal")
+		b:Box(V(0.14, 3.55, 0.14), f * CF(dir * (L - 0.07), 2.08, 0), UY.Iron, "Metal")
+		for _, y in ipairs({ 0.62, 2.2, 3.55 }) do
+			b:Box(V(L, 0.12, 0.1), f * CF(dir * L / 2, y, 0), UY.Iron, "Metal")
+		end
+		for k = 1, 4 do
+			local x = dir * L * k / 5
+			local h = 4.3 - 0.44 * k / 5 + 0.22 + (k % 2) * 0.12
+			b:Box(V(0.07, h - 0.3, 0.07), f * CF(x, 0.3 + (h - 0.3) / 2, 0), UY.Iron, "Metal")
+			b:Ball(0.16, f * CF(x, h + 0.04, 0), UY.Iron, "Metal")
+		end
+		path(b, { (f * CF(dir * 0.1, 4.3, 0)).Position, (f * CF(dir * L * 0.5, 4.0, 0)).Position, (f * CF(dir * (L - 0.07), 3.86, 0)).Position }, { 0.1, 0.09 }, UY.Iron, "Metal")
+		b:CylZ(0.08, 0.72, f * CF(dir * L * 0.5, 2.9, 0), UY.Iron, "Metal")
+		b:Accent(b:CylZ(0.1, 0.24, f * CF(dir * L * 0.5, 2.9, 0), UY.Glow, "Neon"))
+		b:Into(b.Model)
+		idle(group, "Swing", { Pivot = hinge, Axis = "Y", Amp = 6, Period = period, Phase = phase })
+	end
+	leaf("GateLeft", -1, -14, 5.2, 0)
+	leaf("GateRight", 1, 20, 4.6, 0.5)
+	-- fence stubs beyond the pillars
+	for _, side in ipairs({ -1, 1 }) do
+		for _, x in ipairs({ 4.25, 4.7 }) do
+			b:Box(V(0.08, 2.0, 0.08), CF(side * x, 1.1, 0), UY.Iron, "Metal")
+		end
+		b:Box(V(0.68, 0.1, 0.08), CF(side * 4.45, 1.75, 0), UY.Iron, "Metal")
+	end
+	-- graves and a dead sapling behind the gate
+	headstone(b, CF(-1.9, 0.12, 3.6) * ANG(0, rad(10), 0) * ANG(rad(-5), 0, rad(5)), 0.9, 1.3, 0.22, UY.Stone)
+	headstone(b, CF(1.9, 0.12, 3.1) * ANG(0, rad(-14), 0) * ANG(rad(4), 0, rad(-6)), 0.8, 1.1, 0.22, UY.StoneLight:Lerp(UY.Stone, 0.6))
+	path(b, { V(-3.6, 0.12, 3.9), V(-3.5, 1.8, 3.85), V(-3.75, 3.1, 3.9) }, { 0.3, 0.2 }, UY.Bark, "Wood")
+	path(b, { V(-3.5, 1.8, 3.85), V(-2.9, 2.6, 3.7) }, { 0.12 }, UY.Bark, "Wood")
+	path(b, { V(-3.62, 2.5, 3.88), V(-4.2, 3.2, 4.0) }, { 0.1 }, UY.Bark, "Wood")
+	b:Detail(function()
+		local crow = CF(3.35, 6.35, 0.45) * ANG(0, rad(160), 0)
+		b:Ellipsoid(V(0.42, 0.46, 0.78), crow * CF(0, 0.6, 0), UY.Ink, "SmoothPlastic")
+		b:Ball(0.36, crow * CF(0, 0.9, -0.32), UY.Ink, "SmoothPlastic")
+		b:Wedge(V(0.1, 0.12, 0.26), crow * CF(0, 0.88, -0.6) * ANG(0, math.pi, 0), C(170, 150, 90), "SmoothPlastic")
+	end)
+end
+
+------------------------------------------------------------------------------------------------
 -- API
 ------------------------------------------------------------------------------------------------
 function DecorModels.Has(id: string): boolean
@@ -1736,6 +2519,16 @@ function DecorModels.Build(id: string, lod: number?): Model?
 	end
 	local model = b:Finish()
 	model:SetAttribute("DecorId", id)
+	-- tag models with idle animations so the client loop finds them without walking every decoration
+	local animated = 0
+	for _, d in model:GetDescendants() do
+		if d:GetAttribute("IdleAnim") ~= nil then
+			animated += 1
+		end
+	end
+	if animated > 0 then
+		model:SetAttribute("DecorIdle", animated)
+	end
 	return model
 end
 

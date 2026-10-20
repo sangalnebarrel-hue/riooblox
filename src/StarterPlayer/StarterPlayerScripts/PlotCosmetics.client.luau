@@ -10,11 +10,22 @@
 --    case changes (attribute ExhibitToken); the 30 Hz animation runs only while a stand is near.
 --    Reduced motion (Roblox setting / ReducedMotion attribute) or low FX (LowFX attribute, low
 --    graphics quality): static strip + ring + beam, no particles, no turning.
+--    Finds that carry their own showcase look (THE UNDERYARD finds, DogEconomy.ItemModels.Underyard):
+--    exhibit attribute ShowcaseAura (Color3) lays a soft disc of that colour under the find, parts
+--    tagged ShowcaseGlint twinkle with sparkles while the exhibit turns, and ShowcaseMotif
+--    ("Wisp" | "Ember") adds a slow rising trail. Low FX keeps the disc only.
 -- 2. Plot decor walk-up: on your own yard, every decor slot within MARKER_RANGE gets a DECORATE
 --    prompt (owner only: visitors never get one) and empty slots show a subtle dashed ring with a
 --    "+". The prompt opens the DECOR window on that slot (Modules.DecorScreen via GUIIntegration).
 --    Slot positions come from the yard attributes PlotFrame / PlotMirror (Economy.PlotDecorWorld),
 --    filled slots from Decor_<slot>, so nothing waits for streamed parts.
+-- 3. Decor idle animations: placed decorations tagged DecorIdle (DecorModels: IdleAnim attributes,
+--    maths in ReplicatedStorage.Decor.DecorIdle) animate on this client only. The nearest ones within
+--    IDLE.Range of the camera (count and rate from IDLE[quality], Halloween Shared.Quality) re-pose
+--    their moving parts (Swing / Sway / Bob / Spin) with one BulkMoveTo per frame and fade their glow
+--    parts (Flicker / Pulse / Blink) with LocalTransparencyModifier plus their lights' Brightness
+--    (WorldDetailQuality owns Light.Enabled). Collidable parts never move; a decoration that leaves
+--    the set returns to its rest pose. Reduced motion: nothing animates.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local CollectionService = game:GetService("CollectionService")
@@ -26,6 +37,7 @@ local player = Players.LocalPlayer
 local Economy = ReplicatedStorage:WaitForChild("DogEconomy")
 local Rules = require(Economy:WaitForChild("ShowcaseRules"))
 local Catalog = require(Economy:WaitForChild("DecorCatalog"))
+local DecorIdle = require(ReplicatedStorage:WaitForChild("Decor"):WaitForChild("DecorIdle"))
 
 local FX_RANGE = 80
 local MAX_STANDS = 2
@@ -33,6 +45,14 @@ local MARKER_RANGE = 40
 local MARKER_DROP = 46
 local SPIN = math.rad(22) -- exhibit turn, radians per second
 local TAG = "DogrotsShowcase"
+-- Decor idle animations per quality tier: decorations animated at once (nearest first), frames per second,
+-- range from the camera in studs.
+local IDLE = {
+	High = { Models = 16, Hz = 30, Range = 150 },
+	Medium = { Models = 10, Hz = 20, Range = 150 },
+	Low = { Models = 5, Hz = 12, Range = 90 },
+}
+local MAX_GLINTS = 3 -- sparkle emitters per exhibit
 
 local fxFolder = Instance.new("Folder")
 fxFolder.Name = "PlotCosmeticsFX"
@@ -55,6 +75,27 @@ local function lowFX(): boolean
 		return (UserSettings():GetService("UserGameSettings") :: any).SavedQualityLevel.Value
 	end)
 	return ok and type(level) == "number" and level > 0 and level <= 3
+end
+
+-- Quality tier "High" | "Medium" | "Low": the Halloween event's rule (Shared.Quality: WorldEventFX, LowFX, touch
+-- devices, graphics level), else this script's own low-FX test.
+local sharedModule: any = nil
+local function quality(): string
+	if sharedModule == nil then
+		local ok, shared = pcall(function()
+			local folder = ReplicatedStorage:FindFirstChild("Halloween")
+			local module = folder and folder:FindFirstChild("Shared")
+			return module and require(module :: ModuleScript)
+		end)
+		sharedModule = ok and type(shared) == "table" and type(shared.Quality) == "function" and shared or false
+	end
+	if sharedModule then
+		local ok, tier = pcall(sharedModule.Quality)
+		if ok and IDLE[tier] then
+			return tier
+		end
+	end
+	return lowFX() and "Low" or "High"
 end
 
 -- Prompts are drawn by Roblox (not translated by AutoTranslate): same locale rule as Kit.Lang.
@@ -101,6 +142,10 @@ type CaseFX = {
 	Beam: BasePart?,
 	Aura: boolean,
 	Color: Color3,
+	-- the find's own showcase look (ShowcaseAura / ShowcaseGlint / ShowcaseMotif on the exhibit)
+	Exhibit: Instance?,
+	Glints: { [BasePart]: Attachment },
+	Disc: BasePart?,
 }
 type StandFX = { Stand: Model, Cases: { [Model]: CaseFX }, Conns: { RBXScriptConnection } }
 
@@ -111,7 +156,86 @@ local clock = 0
 
 local TIERS = { Common = 1, Uncommon = 1, Rare = 2, Epic = 3, Legendary = 4, Mythic = 5, Secret = 5 }
 
+-- The find's own look: a soft disc in its ShowcaseAura colour (client part in the case folder) and, unless low FX,
+-- sparkle emitters on its ShowcaseGlint parts plus an optional ShowcaseMotif trail. Idempotent: called on every
+-- sync, it adds what streamed in since and rebuilds when the exhibit model changed.
+local function glintLayer(fx: CaseFX)
+	local exhibit = fx.Case:FindFirstChild("Exhibit")
+	if exhibit ~= fx.Exhibit then
+		for _, attachment in pairs(fx.Glints) do
+			attachment:Destroy()
+		end
+		table.clear(fx.Glints)
+		if fx.Disc then
+			fx.Disc:Destroy()
+			fx.Disc = nil
+		end
+		fx.Exhibit = exhibit
+	end
+	local aura = exhibit and exhibit:GetAttribute("ShowcaseAura")
+	if not exhibit or typeof(aura) ~= "Color3" then
+		return
+	end
+	if not fx.Disc then
+		local platform = fx.Case:FindFirstChild("Platform")
+		if platform and platform:IsA("BasePart") then
+			local disc = part("AuraDisc", Vector3.new(0.05, 2.5, 2.5), platform.CFrame * CFrame.new(0, platform.Size.Y / 2 + 0.03, 0) * CFrame.Angles(0, 0, math.pi / 2), aura, 0.72, Enum.PartType.Cylinder)
+			disc.Parent = fx.Folder
+			fx.Disc = disc
+		end
+	end
+	if lowFX() or reduced() then
+		return
+	end
+	local count = 0
+	for _ in pairs(fx.Glints) do
+		count += 1
+	end
+	local motif = exhibit:GetAttribute("ShowcaseMotif")
+	for _, d in ipairs(exhibit:GetDescendants()) do
+		if count >= MAX_GLINTS then
+			break
+		end
+		if d:IsA("BasePart") and d:GetAttribute("ShowcaseGlint") == true and not fx.Glints[d] then
+			count += 1
+			local attachment = Instance.new("Attachment")
+			attachment.Name = "PlotCosmeticsGlint"
+			local glint = Instance.new("ParticleEmitter")
+			glint.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+			glint.Color = ColorSequence.new(aura:Lerp(Color3.new(1, 1, 1), 0.45))
+			glint.LightEmission = 1
+			glint.Rate = 2.5
+			glint.Lifetime = NumberRange.new(0.5, 0.9)
+			glint.Speed = NumberRange.new(0.05, 0.25)
+			glint.SpreadAngle = Vector2.new(180, 180)
+			glint.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.3, 0.32), NumberSequenceKeypoint.new(1, 0) })
+			glint.Parent = attachment
+			-- the first glint part also carries the motif trail
+			if count == 1 and (motif == "Wisp" or motif == "Ember") then
+				local trail = Instance.new("ParticleEmitter")
+				trail.Texture = motif == "Ember" and "rbxasset://textures/particles/fire_main.dds" or "rbxasset://textures/particles/smoke_main.dds"
+				trail.Color = ColorSequence.new(aura)
+				trail.LightEmission = motif == "Ember" and 1 or 0.6
+				trail.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.25, 0.55), NumberSequenceKeypoint.new(1, 1) })
+				trail.Rate = motif == "Ember" and 5 or 2
+				trail.Lifetime = NumberRange.new(1.2, 2)
+				trail.Speed = NumberRange.new(0.4, 0.8)
+				trail.Acceleration = Vector3.new(0, 0.6, 0)
+				trail.SpreadAngle = Vector2.new(25, 25)
+				trail.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, motif == "Ember" and 0.12 or 0.3), NumberSequenceKeypoint.new(1, 0) })
+				trail.Parent = attachment
+			end
+			attachment.Parent = d
+			fx.Glints[d] = attachment
+		end
+	end
+end
+
 local function clearCase(fx: CaseFX)
+	for _, attachment in pairs(fx.Glints) do
+		attachment:Destroy()
+	end
+	table.clear(fx.Glints)
 	fx.Folder:Destroy()
 	local exhibit = fx.Case:FindFirstChild("Exhibit")
 	local rest = exhibit and exhibit:GetAttribute("RestPivot")
@@ -134,7 +258,20 @@ local function buildCase(case: Model): CaseFX?
 	folder.Name = case.Name
 	local base = platform.CFrame
 	local center = (base * CFrame.new(0, 1.3, 0)).Position
-	local fx: CaseFX = { Case = case, Token = case:GetAttribute("ExhibitToken"), Folder = folder, Tier = tier, Center = center, Rings = {}, Beam = nil, Aura = level >= 5 and not low, Color = color }
+	local fx: CaseFX = {
+		Case = case,
+		Token = case:GetAttribute("ExhibitToken"),
+		Folder = folder,
+		Tier = tier,
+		Center = center,
+		Rings = {},
+		Beam = nil,
+		Aura = level >= 5 and not low,
+		Color = color,
+		Exhibit = nil,
+		Glints = {},
+		Disc = nil,
+	}
 	-- Soft light strip under the platform edge.
 	part("Strip", Vector3.new(3.15, 0.08, 3.15), base * CFrame.new(0, -0.17, 0), color, 0.35).Parent = folder
 	if level >= 2 then
@@ -190,6 +327,7 @@ local function buildCase(case: Model): CaseFX?
 		r.Part.CFrame = CFrame.lookAt(pos, pos + Vector3.new(-math.sin(a), 0, math.cos(a)))
 	end
 	folder.Parent = fxFolder
+	glintLayer(fx)
 	return fx
 end
 
@@ -213,6 +351,9 @@ local function syncStand(s: StandFX)
 					if built then
 						s.Cases[case] = built
 					end
+				elseif fx then
+					-- the exhibit (or its glint parts) may stream in after the case effect was built
+					glintLayer(fx)
 				end
 			end
 		end
@@ -572,7 +713,231 @@ local function scanSlots()
 end
 
 ------------------------------------------------------------------------------------------------
--- Scheduler: one cheap 2 Hz loop for both (no per-frame work while nothing is near).
+-- 3. Decor idle animations (placed decorations tagged DecorIdle)
+------------------------------------------------------------------------------------------------
+type IdleTrack = {
+	Spec: DecorIdle.Spec,
+	Parts: { BasePart },
+	Rest: { CFrame }, -- moving tracks: model-space rest CFrame of each part
+	Lights: { { Light: Light, Base: number } }, -- glow tracks: lights under the parts and their own brightness
+	Seed: number,
+}
+type DecorFX = {
+	Model: Model,
+	Root: BasePart,
+	Moves: { IdleTrack },
+	Looks: { IdleTrack },
+	MoveParts: { BasePart },
+	Frames: { CFrame },
+	Count: number, -- parts when built (a re-streamed or rebuilt decoration is rebuilt here too)
+}
+
+local idleActive: { [Model]: DecorFX } = {}
+local idleStep: RBXScriptConnection? = nil
+local idleClock = 0
+local idleRate = 1 / 30
+
+local function partCount(model: Model): number
+	local n = 0
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			n += 1
+		end
+	end
+	return n
+end
+
+-- Tracks of one decoration; nil when it has nothing to animate (or its parts have not streamed in yet).
+local function buildDecor(model: Model): DecorFX?
+	local root = model.PrimaryPart or model:FindFirstChild("Root")
+	if not (root and root:IsA("BasePart")) then
+		return nil
+	end
+	local rootCF = root.CFrame
+	local fx: DecorFX = { Model = model, Root = root, Moves = {}, Looks = {}, MoveParts = {}, Frames = {}, Count = partCount(model) }
+	local moved: { [BasePart]: boolean } = {}
+	for _, inst in ipairs(model:GetDescendants()) do
+		local spec = (inst:IsA("BasePart") or inst:IsA("Model")) and DecorIdle.Spec(inst, rootCF) or nil
+		if spec then
+			local track: IdleTrack = { Spec = spec, Parts = {}, Rest = {}, Lights = {}, Seed = #fx.Moves * 1.7 + #fx.Looks * 2.3 }
+			local parts: { BasePart } = {}
+			if inst:IsA("BasePart") then
+				table.insert(parts, inst)
+			end
+			for _, d in ipairs(inst:GetDescendants()) do
+				if d:IsA("BasePart") then
+					table.insert(parts, d)
+				end
+			end
+			for _, p in ipairs(parts) do
+				if spec.Moves then
+					-- collidable parts never move, and a part moves with one track only
+					if not p.CanCollide and not moved[p] and p ~= root then
+						moved[p] = true
+						table.insert(track.Parts, p)
+						table.insert(track.Rest, rootCF:ToObjectSpace(p.CFrame))
+						table.insert(fx.MoveParts, p)
+						table.insert(fx.Frames, p.CFrame)
+					end
+				else
+					table.insert(track.Parts, p)
+					for _, child in ipairs(p:GetChildren()) do
+						if child:IsA("Light") then
+							table.insert(track.Lights, { Light = child, Base = child.Brightness })
+						end
+					end
+				end
+			end
+			if #track.Parts > 0 then
+				table.insert(spec.Moves and fx.Moves or fx.Looks, track)
+			end
+		end
+	end
+	if #fx.Moves == 0 and #fx.Looks == 0 then
+		return nil
+	end
+	return fx
+end
+
+-- Back to the rest pose and full glow (the decoration stays in the world).
+local function restoreDecor(fx: DecorFX)
+	if fx.Root.Parent == nil then
+		return
+	end
+	local rootCF = fx.Root.CFrame
+	local i = 0
+	for _, track in ipairs(fx.Moves) do
+		for k = 1, #track.Parts do
+			i += 1
+			fx.Frames[i] = rootCF * track.Rest[k]
+		end
+	end
+	if i > 0 then
+		pcall(function()
+			workspace:BulkMoveTo(fx.MoveParts, fx.Frames, Enum.BulkMoveMode.FireCFrameChanged)
+		end)
+	end
+	for _, track in ipairs(fx.Looks) do
+		for _, p in ipairs(track.Parts) do
+			p.LocalTransparencyModifier = 0
+		end
+		for _, l in ipairs(track.Lights) do
+			l.Light.Brightness = l.Base
+		end
+	end
+end
+
+local function poseDecor(fx: DecorFX, t: number)
+	local rootCF = fx.Root.CFrame
+	local i = 0
+	for _, track in ipairs(fx.Moves) do
+		local delta = rootCF * DecorIdle.Delta(track.Spec, t)
+		for k = 1, #track.Parts do
+			i += 1
+			fx.Frames[i] = delta * track.Rest[k]
+		end
+	end
+	if i > 0 then
+		workspace:BulkMoveTo(fx.MoveParts, fx.Frames, Enum.BulkMoveMode.FireCFrameChanged)
+	end
+	for _, track in ipairs(fx.Looks) do
+		local fade, light = DecorIdle.Glow(track.Spec, t, track.Seed)
+		for _, p in ipairs(track.Parts) do
+			p.LocalTransparencyModifier = fade
+		end
+		for _, l in ipairs(track.Lights) do
+			l.Light.Brightness = l.Base * light
+		end
+	end
+end
+
+local function dropDecor(model: Model)
+	local fx = idleActive[model]
+	if fx then
+		idleActive[model] = nil
+		pcall(restoreDecor, fx)
+	end
+end
+
+local function stepIdle(dt: number)
+	idleClock += dt
+	if idleClock < idleRate then
+		return
+	end
+	idleClock = 0
+	local t = os.clock()
+	for model, fx in pairs(idleActive) do
+		if model.Parent == nil or fx.Root.Parent == nil then
+			idleActive[model] = nil -- streamed out or rebuilt by the server: nothing to restore
+		else
+			local ok = pcall(poseDecor, fx, t)
+			if not ok then
+				dropDecor(model)
+			end
+		end
+	end
+	if next(idleActive) == nil and idleStep then
+		idleStep:Disconnect()
+		idleStep = nil
+	end
+end
+
+-- 2 Hz: which decorations animate (nearest first, within range, quality budget).
+local function scanDecor()
+	local camera = workspace.CurrentCamera
+	local map = workspace:FindFirstChild("DOGROTS_District")
+	local yards = map and map:FindFirstChild("04_PlayerYards")
+	local tier = IDLE[quality()] or IDLE.High
+	local keep: { [Model]: boolean } = {}
+	if camera and yards and not reduced() then
+		local from = camera.CFrame.Position
+		local near = {}
+		for _, yard in ipairs(yards:GetChildren()) do
+			local decor = yard:FindFirstChild("PlotDecor")
+			if decor then
+				for _, model in ipairs(decor:GetChildren()) do
+					if model:IsA("Model") and model:GetAttribute("DecorIdle") ~= nil then
+						local root = model.PrimaryPart
+						local distance = root and (root.Position - from).Magnitude or math.huge
+						if distance <= tier.Range then
+							table.insert(near, { Model = model, Distance = distance })
+						end
+					end
+				end
+			end
+		end
+		table.sort(near, function(a, b)
+			return a.Distance < b.Distance
+		end)
+		for i = 1, math.min(tier.Models, #near) do
+			keep[near[i].Model] = true
+		end
+	end
+	for model, fx in pairs(idleActive) do
+		-- rebuild a decoration whose parts changed (streaming, server rebuild) on the next pass
+		if not keep[model] or partCount(model) ~= fx.Count then
+			dropDecor(model)
+		end
+	end
+	for model in pairs(keep) do
+		if not idleActive[model] then
+			local fx = buildDecor(model)
+			if fx then
+				idleActive[model] = fx
+			end
+		end
+	end
+	idleRate = 1 / tier.Hz
+	if next(idleActive) ~= nil and not idleStep then
+		idleStep = RunService.Heartbeat:Connect(stepIdle)
+	elseif next(idleActive) == nil and idleStep then
+		idleStep:Disconnect()
+		idleStep = nil
+	end
+end
+
+------------------------------------------------------------------------------------------------
+-- Scheduler: one cheap 2 Hz loop for all three (no per-frame work while nothing is near).
 ------------------------------------------------------------------------------------------------
 task.spawn(function()
 	while true do
@@ -583,6 +948,10 @@ task.spawn(function()
 		ok, err = pcall(scanSlots)
 		if not ok then
 			warn("DOGROTS decor markers: " .. tostring(err))
+		end
+		ok, err = pcall(scanDecor)
+		if not ok then
+			warn("DOGROTS decor idle: " .. tostring(err))
 		end
 		task.wait(0.5)
 	end

@@ -1,6 +1,9 @@
--- Plot decorations: 6 categories x 6 items (+ the NIGHT OF THE BURIED MOON reward categories), the decor slots of a yard and the shared rules
--- (server feature Economy.Features.Decor, world Economy.PlotDecorWorld, window Modules.DecorScreen).
+-- Plot decorations: 6 categories x 6 items (+ the NIGHT OF THE BURIED MOON and THE UNDERYARD reward categories), the decor slots of a yard
+-- and the shared rules (server feature Economy.Features.Decor, world Economy.PlotDecorWorld, window Modules.DecorScreen).
 -- Models: ReplicatedStorage.Decor.DecorModels (one Forge recipe per Id). Docs: docs/PLOT_COSMETICS.md.
+-- Event rewards (Item.Reward = event id) are never sold: they are granted (Halloween Core ctx.Decor / reward rows with
+-- Kind = "Decor") and D.RewardHint tells the window where they come from. THE UNDERYARD pieces (Halloween Chapter II,
+-- docs/halloween2/DESIGN.md §9.8) animate on the client (StarterPlayerScripts.PlotCosmetics, IdleAnim attributes).
 --
 -- Prices are "minutes of income at the yard stage that unlocks the item" (docs/ECONOMY.md §5/§12:
 -- ~1.5K/min at stage 1, ~6K at stage 4, ~30K at stage 5, ~100K at stage 6, ~1M at stage 7-8 and
@@ -34,6 +37,9 @@ D.Categories = {
 	-- NIGHT OF THE BURIED MOON rewards (Pumpkin Lucky Blocks / the cauldron); never sold (Features.Decor buy()).
 	{ Id = "HauntedSmall", Name = "HALLOWEEN", RU = "ХЭЛЛОУИН", Size = "Small", Icon = "🎃" },
 	{ Id = "HauntedLarge", Name = "HALLOWEEN", RU = "ХЭЛЛОУИН", Size = "Large", Icon = "🦴" },
+	-- THE UNDERYARD rewards (Black Coffin, Bell Seals, Dex II, the Tailor of the Dead); never sold.
+	{ Id = "UnderyardSmall", Name = "UNDERYARD", RU = "ПОДДВОРЬЕ", Size = "Small", Icon = "🕯" },
+	{ Id = "UnderyardLarge", Name = "UNDERYARD", RU = "ПОДДВОРЬЕ", Size = "Large", Icon = "🔔" },
 }
 D.CategoryById = {}
 for i, c in ipairs(D.Categories) do
@@ -97,6 +103,26 @@ D.Items = {
 	{ Id = "hw_grave_stone", Category = "HauntedSmall", Name = "GRAVE STONE", RU = "НАДГРОБИЕ", Stage = 1, Cash = 0, Stone = 0, Rarity = "Rare", Reward = "BuriedMoon2026" },
 	{ Id = "hw_candle_cluster", Category = "HauntedSmall", Name = "CANDLE CLUSTER", RU = "СВЕЧИ", Stage = 1, Cash = 0, Stone = 0, Rarity = "Epic", Reward = "BuriedMoon2026" },
 	{ Id = "hw_bone_arch", Category = "HauntedLarge", Name = "BONE ARCH", RU = "КОСТЯНАЯ АРКА", Stage = 1, Cash = 0, Stone = 0, Rarity = "Legendary", Reward = "BuriedMoon2026" },
+	-- THE UNDERYARD (Halloween Chapter II rewards; ids are saved data, never rename). Black Coffin rows, the Tailor of
+	-- the Dead (fragments), Seal VII (Crooked Bell Tower) and the Dex II milestone 5 (Spirit Fence). Hint / HintRU
+	-- override the event's default source line (D.RewardHint). Every piece has a client idle animation.
+	{ Id = "uy_crooked_bell_tower", Category = "UnderyardLarge", Name = "CROOKED BELL TOWER", RU = "КРИВАЯ КОЛОКОЛЬНЯ", Stage = 1, Cash = 0, Stone = 0, Rarity = "Mythic", Reward = "Underyard2026",
+		Hint = "Clear Bell Seal VII, open Black Coffins or ask the Tailor of the Dead", HintRU = "Пройди VII печать колокола, открывай Чёрные гробы или закажи у Портного мертвецов" },
+	{ Id = "uy_whispering_tree", Category = "UnderyardLarge", Name = "WHISPERING TREE", RU = "ШЕПЧУЩЕЕ ДЕРЕВО", Stage = 1, Cash = 0, Stone = 0, Rarity = "Legendary", Reward = "Underyard2026" },
+	{ Id = "uy_moon_statue", Category = "UnderyardLarge", Name = "MOON STATUE", RU = "ЛУННАЯ СТАТУЯ", Stage = 1, Cash = 0, Stone = 0, Rarity = "Legendary", Reward = "Underyard2026" },
+	{ Id = "uy_ghost_fountain", Category = "UnderyardLarge", Name = "GHOST FOUNTAIN", RU = "ПРИЗРАЧНЫЙ ФОНТАН", Stage = 1, Cash = 0, Stone = 0, Rarity = "Legendary", Reward = "Underyard2026" },
+	{ Id = "uy_grave_gate", Category = "UnderyardLarge", Name = "GRAVE GATE", RU = "КЛАДБИЩЕНСКИЕ ВРАТА", Stage = 1, Cash = 0, Stone = 0, Rarity = "Epic", Reward = "Underyard2026" },
+	{ Id = "uy_haunted_kennel", Category = "UnderyardSmall", Name = "HAUNTED KENNEL", RU = "ПРОКЛЯТАЯ БУДКА", Stage = 1, Cash = 0, Stone = 0, Rarity = "Epic", Reward = "Underyard2026" },
+	{ Id = "uy_spirit_fence", Category = "UnderyardSmall", Name = "SPIRIT FENCE", RU = "ПРИЗРАЧНАЯ ОГРАДА", Stage = 1, Cash = 0, Stone = 0, Rarity = "Epic", Reward = "Underyard2026",
+		Hint = "Find 5 Underyard dogs (Dex II), open Black Coffins or ask the Tailor of the Dead", HintRU = "Найди 5 собак Поддворья (Декс II), открывай Чёрные гробы или закажи у Портного мертвецов" },
+	{ Id = "uy_coffin_flowerbed", Category = "UnderyardSmall", Name = "COFFIN FLOWERBED", RU = "КЛУМБА-ГРОБ", Stage = 1, Cash = 0, Stone = 0, Rarity = "Rare", Reward = "Underyard2026" },
+	{ Id = "uy_floating_tombstones", Category = "UnderyardSmall", Name = "FLOATING TOMBSTONES", RU = "ПАРЯЩИЕ НАДГРОБИЯ", Stage = 1, Cash = 0, Stone = 0, Rarity = "Rare", Reward = "Underyard2026" },
+	{ Id = "uy_funeral_lanterns", Category = "UnderyardSmall", Name = "FUNERAL LANTERN SET", RU = "ПОХОРОННЫЕ ФОНАРИ", Stage = 1, Cash = 0, Stone = 0, Rarity = "Rare", Reward = "Underyard2026" },
+}
+-- Where an event reward comes from (the window's info line), per Item.Reward: { English, Russian }.
+D.RewardSources = {
+	BuriedMoon2026 = { "Open Pumpkin Lucky Blocks to get it", "Открывай тыквенные блоки, чтобы получить" },
+	Underyard2026 = { "Open Black Coffins in the Underyard or ask the Tailor of the Dead", "Открывай Чёрные гробы в Поддворье или закажи у Портного мертвецов" },
 }
 D.ById = {}
 D.Order = {}
@@ -208,6 +234,30 @@ function D.ItemName(item: any, ru: boolean?): string
 		return ""
 	end
 	return ru and item.RU or item.Name
+end
+-- Where an event reward comes from: the item's own Hint, else the line of its event (D.RewardSources).
+function D.RewardHint(item: any, ru: boolean?): string
+	if type(item) ~= "table" or not item.Reward then
+		return ""
+	end
+	if type(item.Hint) == "string" then
+		return ru and item.HintRU or item.Hint
+	end
+	local source = D.RewardSources[item.Reward]
+	if not source then
+		return ""
+	end
+	return ru and source[2] or source[1]
+end
+-- Ids of one event's reward decorations in catalog order (e.g. "Underyard2026": the Chapter II collection).
+function D.RewardIds(event: string): { string }
+	local out = {}
+	for _, item in ipairs(D.Items) do
+		if item.Reward == event then
+			table.insert(out, item.Id)
+		end
+	end
+	return out
 end
 
 return D
