@@ -241,6 +241,10 @@ L.Exact = {
 	["Event HP on"] = "Здоровье события включено",
 	["Underyard module missing"] = "Модуль Поддворья не найден",
 	["Descending"] = "Спуск",
+	["Your dog storage is full! The dog waits in the Underyard and comes to you as soon as you make room."] =
+		"Хранилище собак заполнено! Собака подождёт в Поддворье и придёт, как только освободится место.",
+	["A dog from the Underyard joined your dog storage!"] = "Собака из Поддворья пришла в твоё хранилище!",
+	["No dog is waiting"] = "Никакая собака не ждёт",
 	["Ascending"] = "Подъём",
 }
 

@@ -393,7 +393,11 @@ function core.Transact(player, label, fn, opts)
 		function ctx.Dog(id)
 			Rstub.Check(table.find(declared, id) ~= nil, "Dog grant not declared")
 			p.Dogs = p.Dogs or {}
-			local uid = "D" .. tostring(#p.Dogs + 1)
+			local n = 1 -- (p.Dogs is keyed by DogUid: count the keys for a fresh uid)
+			for _ in pairs(p.Dogs) do
+				n += 1
+			end
+			local uid = "D" .. tostring(n)
 			p.Dogs[uid] = { DogUid = uid, DogId = id, Origin = "BuriedMoon" }
 			return { DogUid = uid, DogId = id }
 		end
@@ -795,13 +799,43 @@ test("reward rows convert instead of failing (duplicates, full storage, unknown 
 	eq(profiles[110].Underyard.Keys, 12)
 	eq(rows[1].Amount, 1)
 	eq(rows[1].Overflow.Amount, 2 * Cfg.Coffin.OverflowKeyShards)
-	-- a dog that was not declared converts; a full dog storage converts
+	-- a declared dog arrives; a full dog storage parks the dog (§9.4 dogs are never converted) until there is room
 	ok, rows = C2.Grant(pl, "t", { { Kind = "Dog", Id = "HW_BellPup", Rank = 2 } })
 	truthy(rows[1].Dog, "declared through the rows")
 	dogFree = false
-	ok, rows = C2.Grant(pl, "t", { { Kind = "Dog", Id = "HW_BellPup", Rank = 2 } })
+	ok, rows = C2.Grant(pl, "t", { { Kind = "Dog", Id = "HW_BellPup", Rank = 2, Source = "Seal" } })
+	truthy(ok and rows[1].Pending == true and rows[1].Reason == "Full" and not rows[1].Converted, "dog storage full: parked")
+	eq(#profiles[110].Underyard.PendingDogs, 1)
+	eq(profiles[110].Underyard.PendingDogs[1].Id, "HW_BellPup")
+	eq(pl:GetAttribute("UyPendingDogs"), 1, "attribute for the client")
+	local okD, why = C2.DeliverPendingDogs(pl, profiles[110].Underyard.PendingDogs)
+	truthy(okD and #why == 0, "still full: nothing delivered")
+	eq(#profiles[110].Underyard.PendingDogs, 1, "still waiting")
 	dogFree = true
-	truthy(rows[1].Converted and rows[1].Reason == "Full", "dog storage full")
+	local dogsBefore = 0
+	for _ in pairs(profiles[110].Dogs) do
+		dogsBefore += 1
+	end
+	local okD2, delivered = C2.DeliverPendingDogs(pl, profiles[110].Underyard.PendingDogs)
+	truthy(okD2 and #delivered == 1 and delivered[1].Dog and delivered[1].Dog.DogId == "HW_BellPup", "delivered with room")
+	eq(#profiles[110].Underyard.PendingDogs, 0, "list emptied")
+	local dogsAfter = 0
+	for _ in pairs(profiles[110].Dogs) do
+		dogsAfter += 1
+	end
+	eq(dogsAfter, dogsBefore + 1)
+	eq(pl:GetAttribute("UyPendingDogs"), 0)
+	truthy(not C2.DeliverPendingDogs(pl, {}), "nothing to deliver")
+	-- a waiting list at its cap converts as before
+	dogFree = false
+	profiles[110].Underyard.PendingDogs = {}
+	for i = 1, Cfg.Limits.PendingDogs do
+		profiles[110].Underyard.PendingDogs[i] = { Id = "HW_BellPup", Rank = 2, Source = "t", At = 1 }
+	end
+	ok, rows = C2.Grant(pl, "t", { { Kind = "Dog", Id = "HW_BellPup", Rank = 2 } })
+	truthy(rows[1].Converted and rows[1].Reason == "Full", "full waiting list converts")
+	profiles[110].Underyard.PendingDogs = {}
+	dogFree = true
 	-- resonance keys respect the per-day cap
 	u = profiles[110].Underyard
 	u.Keys = 0

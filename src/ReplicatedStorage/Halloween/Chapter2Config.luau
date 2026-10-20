@@ -366,8 +366,9 @@ C.Dex2Rewards = {
 	{ Count = 8, Rows = { { Kind = "Skin", Id = "UY_BellReaper" }, { Kind = "Title", Id = "HollowCrown2026" } } },
 }
 
--- Duplicates / fallback (§9.4). Dogs are never converted (a duplicate dog is still a dog); a dog that cannot be
--- delivered (full dog storage, model not in this place) becomes DogShardsPerRank x rank shards.
+-- Duplicates / fallback (§9.4). Dogs are never converted (a duplicate dog is still a dog): a dog rolled while the dog
+-- storage is full waits in p.Underyard.PendingDogs and arrives as soon as there is room (Chapter2.DeliverPendingDogs).
+-- Only a dog whose model is not in this place (or a full waiting list) becomes DogShardsPerRank x rank shards.
 C.Duplicates = {
 	Decor = { Fragments = 12, Dust = 400 },
 	Skin = { Fragments = 25, Dust = 800 },
@@ -626,7 +627,8 @@ C.Titles = {
 ---------------------------------------------------------------------------------------------------------------------
 -- PROFILE LIMITS (p.Underyard, §3.2: <= 6 KB JSON)
 ---------------------------------------------------------------------------------------------------------------------
-C.Limits = { OwnedDecor = 40, OwnedFinds = 40, Journal = 40, Dex2Claims = 8, CoffinLast = 10, Contracts = 6, Stat = 1e12 }
+C.Limits = { OwnedDecor = 40, OwnedFinds = 40, Journal = 40, Dex2Claims = 8, CoffinLast = 10, Contracts = 6, Stat = 1e12,
+	PendingDogs = 12 }
 
 ---------------------------------------------------------------------------------------------------------------------
 -- PRESENTATION / QUALITY (§17): Shared.Budget falls back to these keys

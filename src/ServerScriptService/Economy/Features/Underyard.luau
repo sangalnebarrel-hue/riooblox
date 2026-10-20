@@ -12,6 +12,7 @@
 --     Dex2Claims = {["3"] = true}, Owned = {Decor = {[id] = true}, Finds = {[id] = true}},
 --     Journal = {[key] = unlockedAt}, JournalRead = {[key] = true},
 --     Coffins = {Opened, Last = {{Key, Kind, Id, Amount, Rank, Converted, At}}, Crown = {Seconds, Rolls}},
+--     PendingDogs = {{Id, Variant, Rank, Source, At}},     dogs won while the dog storage was full (delivered later)
 --     Boss = {FinaleClears, FirstClears = {["3"] = true, ...}},
 --     Stats = {Perfect, Streaks, Trials, Doors, Spirits, Revives, Downs, ShardsEarned}}
 -- Bell Shards / Lucky Dust are p.Resources kinds (DogEconomy.Resources), pickaxe skins p.Halloween.Skins, plot cosmetics
@@ -199,6 +200,17 @@ function F.Shape(p: any): any
 	coffins.Crown = crown
 	crown.Seconds = int(crown.Seconds, 1e7)
 	crown.Rolls = int(crown.Rolls, 9)
+	local pendingDogs = {}
+	for _, row in ipairs(tbl(u.PendingDogs)) do
+		if type(row) == "table" and type(row.Id) == "string" and #row.Id <= 40 then
+			table.insert(pendingDogs, { Id = row.Id, Variant = type(row.Variant) == "string" and string.sub(row.Variant, 1, 40) or nil,
+				Rank = int(row.Rank, 6), Source = type(row.Source) == "string" and string.sub(row.Source, 1, 20) or "", At = int(row.At) })
+		end
+		if #pendingDogs >= (limits.PendingDogs or 12) then
+			break
+		end
+	end
+	u.PendingDogs = pendingDogs
 	local boss = tbl(u.Boss)
 	u.Boss = boss
 	boss.FinaleClears = int(boss.FinaleClears)
@@ -341,6 +353,10 @@ function F.View(p: any, now: number): any
 	for _, row in ipairs(u.Coffins.Last) do
 		table.insert(last, copySet(row))
 	end
+	local pending = {}
+	for _, row in ipairs(u.PendingDogs) do
+		table.insert(pending, { Id = row.Id, Rank = row.Rank, Source = row.Source, At = row.At })
+	end
 	local tutorialStep = u.Tutorial.Done and -1 or u.Tutorial.Step
 	return {
 		Fresh = fresh or nil, Version = u.Version,
@@ -368,6 +384,7 @@ function F.View(p: any, now: number): any
 		Owned = { Decor = copySet(u.Owned.Decor), Finds = copySet(u.Owned.Finds) },
 		Journal = copySet(u.Journal), JournalRead = copySet(u.JournalRead),
 		Coffins = { Opened = u.Coffins.Opened, Last = last, CrownRolls = u.Coffins.Crown.Rolls },
+		PendingDogs = pending,
 		Boss = { FinaleClears = u.Boss.FinaleClears, FirstClears = copySet(u.Boss.FirstClears) },
 		Stats = copySet(u.Stats),
 	}

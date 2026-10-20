@@ -17,7 +17,8 @@
 -- * C2.Progress (contracts, stats, resonance) and Perfect streak shards (C2.StreakHit) are queued per player and written
 --   in ONE transaction per second; C2.OnTick gives other modules a 1 s per-player tick.
 -- * Signals (Core.Signal): C2Toast {Text}, C2Shards {Amount, Source, Eff}, C2Seal {Seal, Stage, Rewards}, C2Contract {Id},
---   C2Key {Amount, Source}, C2Reveal {Need?}, C2Phase {Phase}, C2Journal {Key}, C2Tutorial {Step, Done}.
+--   C2Key {Amount, Source}, C2Reveal {Need?}, C2Phase {Phase}, C2Journal {Key}, C2Tutorial {Step, Done},
+--   C2PendingDog {Rewards, Left} (a dog that waited for room in the dog storage arrived).
 -- Other modules reach this one lazily through `modules.Chapter2` (DESIGN §22.1).
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
@@ -263,6 +264,7 @@ local function syncAttrs(player: Player, view: any)
 	setAttr(player, "UyTutorial", view.Tutorial and tonumber(view.Tutorial.Current) or 0)
 	setAttr(player, "BellShards", tonumber(view.Shards) or 0)
 	setAttr(player, "LuckyDust", tonumber(view.Dust) or 0)
+	setAttr(player, "UyPendingDogs", type(view.PendingDogs) == "table" and #view.PendingDogs or 0)
 end
 C2.SyncAttrs = syncAttrs
 
@@ -541,6 +543,14 @@ local function makeCtx(player: Player, p: any, u: any, ctx: any, now: number, do
 			local id = row.Id
 			if type(id) ~= "string" or not table.find(dogs, id) then
 				convert(out, row, "Undeclared")
+			elseif not Rl.Free(p) and core.Runtime.Engine.AssetReady(id) and #u.PendingDogs < (Cfg.Limits.PendingDogs or 12) then
+				-- §9.4 dogs are never converted: a full dog storage parks the dog until there is room (DeliverPendingDogs)
+				table.insert(u.PendingDogs, { Id = id, Variant = type(row.Variant) == "string" and row.Variant or nil,
+					Rank = math.clamp(math.floor(tonumber(row.Rank) or 1), 1, 6), Source = type(row.Source) == "string" and string.sub(row.Source, 1, 20) or "",
+					At = now })
+				out.Pending, out.Reason, out.Amount = true, "Full", 0
+				signal("C2Toast", { Text = "Your dog storage is full! The dog waits in the Underyard and comes to you as soon as you make room.",
+					Kind = "warn" })
 			elseif not Rl.Free(p) then
 				convert(out, row, "Full")
 			elseif not core.Runtime.Engine.AssetReady(id) then
@@ -726,6 +736,43 @@ function C2.Grant(player: Player, label: string, rows: { any }, opts: { [string]
 		return false, res, nil
 	end
 	return true, type(res) == "table" and res.Rewards or {}, res
+end
+
+-- dogs parked while the dog storage was full (ctx.C2Reward, §9.4) -> ok, delivered rows. hint = the view's PendingDogs
+-- (only to declare the dog grants of the write; the saved list is the truth). Delivers as many as there is room for.
+function C2.DeliverPendingDogs(player: Player, hint: { any }?): (boolean, any)
+	local ids = {}
+	for _, row in ipairs(hint or {}) do
+		if type(row) == "table" and type(row.Id) == "string" and table.find(Cfg.Dogs.Order, row.Id) and not table.find(ids, row.Id) then
+			table.insert(ids, row.Id)
+		end
+	end
+	if #ids == 0 then
+		return false, "No dog is waiting"
+	end
+	local ok, res = C2.Transact(player, "C2PendingDog", function(p, u, ctx)
+		local Rl = R()
+		local out = {}
+		local i = 1
+		while i <= #u.PendingDogs and Rl.Free(p) do
+			local row = u.PendingDogs[i]
+			if table.find(ids, row.Id) and core.Runtime.Engine.AssetReady(row.Id) then
+				table.remove(u.PendingDogs, i)
+				table.insert(out, ctx.C2Reward({ Kind = "Dog", Id = row.Id, Variant = row.Variant, Rank = row.Rank, Source = "Pending" }))
+			else
+				i += 1
+			end
+		end
+		if #out > 0 then
+			ctx.C2Signal("C2Toast", { Text = "A dog from the Underyard joined your dog storage!", Kind = "success" })
+			ctx.C2Signal("C2PendingDog", { Rewards = table.clone(out), Left = #u.PendingDogs })
+		end
+		return { Rewards = out }
+	end, { Dogs = ids, Silent = false })
+	if not ok then
+		return false, res
+	end
+	return true, type(res) == "table" and res.Rewards or {}
 end
 
 ---------------------------------------------------------------------------------------------------------------------
@@ -1450,6 +1497,23 @@ local function tickPlayer(player: Player, st: any, dt: number)
 		if c2.Fresh or (c2.Chapter1 and c2.Chapter1.Ready and not c2.Chapter1.Complete)
 			or (C2.Eligible(player) and c2.Daily and c2.Daily.Day ~= today) then
 			refresh(player, st)
+		end
+	end
+	-- a dog that waited for room in the dog storage arrives once there is room (checked every 10 s on the saved view)
+	local pendingDogs = type(c2) == "table" and c2.PendingDogs or nil
+	if type(pendingDogs) == "table" and #pendingDogs > 0 and not st.DeliveringDogs and os.clock() - (st.PendingDogTry or -1e9) >= 10 then
+		st.PendingDogTry = os.clock()
+		local Runtime = core.Runtime
+		local profile = Runtime and Runtime.Views and Runtime.Views[player.UserId]
+		if type(profile) == "table" and R().Free(profile) then
+			st.DeliveringDogs = true
+			task.spawn(function()
+				local ok, err = pcall(C2.DeliverPendingDogs, player, pendingDogs)
+				if not ok then
+					warn("Chapter2 pending dog delivery failed: " .. tostring(err))
+				end
+				st.DeliveringDogs = nil
+			end)
 		end
 	end
 	if C2.Eligible(player) and C2.InUnderyard(player) and core.IsActive(player) and C2.HasTeamDog(player, "HW_HollowKing") then
