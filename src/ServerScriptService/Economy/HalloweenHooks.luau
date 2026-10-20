@@ -17,7 +17,8 @@
 --   H07 Headless Hound TreasureChance per dig: a coin cache worth TreasureMinutes of its share of the team income
 --   H08 Eclipse Dog   EclipseChance per item attempt: the find becomes ECLIPSED (decided before I.Mint)
 --   H01 / H05 spots / H07 cursed treasure: Halloween dig spots (WP7, Runtime.Views team)
--- Natural event rows on every yard dig while the event is ON (Config.Mutations.YardChance; BLOOD MOON only while
+-- Natural event rows on every yard dig while the event is ON (Config.Mutations.YardChance x Config.Rebalance.PassiveScale
+-- — the Chapter I rebalance keeps passive Halloween generation at ~20% of before; BLOOD MOON only while
 -- State.BloodMoon.State == "ACTIVE", which also multiplies every row by Config.BloodMoon.MutationBonus; x ExorcismBoost
 -- while State.MutationBoostUntil > now): effects.EventMutations, consumed by ItemRules.MutationRows (WP5).
 -- Event dog abilities follow BonusSources.BuriedMoon.Active().
@@ -74,6 +75,10 @@ function H.Rows(now: number): any
 	local blood = bm ~= nil and bm:GetAttribute("State") == "ACTIVE"
 	if blood then
 		boost *= math.max(1, tonumber(cfg.BloodMoon and cfg.BloodMoon.MutationBonus) or 1)
+	end
+	local passive = type(cfg.Rebalance) == "table" and tonumber(cfg.Rebalance.PassiveScale) or nil
+	if passive and passive == passive then
+		boost *= math.clamp(passive, 0, 1)
 	end
 	local rows = {}
 	for _, name in ipairs(m.Order or {}) do

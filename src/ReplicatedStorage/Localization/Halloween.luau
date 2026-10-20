@@ -237,6 +237,7 @@ L.UI = {
 	["CANDY RUSH x2 · 5 MIN"] = "КОНФЕТНАЯ ЛИХОРАДКА x2 · 5 МИН",
 	["PUMPKIN BLOCK FOR EVERYONE"] = "ТЫКВЕННЫЙ БЛОК КАЖДОМУ",
 	["RARE PUMPKIN BLOCK FOR EVERYONE"] = "РЕДКИЙ ТЫКВЕННЫЙ БЛОК ДЛЯ ВСЕХ",
+	["RARE PUMPKIN BLOCK FOR THE EXORCISTS"] = "РЕДКИЙ ТЫКВЕННЫЙ БЛОК ДЛЯ ЭКЗОРЦИСТОВ", -- [WP-E] Config.Exorcism milestone 2500
 	["MUTATION CHANCE x2 · 10 MIN"] = "ШАНС МУТАЦИИ x2 · 10 МИН",
 	["Your Candy Rush is over"] = "Твоя конфетная лихорадка закончилась",
 	-- server prompts of the Dead Yard (never auto-translated: HalloweenClient.HUD sets them)

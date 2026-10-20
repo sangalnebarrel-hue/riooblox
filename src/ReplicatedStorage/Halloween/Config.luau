@@ -7,6 +7,10 @@
 --   Blood Moon / boss / exorcism / candy rush timers stop, the main-map layer is removed, event actions are refused.
 --   Saved data (profile.Halloween, event dogs, event mutations, skins, pumpkin blocks) is NEVER deleted, and event dogs /
 --   mutated finds keep working everywhere in the normal game.
+--
+-- CHAPTER I REBALANCE (docs/halloween2/DESIGN.md §12): every number the rebalance changed keeps its old value in a
+-- "-- was" comment next to it; C.Rebalance holds the new levers, and the Pumpkin block tables are rescaled at load
+-- (bottom of this file) from the ORIGINAL weights kept below. Tables, odds and the model: docs/halloween2/CHAPTER1_BALANCE.md.
 local C = {}
 
 C.HalloweenEventEnabled = true
@@ -28,19 +32,52 @@ C.DataVersion = 1
 C.Studio = { FastTimers = false, DebugPanel = true }
 
 ---------------------------------------------------------------------------------------------------------------------
+-- CHAPTER I REBALANCE levers (docs/halloween2/DESIGN.md §12). Targets: Pumpkin Lucky Blocks ~5x slower to get,
+-- passive Halloween generation ~20% of before, the all-quests block as a fair daily floor. Already granted rewards are
+-- never taken away; blocks already owned keep the reward table frozen into them when they were granted.
+-- Pure rules: ReplicatedStorage.Halloween.Chapter1Rules (trick price, brew catch-up, minute cap, earned candy) and
+-- ReplicatedStorage.Halloween.DropRates (the rare prize philosophy).
+---------------------------------------------------------------------------------------------------------------------
+C.Rebalance = {
+	Version = 1,
+	OddsVersion = "hw1-r1", -- stamped on event blocks granted with the rescaled tables (EventBlocks.Freeze; was "hw1")
+	-- RARE PRIZE PHILOSOPHY: each Pumpkin / Cursed Pumpkin row's PROBABILITY x the factor of its class (resources:
+	-- Cash / Bones / Candy; the others by rarity); the probability this frees goes to the Filler row (Lucky Dust), so a
+	-- miss still feeds the Dust Forge. Applied at load at the bottom of this file.
+	RarityScale = { Resource = .5, Common = .10, Rare = .10, Epic = .10, Legendary = .05, Mythic = .025, Secret = .01 },
+	Filler = {
+		Pumpkin = { Kind = "Dust", Amount = { 40, 70 }, Rank = 1, Rarity = "Common", Name = "LUCKY DUST" },
+		CursedPumpkin = { Kind = "Dust", Amount = { 150, 260 }, Rank = 2, Rarity = "Rare", Name = "LUCKY DUST" },
+	},
+	-- TRICK, "the cauldron grows hungry": Cauldron.TrickCost x (1 + Step)^(tricks this UTC day), rounded to Round, at
+	-- most Max (3x the old flat price of 80); back to the base price at UTC midnight -> 140, 170, 200, 240, 240, ...
+	TrickEscalation = { Step = .20, Compound = true, Round = 5, Max = 240 }, -- was: 80 flat
+	-- TREAT late-starter catch-up: a brew is ready at min(StartedAt + Cauldron.BrewSeconds, At), never sooner than
+	-- StartedAt + MinSeconds (Studio FastTimers keep Cauldron.StudioBrewSeconds). Fixes brews stranded by the event end.
+	BrewDeadline = { At = 1793469600, MinSeconds = 86400 }, -- 2026-10-31 18:00 UTC; was: always StartedAt + 7 days
+	-- natural event mutations on ordinary yard digs (Mutations.YardChance x this; HalloweenHooks.Rows)
+	PassiveScale = .2, -- was 1
+}
+
+---------------------------------------------------------------------------------------------------------------------
 -- CANDY (event currency, saved in profile.Halloween.Candy; server only)
 ---------------------------------------------------------------------------------------------------------------------
 C.Candy = {
 	Max = 1e9,
-	Loot = { 1, 3 },          -- an ordinary Halloween find (ore node break, plain dig spot)
+	Loot = { 1, 2 },          -- an ordinary Halloween find (ore node break, plain dig spot) -- was {1, 3}
 	PerfectHit = 1,           -- each server-confirmed Perfect Hit on Halloween ore / dig spots / boss
-	PerfectHitCap = 40,       -- max Perfect Hit candy per player per minute (anti-macro)
+	PerfectHitCap = 20,       -- max Perfect Hit candy per player per minute (anti-macro) -- was 40
 	RareFind = { 3, 8 },      -- rare Halloween find (rare item roll, Cursed Treasure, event mutation)
-	Quest = { 25, 50 },       -- each daily quest
-	Boss = { 20, 100 },       -- boss reward (scaled by difficulty and contribution)
-	TreatHouse = { 6, 14 },   -- Trick-or-Treat house: TREAT
-	TrickHouse = { 2, 5 },    -- Trick-or-Treat house: TRICK consolation
-	MinuteCap = 220,          -- hard cap of candy granted per player per rolling minute (everything except quests/boss/houses)
+	Quest = { 15, 30 },       -- each daily quest (fallback; the real amounts are Quests.Pool[].Candy) -- was {25, 50}
+	Boss = { 12, 60 },        -- boss reward (documentation; the real amounts are Boss.Difficulties[].Candy) -- was {20, 100}
+	TreatHouse = { 4, 9 },    -- Trick-or-Treat house: TREAT -- was {6, 14}
+	TrickHouse = { 1, 3 },    -- Trick-or-Treat house: TRICK consolation -- was {2, 5}
+	-- hard cap of candy per player per rolling minute (everything except quests/boss/houses). Applied to the BASE amount
+	-- BEFORE the curse / rush / Blood Moon multipliers, so a Candy Rush or a Blood Moon keeps its full value near the cap
+	MinuteCap = 110,          -- was 220, applied after the multipliers
+	-- candy sources that are fixed payouts, not earned by play: they never progress the EarnCandy quest (any grant with
+	-- NoMult is a payout too). Earned: Queue (Perfect hits), Ore, DigSpot, RareFind, Treat, Trick, MiniBoss, Boss.
+	Unearned = { Quest = true, Reward = true, Duplicate = true, Dog = true, Mutation = true, Block = true, Debug = true },
 }
 
 ---------------------------------------------------------------------------------------------------------------------
@@ -82,7 +119,7 @@ C.BloodMoon = {
 	Offset = 210, Warning = 30, Active = 150, Fade = 12, -- Offset+Warning+Active+Fade must fit the NORMAL gap (600 s)
 	StudioPeriod = 90, StudioOffset = 20, -- Studio FastTimers: cycle length / warning offset
 	ParticipationSeconds = 25, -- seconds of activity in the zone during ACTIVE to count as "participated" (quest)
-	CandyBonus = .5,        -- +50% candy from every source during ACTIVE
+	CandyBonus = .25,       -- +25% candy from every source during ACTIVE -- was .5
 	MutationBonus = 2,      -- x this on every natural event mutation row of a yard dig during ACTIVE (the BLOOD MOON row
 	                        -- only rolls during ACTIVE at all)
 }
@@ -98,16 +135,17 @@ C.DigSpots = {
 	Lifetime = 70,          -- an undug spot sinks after this many seconds
 	Range = 13,             -- server interaction distance
 	PlayerCooldown = 2,     -- per player per spot after it is dug (shared spots: every digger gets a reward)
+	-- Candy per type x .6 of before (rounded, at least 1)
 	Types = {
-		{ Id = "CursedSoil", Name = "CURSED SOIL", Weight = 30, HP = 1.6, Candy = { 2, 4 }, RareChance = .22, Bones = { 0, 1 },
+		{ Id = "CursedSoil", Name = "CURSED SOIL", Weight = 30, HP = 1.6, Candy = { 1, 2 }, RareChance = .22, Bones = { 0, 1 }, -- was Candy {2, 4}
 			Color = { 120, 18, 28 }, Accent = { 255, 60, 60 } },
-		{ Id = "GhostSoil", Name = "GHOST SOIL", Weight = 26, HP = 1.0, Candy = { 2, 4 }, RareChance = .10, Bones = { 0, 1 },
+		{ Id = "GhostSoil", Name = "GHOST SOIL", Weight = 26, HP = 1.0, Candy = { 1, 2 }, RareChance = .10, Bones = { 0, 1 }, -- was Candy {2, 4}
 			MissChance = .30, EventDogBonus = .5, Color = { 170, 220, 255 }, Accent = { 210, 245, 255 } },
-		{ Id = "PumpkinPatch", Name = "PUMPKIN PATCH", Weight = 24, HP = 1.0, Candy = { 6, 10 }, RareChance = .06, Bones = { 0, 0 },
+		{ Id = "PumpkinPatch", Name = "PUMPKIN PATCH", Weight = 24, HP = 1.0, Candy = { 4, 6 }, RareChance = .06, Bones = { 0, 0 }, -- was Candy {6, 10}
 			Color = { 255, 130, 30 }, Accent = { 120, 220, 60 } },
-		{ Id = "BoneGrave", Name = "BONE GRAVE", Weight = 17, HP = 1.2, Candy = { 1, 3 }, RareChance = .08, Bones = { 12, 30 },
+		{ Id = "BoneGrave", Name = "BONE GRAVE", Weight = 17, HP = 1.2, Candy = { 1, 2 }, RareChance = .08, Bones = { 12, 30 }, -- was Candy {1, 3}
 			Color = { 225, 215, 190 }, Accent = { 140, 255, 150 } },
-		{ Id = "CursedTreasure", Name = "CURSED TREASURE", Weight = 3, HP = 2.6, Candy = { 14, 24 }, RareChance = 1, Bones = { 20, 40 },
+		{ Id = "CursedTreasure", Name = "CURSED TREASURE", Weight = 3, HP = 2.6, Candy = { 8, 14 }, RareChance = 1, Bones = { 20, 40 }, -- was Candy {14, 24}
 			Color = { 255, 200, 70 }, Accent = { 190, 90, 255 }, Rare = true, Max = 1 },
 	},
 	BaseHP = 26,            -- spot HP = BaseHP * type.HP * (1 + .12 * diggers) ; damage = player's real pickaxe damage
@@ -123,7 +161,7 @@ C.Ore = {
 	HitsTarget = { 6, 11 },
 	Respawn = { 8, 14 },
 	Range = 14,
-	Candy = { 1, 3 },         -- per break (C.Candy.Loot)
+	Candy = { 1, 2 },         -- per break (C.Candy.Loot) -- was {1, 3}
 	RareChance = .06,         -- chance a break is a rare find (item + C.Candy.RareFind)
 	Kinds = {
 		{ Id = "PumpkinOre", Name = "PUMPKIN ORE", Weight = 40, Rock = { 54, 36, 28 }, Accent = { 255, 128, 24 }, FX = "Ember" },
@@ -136,7 +174,9 @@ C.Ore = {
 -- HAUNTED CAULDRON
 ---------------------------------------------------------------------------------------------------------------------
 C.Cauldron = {
-	TrickCost = 80,              -- TRICK: 80 Candy -> Pumpkin Lucky Block (Cursed Pumpkin with CursedChance)
+	-- TRICK: candy -> Pumpkin Lucky Block (Cursed Pumpkin with CursedChance). This is the base price of the first TRICK
+	-- of a UTC day; every TRICK that day costs more (Rebalance.TrickEscalation; Chapter1Rules.TrickPrice)
+	TrickCost = 140,             -- was 80 flat
 	CursedChance = .06,
 	Levels = {                   -- TREAT: invest candy, level up; Cost = candy to reach this level
 		{ Level = 1, Cost = 0, Table = "Treat1", Name = "SIMMERING" },
@@ -145,18 +185,23 @@ C.Cauldron = {
 		{ Level = 4, Cost = 350, Table = "Treat4", Name = "OVERFLOWING" },
 		{ Level = 5, Cost = 600, Table = "Treat5", Name = "BURIED MOON BREW" },
 	},
-	BrewSeconds = 7 * 86400,     -- the brew is ready this long after the first TREAT (one reward per season)
+	BrewSeconds = 7 * 86400,     -- the brew is ready this long after the first TREAT (one reward per season), but never
+	                             -- later than Rebalance.BrewDeadline (late-starter catch-up, Chapter1Rules.BrewReadyAt)
 	StudioBrewSeconds = 120,
 	InvestStep = { 10, 50 },     -- UI quick-invest buttons
 	Range = 22,
 }
 
 ---------------------------------------------------------------------------------------------------------------------
--- REWARD TABLES (Kind = Cash | Bones | Candy | Decor | Skin | Dog | Mutation | Block | Luck)
--- Cash rows use income-scaled coins: {MinCash, IncomeMinutes} (DogEconomy.BoostPricing.Coins)
+-- REWARD TABLES (Kind = Cash | Bones | Candy | Dust | Decor | Skin | Dog | Mutation | Block | Luck)
+-- Cash rows use income-scaled coins: {MinCash, IncomeMinutes} (DogEconomy.BoostPricing.Coins); Dust rows pay Lucky Dust
+-- (Amount = n or {min, max}).
+-- Pumpkin / CursedPumpkin below are the ORIGINAL weights (sums 10 115 / 9 272). At load they are replaced by the
+-- rescaled tables of the rare prize philosophy (bottom of this file: integer weights on a 1e6 scale + the Lucky Dust
+-- filler; C.Rebalance.Was keeps these originals). Blocks granted before keep the table frozen into them.
 ---------------------------------------------------------------------------------------------------------------------
 C.Rewards = {
-	Pumpkin = { -- PUMPKIN LUCKY BLOCK
+	Pumpkin = { -- PUMPKIN LUCKY BLOCK (original weights)
 		{ Kind = "Cash", Coins = { MinCash = 15000, IncomeMinutes = 18 }, Weight = 2600, Rank = 1, Rarity = "Common", Name = "Coin Pile" },
 		{ Kind = "Bones", Amount = 60, Weight = 2200, Rank = 1, Rarity = "Common", Name = "60 Bones" },
 		{ Kind = "Decor", Id = "hw_jack_o_lantern", Weight = 1100, Rank = 2, Rarity = "Rare", Name = "JACK-O'-LANTERN" },
@@ -175,7 +220,7 @@ C.Rewards = {
 		{ Kind = "Dog", Id = "HW_HeadlessHound", Weight = 8, Rank = 5, Rarity = "Mythic", Name = "Headless Hound" },
 		{ Kind = "Dog", Id = "HW_EclipseDog", Weight = 1, Rank = 6, Rarity = "Secret", Name = "Eclipse Dog" },
 	},
-	CursedPumpkin = { -- CURSED PUMPKIN (very rare variant: from TRICK at CursedChance, exorcism, Hell+ boss, cauldron L5)
+	CursedPumpkin = { -- CURSED PUMPKIN (very rare variant: from TRICK at CursedChance, Hell+ boss, cauldron L4/L5, dex 8; original weights)
 		{ Kind = "Cash", Coins = { MinCash = 60000, IncomeMinutes = 45 }, Weight = 1800, Rank = 2, Rarity = "Rare", Name = "Cursed Hoard" },
 		{ Kind = "Bones", Amount = 220, Weight = 1500, Rank = 2, Rarity = "Rare", Name = "220 Bones" },
 		{ Kind = "Decor", Id = "hw_bone_arch", Weight = 900, Rank = 3, Rarity = "Epic", Name = "BONE ARCH" },
@@ -230,7 +275,8 @@ C.Mutations = {
 		ECLIPSED = { Mult = 20, Color = { 26, 14, 40 }, Accent = { 176, 70, 255 }, Name = "ECLIPSED" },
 	},
 	PostCapLimit = 60e6,  -- an event-mutated find is never worth more than this (keeps the economy bounded)
-	-- natural rolls on yard digs while the event is on (absolute chances taken from NORMAL)
+	-- natural rolls on yard digs while the event is on (absolute chances taken from NORMAL), x Rebalance.PassiveScale
+	-- (.2: effectively .0008 / .0003 / .00024; was x 1)
 	YardChance = { HAUNTED = .004, PUMPKINIZED = .0015, ["BLOOD MOON"] = .0012 }, -- BLOOD MOON row only during Blood Moon
 	ExorcismBoost = 2,    -- exorcism milestone multiplier (10 min)
 }
@@ -289,16 +335,19 @@ C.Boss = {
 	-- dogs dig the weak points: the digger's best assigned yard dog digs beside them for +DogPerRank x its rank
 	-- (+EventDog with an event dog in the yard team) extra weak-point damage, at most +DogMax; no dogs = no bonus
 	WeakPoints = { Count = 3, Mult = 3, Open = 6, DogPerRank = .04, EventDog = .1, DogMax = .3 },
+	-- [WP-E] Chapter I rebalance: Candy x .6; DogChance by the rare prize philosophy (each Legendary dog's absolute chance
+	-- x .05, each Mythic x .025: DogChance x .04375 with DogWeights 6 : 1); CursedBlock IV .35 -> .03, V 1 -> .08;
+	-- EclipseChance .03 -> .0003 (Secret x .01)
 	Difficulties = {
-		{ Id = 1, Numeral = "I", Name = "EASY", Armor = 1.0, Speed = 1.0, Reward = 1.0, DogChance = .02, Candy = { 20, 35 }, Unlock = 0 },
-		{ Id = 2, Numeral = "II", Name = "UNEASY", Armor = 1.6, Speed = 1.15, Reward = 1.5, DogChance = .04, Candy = { 30, 50 }, Unlock = 1 },
-		{ Id = 3, Numeral = "III", Name = "NIGHTMARE", Armor = 2.5, Speed = 1.3, Reward = 2.2, DogChance = .07, Candy = { 45, 70 }, Unlock = 2 },
-		{ Id = 4, Numeral = "IV", Name = "HELL", Armor = 4.0, Speed = 1.5, Reward = 3.2, DogChance = .12, Candy = { 60, 85 }, Unlock = 3, CursedBlock = .35 },
-		{ Id = 5, Numeral = "V", Name = "???", Armor = 6.5, Speed = 1.75, Reward = 4.5, DogChance = .2, Candy = { 80, 100 }, Unlock = 4, CursedBlock = 1, EclipseChance = .03 },
+		{ Id = 1, Numeral = "I", Name = "EASY", Armor = 1.0, Speed = 1.0, Reward = 1.0, DogChance = .000875, Candy = { 12, 21 }, Unlock = 0 }, -- was DogChance .02, Candy {20, 35}
+		{ Id = 2, Numeral = "II", Name = "UNEASY", Armor = 1.6, Speed = 1.15, Reward = 1.5, DogChance = .00175, Candy = { 18, 30 }, Unlock = 1 }, -- was DogChance .04, Candy {30, 50}
+		{ Id = 3, Numeral = "III", Name = "NIGHTMARE", Armor = 2.5, Speed = 1.3, Reward = 2.2, DogChance = .0030625, Candy = { 27, 42 }, Unlock = 2 }, -- was DogChance .07, Candy {45, 70}
+		{ Id = 4, Numeral = "IV", Name = "HELL", Armor = 4.0, Speed = 1.5, Reward = 3.2, DogChance = .00525, Candy = { 36, 51 }, Unlock = 3, CursedBlock = .03 }, -- was DogChance .12, Candy {60, 85}, CursedBlock .35
+		{ Id = 5, Numeral = "V", Name = "???", Armor = 6.5, Speed = 1.75, Reward = 4.5, DogChance = .00875, Candy = { 48, 60 }, Unlock = 4, CursedBlock = .08, EclipseChance = .0003 }, -- was DogChance .2, Candy {80, 100}, CursedBlock 1, EclipseChance .03
 	},
 	MinContribution = .03,        -- share of total damage needed for a full reward (below: consolation)
 	EventDogs = { "HW_Frankenpug", "HW_BatDachshund", "HW_PlaguePug", "HW_HeadlessHound" },
-	DogWeights = { Normal = 3, Rank5 = 1 }, -- boss event-dog drop weights (rank 5+ dogs are rarer)
+	DogWeights = { Normal = 6, Rank5 = 1 }, -- boss event-dog drop weights (rank 5+ dogs are rarer) -- [WP-E] was {Normal = 3, Rank5 = 1}
 	Reward = {                    -- per contributor; perf = PerfBase + PerfSlope * (share x contributors), clamped 0..1
 		PerfBase = .35, PerfSlope = .65,
 		Bones = 40, XP = 25,          -- full reward: Bones x Difficulty.Reward x (.5 + .5 perf), XP x Difficulty.Reward
@@ -339,7 +388,11 @@ C.Exorcism = {
 	Souls = { Candy = 1, OreBreak = 3, DigSpot = 6, BossDamagePer = 120, Quest = 20, Knock = 2, Trick = 10 },
 	Milestones = {
 		{ At = 1000, Kind = "CandyRush", Seconds = 300, Name = "CANDY RUSH x2 · 5 MIN" },
-		{ At = 2500, Kind = "Block", Tier = "Pumpkin", MinRank = 3, Name = "RARE PUMPKIN BLOCK FOR EVERYONE" }, -- MinRank: Epic+ only
+		-- MinRank: Epic+ only. ActiveWindow: only players active in the Dead Yard in the last 180 s get it (the
+		-- exorcists, Core.ActiveInYard) -- was: every player on the server, AFK or not. Players idle in the yard or
+		-- active there within NoticeWindow seconds are told why they missed it.
+		{ At = 2500, Kind = "Block", Tier = "Pumpkin", MinRank = 3, ActiveWindow = 180, NoticeWindow = 900,
+			Name = "RARE PUMPKIN BLOCK FOR THE EXORCISTS" },
 		{ At = 4000, Kind = "Mutation", Seconds = 600, Mult = 2, Name = "MUTATION CHANCE x2 · 10 MIN" },
 		{ At = 5000, Kind = "Boss", Difficulty = 2, Name = "THE GRAVEKEEPER RISES" },
 	},
@@ -349,21 +402,23 @@ C.Exorcism = {
 ---------------------------------------------------------------------------------------------------------------------
 -- DAILY QUESTS (UTC day; 5 drawn per player per day from the pool, deterministic per user+day)
 ---------------------------------------------------------------------------------------------------------------------
+-- Quest candy x .6 of before; EarnCandy only counts earned candy (Candy.Unearned: quest / reward payouts never count)
 C.Quests = {
 	PerDay = 5,
 	Pool = {
-		{ Id = "DigSpots", Text = "Dig %d Haunted Spots", Goal = 10, Candy = 45, Bones = 40 },
-		{ Id = "Perfect", Text = "Get %d Perfect Hits", Goal = 10, Candy = 30 },
-		{ Id = "EarnCandy", Text = "Earn %d Candy", Goal = 50, Candy = 25, Bones = 25 },
-		{ Id = "BloodMoon", Text = "Participate in a Blood Moon", Goal = 1, Candy = 40 },
-		{ Id = "BossDamage", Text = "Damage the Gravekeeper", Goal = 400, Candy = 50, Bones = 60 },
-		{ Id = "OpenPumpkin", Text = "Open a Pumpkin Block", Goal = 1, Candy = 35 },
-		{ Id = "FindMutation", Text = "Find a Halloween mutation", Goal = 1, Candy = 50 },
-		{ Id = "MineOre", Text = "Break %d Halloween ores", Goal = 12, Candy = 30 },
-		{ Id = "Knock", Text = "Knock on %d doors", Goal = 3, Candy = 25 },
+		{ Id = "DigSpots", Text = "Dig %d Haunted Spots", Goal = 10, Candy = 27, Bones = 40 }, -- was Candy 45
+		{ Id = "Perfect", Text = "Get %d Perfect Hits", Goal = 10, Candy = 18 }, -- was Candy 30
+		{ Id = "EarnCandy", Text = "Earn %d Candy", Goal = 50, Candy = 15, Bones = 25 }, -- was Candy 25
+		{ Id = "BloodMoon", Text = "Participate in a Blood Moon", Goal = 1, Candy = 24 }, -- was Candy 40
+		{ Id = "BossDamage", Text = "Damage the Gravekeeper", Goal = 400, Candy = 30, Bones = 60 }, -- was Candy 50
+		{ Id = "OpenPumpkin", Text = "Open a Pumpkin Block", Goal = 1, Candy = 21 }, -- was Candy 35
+		{ Id = "FindMutation", Text = "Find a Halloween mutation", Goal = 1, Candy = 30 }, -- was Candy 50
+		{ Id = "MineOre", Text = "Break %d Halloween ores", Goal = 12, Candy = 18 }, -- was Candy 30
+		{ Id = "Knock", Text = "Knock on %d doors", Goal = 3, Candy = 15 }, -- was Candy 25
 	},
 	Always = { "Perfect", "EarnCandy" }, -- always part of the daily set
-	AllBonus = { Kind = "Block", Id = "Pumpkin", Amount = 1, Candy = 30 }, -- finishing every daily quest
+	-- finishing every daily quest: the unchanged daily Pumpkin block (the fair daily floor) + candy
+	AllBonus = { Kind = "Block", Id = "Pumpkin", Amount = 1, Candy = 15 }, -- was Candy 30
 }
 
 ---------------------------------------------------------------------------------------------------------------------
@@ -400,5 +455,38 @@ C.Palette = { -- UI + world accents (Color3.fromRGB components)
 	Blood = { 200, 30, 50 }, Ghost = { 140, 215, 255 }, Bone = { 236, 226, 200 }, Gold = { 255, 200, 70 }, Ink = { 18, 10, 28 },
 }
 C.Music = { OstAssetId = 0, BloodMoonAssetId = 0, Volume = .5, Crossfade = 3 } -- uploaded ids optional; 0 = procedural OST
+
+---------------------------------------------------------------------------------------------------------------------
+-- RARE PRIZE PHILOSOPHY, applied at load (docs/halloween2/DESIGN.md §12.3). C.Rewards.Pumpkin / CursedPumpkin above
+-- hold the ORIGINAL weights; here each is replaced by DropRates.Rescale(original, Rebalance.RarityScale,
+-- Rebalance.Filler[key]): integer weights on a 1e6 scale, every row's chance = old chance x its class factor, the rest
+-- Lucky Dust. C.Rebalance.Was keeps the originals, C.Rebalance.Odds the reports (UI odds, docs), C.Rebalance.Applied
+-- says it ran. A failure keeps the original tables and warns: this module must never throw (Features.Halloween falls
+-- back to a minimal config when it cannot require it).
+---------------------------------------------------------------------------------------------------------------------
+do
+	local rb = C.Rebalance
+	rb.Was, rb.Odds, rb.Applied = {}, {}, false
+	local ok, err = pcall(function()
+		local module = script.Parent:WaitForChild("DropRates", 10)
+		assert(module ~= nil, "DropRates module missing")
+		local DropRates = require(module :: any)
+		local out = {}
+		for key, filler in pairs(rb.Filler) do
+			assert(type(C.Rewards[key]) == "table", "no reward table " .. tostring(key))
+			local rows, report = DropRates.Rescale(C.Rewards[key], rb.RarityScale, filler)
+			out[key] = { Rows = rows, Report = report }
+		end
+		for key, res in pairs(out) do -- all or nothing
+			rb.Was[key] = C.Rewards[key]
+			C.Rewards[key] = res.Rows
+			rb.Odds[key] = res.Report
+		end
+		rb.Applied = true
+	end)
+	if not ok then
+		warn("DOGROTS Halloween: the Chapter I drop-rate rebalance was not applied: " .. tostring(err))
+	end
+end
 
 return C
