@@ -25,7 +25,9 @@ Routing.Locations={
 }
 -- NIGHT OF THE BURIED MOON (Halloween): THE DEAD YARD takes the global event's slot while the event is on.
 do local ok,on=pcall(function()local f=game:GetService('ReplicatedStorage'):FindFirstChild('Halloween');local c=f and f:FindFirstChild('Config');return c~=nil and require(c).HalloweenEventEnabled==true end)
- if ok and on then for i,loc in ipairs(Routing.Locations)do if loc.Key=='GlobalDigSite'then Routing.Locations[i]={Key='DeadYard',Name='The Dead Yard',Detail='Night of the Buried Moon: candy, curses and the cauldron'}end end end end
+ if ok and on then for i,loc in ipairs(Routing.Locations)do if loc.Key=='GlobalDigSite'then Routing.Locations[i]={Key='DeadYard',Name='The Dead Yard',Detail='Night of the Buried Moon: candy, curses and the cauldron'}end end
+  -- [WP-F] THE CHURCH (Grand Crypt + Moon Tower): the DESCEND portal of CHAPTER II · THE UNDERYARD
+  table.insert(Routing.Locations,{Key='Church',Name='The Church',Detail='The Grand Crypt under the Moon Tower: something is waiting below'})end end
 -- Destination key of a key, display name or alias ("Factory", "Mutation lab", "THE DOG"...).
 function Routing.Resolve(name)
  return Destinations.Resolve(name)
@@ -34,6 +36,8 @@ function Routing.Anchor(key)
  local mirror=nav:FindFirstChild(key)
  -- THE DEAD YARD has no NavigationAnchors mirror: its own persistent anchors model holds the cauldron point
  if not mirror and key=='DeadYard'then local yard=map:FindFirstChild('38_DeadYard');local a=yard and yard:FindFirstChild('Anchors');return a and a:FindFirstChild('Cauldron')end
+ -- [WP-F] the church: the DESCEND portal anchor in the crypt doorway (tools/edits/38_church.luau)
+ if not mirror and key=='Church'then local yard=map:FindFirstChild('38_DeadYard');local a=yard and yard:FindFirstChild('Anchors');return a and a:FindFirstChild('Portal')end
  local ref=mirror and mirror:FindFirstChild('Target')
  return ref and ref.Value or mirror
 end

@@ -1,12 +1,19 @@
 -- Navigation.PathGuide (client only): "SHOW THE WAY". Plans a route on Navigation.RouteGraph and
 -- draws it with glowing chevrons lying on the ground, gliding towards the target, plus a final
 -- pointer at the destination (bobbing neon down-arrow, pulsing ground ring, name + distance).
---   PathGuide.Show(nameOrKey) -> ok, reason   start (or switch) a route; reason "sealed" | "unknown" | "noyard"
+--   PathGuide.Show(nameOrKey, opts?) -> ok, reason   start (or switch) a route; reason "sealed" | "unknown" | "noyard"
+--                                            opts {Label = false}: no name / distance card over the goal (a caller that
+--                                            draws its own objective marker, e.g. the church reveal)
 --   PathGuide.Clear(reason?)                 stop it ("cleared" | "arrived" | ...)
---   PathGuide.Active() -> state?             {Key, Entry, Color, Remaining, Heading, Length}
+--   PathGuide.Active() -> state?             {Key, Entry, Color, Remaining, Heading, Length, Arrived, Underyard}
 --   PathGuide.Estimate(key) -> studs?        route length from the player (no drawing)
+--   PathGuide.Ahead(spacing, count, lead?) -> {Vector3}   points on the ground along the rest of the active route,
+--                                            `spacing` studs apart starting `lead` studs ahead of the player (ghost
+--                                            lights and other route dressing); {} without a drawable route
 --   PathGuide.Changed(state?)                fired on start / switch / stop
 --   PathGuide.Progress(state)                fired 4x per second while a route is active
+-- [WP-F] Inside THE UNDERYARD (a teleport zone off the island) every route first leads to the ASCEND arch of Bell Square
+-- (RouteGraph.UnderyardEscape, like the yard mine's elevator escape); after the climb the normal re-plan takes over.
 -- Budget: one pool of <= 40 parts created once (16 arrows x 2 bars + 3 pointer parts + 1 anchor),
 -- local to this client (a workspace folder created here is never replicated). Nothing runs per
 -- frame while no route is active. Reduced Motion: static arrows, no bobbing. Low quality: 8 arrows.
@@ -295,7 +302,7 @@ local function resolveTarget(key: string): (any?, string?)
 	if not entry then
 		return nil, "unknown"
 	end
-	if entry.Sealed then
+	if Destinations.Sealed(entry) then
 		return nil, "sealed"
 	end
 	local spec = (RouteGraph.Targets :: any)[key]
@@ -335,6 +342,29 @@ local function resolveTarget(key: string): (any?, string?)
 	return RouteGraph.Target(key, { YardId = id, Overrides = overrides }), nil
 end
 
+-- [WP-F] Inside THE UNDERYARD: lead to the ASCEND arch first (RouteGraph.UnderyardEscape); after the climb the player
+-- stands at the church forecourt and the normal re-plan takes over.
+local UnderyardLayout: any = nil
+local function underyardEscape(from: Vector3): any?
+	if UnderyardLayout == nil then
+		local ok, module = pcall(function()
+			local folder = game:GetService("ReplicatedStorage"):FindFirstChild("Halloween")
+			local inst = folder and folder:FindFirstChild("UnderyardLayout")
+			return inst and require(inst :: any)
+		end)
+		UnderyardLayout = ok and type(module) == "table" and module or false
+	end
+	if not UnderyardLayout then
+		return nil
+	end
+	local ok, route = pcall(RouteGraph.UnderyardEscape, from, UnderyardLayout)
+	if not ok or not route then
+		return nil
+	end
+	route.Samples = RouteGraph.Build(route.Points)
+	return route
+end
+
 -- Inside a yard mine (under the island) the streets are 60+ studs up through rock: lead to the
 -- elevator stop of that level first; once the ride is over the player is off this short route and
 -- the normal re-plan takes over from the surface.
@@ -372,7 +402,7 @@ local function mineEscape(from: Vector3): any?
 end
 
 local function plan(target: any, from: Vector3): any?
-	local escape = mineEscape(from)
+	local escape = mineEscape(from) or underyardEscape(from)
 	if escape then
 		return escape
 	end
@@ -650,6 +680,7 @@ local function publicState(a: any): any
 		Length = a.Samples and a.Samples.Length or 0,
 		Heading = a.Heading,
 		Arrived = a.Arrived ~= nil,
+		Underyard = a.Route ~= nil and a.Route.InUnderyard == true,
 	}
 end
 
@@ -715,8 +746,19 @@ local function updateHud(a: any)
 	elseif here then
 		a.Remaining = RouteGraph.Flat(here, a.Pointer)
 	end
-	pool.Title.Text = (a.Route and a.Route.InMine) and T("ELEVATOR UP FIRST", "СНАЧАЛА ЛИФТ НАВЕРХ") or Destinations.Text(a.Entry, "Name", lang())
-	pool.Distance.Text = a.Arrived and T("YOU ARE HERE!", "ТЫ НА МЕСТЕ!") or formatDistance(a.Remaining or 0)
+	local underyard = a.Route ~= nil and a.Route.InUnderyard == true
+	if a.Route and a.Route.InMine then
+		pool.Title.Text = T("ELEVATOR UP FIRST", "СНАЧАЛА ЛИФТ НАВЕРХ")
+	elseif underyard then
+		pool.Title.Text = T("RETURN ARCH FIRST", "СНАЧАЛА К АРКЕ ВОЗВРАТА")
+	else
+		pool.Title.Text = Destinations.Text(a.Entry, "Name", lang())
+	end
+	if underyard and here and a.Goal and RouteGraph.Flat(here, a.Goal) <= PathGuide.ArriveDistance then
+		pool.Distance.Text = T("ASCEND HERE", "ПОДНИМИСЬ ЗДЕСЬ")
+	else
+		pool.Distance.Text = a.Arrived and T("YOU ARE HERE!", "ТЫ НА МЕСТЕ!") or formatDistance(a.Remaining or 0)
+	end
 	PathGuide.Progress:Fire(publicState(a))
 end
 
@@ -727,8 +769,8 @@ local function check(a: any, now: number)
 		a.Flow.Static = a.Static
 	end
 	local here = a.Feet
-	if here and not a.Arrived and a.Route and a.Route.InMine and RouteGraph.Flat(here, a.Goal) <= PathGuide.ArriveDistance then
-		-- At the mine elevator: no "you are here" yet, keep checking until the ride is over.
+	if here and not a.Arrived and a.Route and (a.Route.InMine or a.Route.InUnderyard) and RouteGraph.Flat(here, a.Goal) <= PathGuide.ArriveDistance then
+		-- At the mine elevator / the Underyard's ASCEND arch: no "you are here" yet, keep checking until the ride is over.
 		if now >= (a.NextReplan or 0) then
 			replan(a, now)
 			if active ~= a then
@@ -745,7 +787,7 @@ local function check(a: any, now: number)
 			part.Transparency = 0.05
 		end
 		pool.Ring.Visible = true
-		pool.Board.Enabled = true
+		pool.Board.Enabled = not a.NoLabel
 		updateHud(a)
 		task.delay(1.6, function()
 			if active == a then
@@ -797,7 +839,7 @@ local function step()
 	elseif a.NoRoute and pool.Shown > 0 then
 		hideAll()
 		pool.Ring.Visible = true
-		pool.Board.Enabled = true
+		pool.Board.Enabled = not a.NoLabel
 	end
 	drawPointer(a, now)
 end
@@ -842,6 +884,26 @@ function PathGuide.Clear(reason: string?)
 	PathGuide.Changed:Fire(nil, reason or "cleared", a.Key)
 end
 
+-- [WP-F] Ground points along the rest of the active route: `count` points `spacing` studs apart, the first `lead`
+-- studs ahead of the player (route dressing such as the church reveal's ghost lights). {} without a drawable route.
+function PathGuide.Ahead(spacing: number, count: number, lead: number?): { Vector3 }
+	local out: { Vector3 } = {}
+	local a = active
+	if not a or not a.Samples or a.NoRoute or a.Arrived or not pool then
+		return out
+	end
+	local now = os.clock()
+	local length = a.Samples.Length
+	local s = (a.Progress or 0) + (lead or spacing)
+	local step = math.max(1, spacing)
+	while #out < count and s <= length - 2 do
+		local pos = RouteGraph.PointAt(a.Samples, s)
+		table.insert(out, Vector3.new(pos.X, heightAt(a, s, now), pos.Z))
+		s += step
+	end
+	return out
+end
+
 -- Length of the route from the player to a destination (nil: sealed / unknown / no route).
 function PathGuide.Estimate(nameOrKey: any): number?
 	local key = Destinations.Resolve(nameOrKey)
@@ -857,7 +919,7 @@ function PathGuide.Estimate(nameOrKey: any): number?
 	return route and route.Length or nil
 end
 
-function PathGuide.Show(nameOrKey: any): (boolean, string?)
+function PathGuide.Show(nameOrKey: any, opts: { [string]: any }?): (boolean, string?)
 	PathGuide.Start()
 	local key = Destinations.Resolve(nameOrKey)
 	if not key then
@@ -886,6 +948,7 @@ function PathGuide.Show(nameOrKey: any): (boolean, string?)
 		Budget = PathGuide.RaycastsPerFrame,
 		Static = reducedMotion(),
 		Flow = ArrowFlow.Config(low and ArrowFlow.Low or nil),
+		NoLabel = type(opts) == "table" and opts.Label == false,
 	}
 	a.WasStatic = a.Static
 	a.Flow.Static = a.Static
@@ -915,7 +978,7 @@ function PathGuide.Show(nameOrKey: any): (boolean, string?)
 	pool.Ring.Color3 = a.Color
 	pool.Ring.Visible = true
 	pool.Stroke.Color = a.Color
-	pool.Board.Enabled = true
+	pool.Board.Enabled = not a.NoLabel
 	for _, bar in ipairs(pool.Bars) do
 		bar.Color = a.Color
 	end

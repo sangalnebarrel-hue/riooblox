@@ -47,7 +47,9 @@ C.Portal = {
 	HoldDuration = .5,
 	Range = 10, -- ProximityPrompt MaxActivationDistance (church DESCEND and arrival arch ASCEND)
 	Cooldown = 3, -- seconds between two portal uses of one player
-	TransitionDelay = .8, -- seconds the server waits (client screen goes black) before moving the character
+	-- seconds the server waits (client screen goes black) before moving the character. [WP-F] was .8: the client's
+	-- transition (stretch + colour drain 1.05 s, the eye flash .35 s, black at 1.4 s, §6.6) is black before the move
+	TransitionDelay = 1.45,
 	StreamTimeout = 6, -- RequestStreamAroundAsync budget before the move happens anyway
 	Grace = .6, -- seconds after a teleport the zone polls ignore the character (no void / gate push-back)
 }
