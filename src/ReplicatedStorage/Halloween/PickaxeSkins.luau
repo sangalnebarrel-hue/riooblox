@@ -4,14 +4,17 @@
 -- CoinBonus, Strength, Price, FX tier...) always comes from Config.Mining.Pickaxes[level]; the server rules never see
 -- a skin (they only index M.Pickaxes[m.PickaxeLevel]).
 -- Ownership: profile.Halloween.Skins (server). The equipped skin is the SERVER-written player attribute
--- `PickaxeSkin` (Halloween.Core.Sync after an ownership check; Actions "SkinEquip"). Event off => no skin.
+-- `PickaxeSkin` (Halloween.Core.Sync after an ownership check; Actions "SkinEquip"). An owned skin stays visible when
+-- the event is off (Skins.Of never looks at the event switch). Chapter II (THE UNDERYARD) adds seven more skins from
+-- ReplicatedStorage.Halloween.PickaxeSkins2 (registered once at load, see the end of this module).
 --
 -- API
---   Skins.List / Skins.ById / Skins.Order      the six skin defs (Id, Name, RU, Icon, Rarity, Theme, Swing, Sound,
---                                              Color, Inspect, Visual, Trait/TraitRU, Lore/LoreRU)
+--   Skins.List / Skins.ById / Skins.Order      the skin defs, Chapter I's six then Chapter II's seven (Id, Name, RU,
+--                                              Icon, Rarity, Theme, Swing, Sound, Color, Inspect, Visual, Trait/TraitRU,
+--                                              Lore/LoreRU; Chapter = 2 on the Underyard ones)
 --   Skins.Resolve(def, skinId) -> def'         visual def for a REAL tier def: a cached clone with only the VISUAL
 --                                              keys replaced (def itself when there is no / an unknown skin)
---   Skins.Of(player) -> skinId?                the player's equipped skin (validated id, nil when the event is off)
+--   Skins.Of(player) -> skinId?                the player's equipped skin (a validated id; also while the event is off)
 --   Skins.For(player, def) -> def'             = Resolve(def, Of(player))
 --   Skins.Build(skinId | def, level?) -> Model a pickaxe Model exactly like MiningModels.Pickaxe builds them
 --                                              (Handle, Kind/Theme/Level attrs, TrailA/B, PickAnim, PickBase...);
@@ -147,20 +150,14 @@ function Skins.Resolve(def, skinId)
 	return out
 end
 
-local function enabled()
-	if not Shared then
-		return true
-	end
-	local ok, on = pcall(Shared.Enabled)
-	return not ok or on == true
-end
-
+-- The attribute is server-written after an ownership check, so it is trusted as is; it does NOT depend on the event
+-- switch (owned skins stay usable when the Halloween event is off, DESIGN §2).
 function Skins.Of(player)
 	if typeof(player) ~= 'Instance' or not player:IsA('Player') then
 		return nil
 	end
 	local id = player:GetAttribute('PickaxeSkin')
-	if type(id) ~= 'string' or not Skins.ById[id] or not enabled() then
+	if type(id) ~= 'string' or not Skins.ById[id] then
 		return nil
 	end
 	return id
@@ -3645,5 +3642,6 @@ function Skins.Register(ctx)
 	return true
 end
 Skins.Designs = DESIGNS
+pcall(function() local m = script.Parent:FindFirstChild('PickaxeSkins2') or script.Parent:WaitForChild('PickaxeSkins2', 5); if m then require(m).Register(Skins, { Designs = DESIGNS, CritText = CRIT_TEXT, LiveSpecs = LIVE_SPECS }) end end) -- [WP-K2] Chapter II (THE UNDERYARD) skins
 
 return Skins

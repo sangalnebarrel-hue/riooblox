@@ -3101,7 +3101,12 @@ end
 pages.cosmetics = function(page: Frame)
 	local P = {}
 	local scroll = scrollPage(page)
-	local orderList = (Config.Skins and Config.Skins.Order) or {}
+	local orderList = {} -- [WP-K2] Chapter I skins only (Chapter II skins are shown in the Underyard window)
+	for _, sid in ipairs((Config.Skins and Config.Skins.Order) or {}) do
+		if not (Config.Skins.Chapter and Config.Skins.Chapter[sid] == 2) then
+			table.insert(orderList, sid)
+		end
+	end
 	local head = panel(scroll, "Header", C(86, 40, 120), C(54, 22, 84))
 	local headTitle = sectionTitle(head, "⛏️", T("PICKAXE SKINS"))
 	local headInfo = txt(head, { Name = "Info", Text = T("Skins only change the look. Every stat still comes from your real pickaxe."), TextSize = 14,

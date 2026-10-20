@@ -433,13 +433,22 @@ C.DexRewards = {
 
 ---------------------------------------------------------------------------------------------------------------------
 -- PICKAXE SKINS (cosmetic only; stats always come from the player's real pickaxe tier)
+-- Chapter I skins live in RS/Halloween/PickaxeSkins, Chapter II (THE UNDERYARD, ids UY_*) in RS/Halloween/PickaxeSkins2.
+-- Ids are saved data (profile.Halloween.Skins): never rename or remove one. Chapter: skins missing here are Chapter I.
 ---------------------------------------------------------------------------------------------------------------------
 C.Skins = {
-	Order = { "GraveShovel", "BonePickaxe", "PumpkinSmasher", "GhostScythe", "LivingCoffin", "SoulReaper" },
+	Order = { "GraveShovel", "BonePickaxe", "PumpkinSmasher", "GhostScythe", "LivingCoffin", "SoulReaper",
+		"UY_ToothyAlarm", "UY_FateHand", "UY_Laughsaw", "UY_TVHead", "UY_NastyOctopus", "UY_GummyHorror", "UY_BellReaper" },
 	Names = { GraveShovel = "Grave Shovel", BonePickaxe = "Bone Pickaxe", PumpkinSmasher = "Pumpkin Smasher",
-		GhostScythe = "Ghost Scythe", LivingCoffin = "Living Coffin", SoulReaper = "Soul Reaper" },
+		GhostScythe = "Ghost Scythe", LivingCoffin = "Living Coffin", SoulReaper = "Soul Reaper",
+		UY_ToothyAlarm = "Toothy Alarm", UY_FateHand = "Buried Hand of Fate", UY_Laughsaw = "Funeral Laughsaw",
+		UY_TVHead = "Static TV-Head", UY_NastyOctopus = "Marsh Octopus", UY_GummyHorror = "Gummy Horror", UY_BellReaper = "Bell Reaper" },
 	Rarity = { GraveShovel = "Epic", BonePickaxe = "Legendary", PumpkinSmasher = "Legendary", GhostScythe = "Mythic",
-		LivingCoffin = "Mythic", SoulReaper = "Secret" },
+		LivingCoffin = "Mythic", SoulReaper = "Secret",
+		UY_ToothyAlarm = "Epic", UY_FateHand = "Legendary", UY_Laughsaw = "Legendary", UY_TVHead = "Mythic",
+		UY_NastyOctopus = "Mythic", UY_GummyHorror = "Mythic", UY_BellReaper = "Secret" },
+	Chapter = { UY_ToothyAlarm = 2, UY_FateHand = 2, UY_Laughsaw = 2, UY_TVHead = 2, UY_NastyOctopus = 2, UY_GummyHorror = 2,
+		UY_BellReaper = 2 },
 }
 
 ---------------------------------------------------------------------------------------------------------------------
