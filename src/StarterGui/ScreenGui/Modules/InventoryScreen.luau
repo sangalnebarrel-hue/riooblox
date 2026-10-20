@@ -8,9 +8,17 @@
 --                 ★ (favourite), SELL (at your collector, always confirmed, hold for Epic+ and
 --                 favourites; elsewhere GO SELL shows the way) and ••• (LIST ON MARKET, SHOW IN DEX).
 --   LUCKY BLOCKS  one card per tier: how many you have, what is on your pads; OPEN AT MY PAD
---                 (shows the way) and CHANCES.
+--                 (shows the way) and CHANCES. The header shows the Lucky Dust balance (✨, counts up
+--                 when dust arrives) and DISMANTLE ALL (Common / Rare chips, a server quote, confirm).
+--                 Block detail: DISMANTLE (✨ yield) -> a quote card (dust + event candy); blocks of
+--                 rank 4+ (Legendary+, pumpkins) need a Danger hold-to-confirm -> toast, dust fly-in.
+--   DUST FORGE    Lucky Dust balance, block storage, a card per forgeable tier (Common..Legendary:
+--                 cost, progress to it, FORGE; Legendary asks for a hold) and the dust each tier
+--                 dismantles into. Rules: ReplicatedStorage.Halloween.DustRules (docs/halloween2 §14).
 -- Entry: GUIIntegration.kitScreens (N.OpenPage('Inventory' | 'LuckyBlocks' | 'OwnedBlocks'), the BAG
--- tile, B). Requests (Modules.Net): ItemFavorite, BulkSell, List. Logic: Modules.InventoryLogic.
+-- tile, B); S.Open(nil, 'DustForge') or {Tab = 'forge'} opens the forge. Requests (Modules.Net):
+-- ItemFavorite, BulkSell, List, DismantleQuote, Dismantle, DustForge (Economy.Features.LuckyDust).
+-- Logic: Modules.InventoryLogic.
 local RS = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local Kit = require(script.Parent.Kit)
@@ -27,6 +35,20 @@ local BlockConfig = require(RS:WaitForChild("LuckyBlockConfig"))
 local Lifecycle = require(RS:WaitForChild("LuckyLifecycleConfig"))
 local Access = require(RS:WaitForChild("PlotInteractionAccess"))
 local BlockVisuals = require(RS:WaitForChild("LuckyBlockVisuals"))
+-- Lucky Dust rules (dismantle values, forge costs). Without them the bag simply has no dust controls.
+local Dust: any = nil
+do
+	local folder = RS:WaitForChild("Halloween", 10)
+	local module = folder and folder:WaitForChild("DustRules", 10)
+	if module then
+		local ok, rules = pcall(require, module)
+		if ok and type(rules) == "table" then
+			Dust = rules
+		else
+			warn("InventoryScreen: Lucky Dust rules unavailable: " .. tostring(rules))
+		end
+	end
+end
 local Theme, Format = Kit.Theme, Kit.Format
 local P = Theme.Colors
 local ACCENT = Color3.fromRGB(26, 192, 239) -- UITheme.WindowSpecs.Inventory
@@ -68,6 +90,26 @@ end
 local function blockName(tier: string): string
 	return T(string.upper(tier) .. " LUCKY BLOCK")
 end
+-- Lucky Dust / DUST FORGE strings carry their Russian inline (tests/lucky_dust.luau checks every LT / FT).
+local function LT(en: string, ruText: string): string
+	return Kit.T(en, ruText)
+end
+local function FT(en: string, ruText: string, ...: any): string
+	return string.format(Kit.T(en, ruText), ...)
+end
+local TIER_RU = {
+	Common = "ОБЫЧНЫЙ",
+	Rare = "РЕДКИЙ",
+	Epic = "ЭПИЧЕСКИЙ",
+	Legendary = "ЛЕГЕНДАРНЫЙ",
+	Mythic = "МИФИЧЕСКИЙ",
+	Secret = "СЕКРЕТНЫЙ",
+	Pumpkin = "ТЫКВЕННЫЙ",
+	["Cursed Pumpkin"] = "ПРОКЛЯТЫЙ ТЫКВЕННЫЙ",
+}
+local function tierWord(tier: string): string
+	return Kit.T(string.upper(tier), TIER_RU[tier])
+end
 
 ------------------------------------------------------------------------------------------------
 -- State
@@ -95,6 +137,8 @@ local st: any = {
 	Phone = false,
 	Busy = false,
 	Token = 0,
+	DustShown = nil, -- the Lucky Dust number on screen (counts toward the balance)
+	DustPin = nil, -- {Value, Stale, Until}: a reply's balance wins while the attribute still shows Stale
 }
 S.State = st
 
@@ -222,6 +266,42 @@ local function blockCard(g: any): any
 	}
 end
 
+-- A block row for the dismantle / forge dialogs (Kit.Modal cards).
+local function dustCard(tier: string, n: number?, stat: string?): any
+	return {
+		Id = "dust_" .. tier,
+		Name = blockName(tier),
+		Rarity = tier,
+		Preview = { Kind = "LuckyBlock", Tier = tier },
+		Count = (n and n > 1) and n or nil,
+		Stats = stat and { { Text = stat, Color = P.gold } } or {},
+	}
+end
+
+-- The Halloween event is on (only then do pumpkin dismantles add candy, Features.LuckyDust).
+local function eventCandyOn(): boolean
+	local ok, on = pcall(function()
+		local folder = RS:FindFirstChild("Halloween")
+		local shared = folder and folder:FindFirstChild("Shared")
+		return shared ~= nil and (require(shared) :: any).Enabled()
+	end)
+	return ok and on == true
+end
+
+-- "✨ 1,500" (+ " · 🍬 15" for pumpkin tiers while the Halloween event pays candy).
+local function yieldText(tier: string, n: number?): string
+	if not Dust then
+		return ""
+	end
+	local count = n or 1
+	local text = "✨ " .. Format.Number(Dust.Yield(tier) * count)
+	local candy = eventCandyOn() and Dust.EventBonus(tier) * count or 0
+	if candy > 0 then
+		text ..= " · 🍬 " .. Format.Number(candy)
+	end
+	return text
+end
+
 ------------------------------------------------------------------------------------------------
 -- Detail panel (desktop: right of the grid; phones: inside a stacked window)
 ------------------------------------------------------------------------------------------------
@@ -340,6 +420,43 @@ local function buildDetail(parent: Instance, compact: boolean): any
 	})
 	d.More.AutomaticSize = Enum.AutomaticSize.Y
 	d.More.Visible = false
+	-- Lucky Blocks: turn one into Lucky Dust (quote card first, see actions.Dismantle).
+	d.Dismantle = Kit.Button(scroll, {
+		Name = "Dismantle",
+		Text = LT("♻ DISMANTLE", "♻ РАЗОБРАТЬ"),
+		Style = "secondary",
+		TextSize = 16,
+		Size = UDim2.new(1, 0, 0, 44),
+		LayoutOrder = 7,
+		ZIndex = Z + 1,
+		NoTranslate = true,
+		OnClick = function()
+			if d.Kind == "Block" and d.Group then
+				actions.Dismantle(d.Group, d)
+			end
+		end,
+	})
+	d.Dismantle.Instance.Visible = false
+	d.DustNote = Kit.Text(scroll, {
+		Name = "DustNote",
+		Text = LT("Lucky Dust forges new blocks in the DUST FORGE tab.", "Из счастливой пыли куются новые блоки во вкладке КУЗНЯ ПЫЛИ."),
+		TextSize = 14,
+		Color = Theme.InkMuted,
+		Wrap = true,
+		AlignX = "Center",
+		Size = UDim2.new(1, -8, 0, 34),
+		LayoutOrder = 8,
+		ZIndex = Z + 1,
+		NoTranslate = true,
+	})
+	d.DustNote.Visible = false
+	pcall(function()
+		Kit.Tooltip(d.Dismantle.Instance, function()
+			local share = Dust and math.floor(Dust.Salvage() * 100 + 0.5) or 25
+			return FT("The block becomes Lucky Dust (%d%% of its value). Blocks on your pads stay.", "Блок превращается в счастливую пыль (%d%% его ценности). Блоки на площадках не трогаются.", share),
+				LT("DISMANTLE", "РАЗОБРАТЬ")
+		end)
+	end)
 	-- Actions (fixed at the bottom).
 	d.Actions = Kit.New("Frame", { Name = "Actions", BackgroundTransparency = 1, ZIndex = Z + 1 }, root)
 	d.Fav = Kit.Button(d.Actions, {
@@ -500,6 +617,8 @@ function Detail.BindItem(self: any, row: any)
 	self.Fav.Instance.Visible = true
 	self.Menu.Instance.Visible = true
 	self.Second.Instance.Visible = false
+	self.Dismantle.Instance.Visible = false
+	self.DustNote.Visible = false
 	self.Fav:SetText(row.Favorite and "★" or "☆")
 	self.Fav:SetStyle(row.Favorite and "gold" or "secondary")
 	if st.Near then
@@ -548,6 +667,20 @@ function Detail.BindBlock(self: any, g: any)
 	self.Main:SetStyle(g.Ready > 0 and "success" or "primary")
 	self.Main:SetPrice(nil)
 	self.Main:SetDisabled(false)
+	-- DISMANTLE: the yield of one block; blocks that all sit on pads cannot be dismantled.
+	local dismantlable = Dust ~= nil and Dust.Yield(g.Tier) > 0
+	self.Dismantle.Instance.Visible = dismantlable
+	self.DustNote.Visible = dismantlable
+	if dismantlable then
+		if g.Stored > 0 then
+			self.Dismantle:SetText(LT("♻ DISMANTLE", "♻ РАЗОБРАТЬ"))
+			self.Dismantle:SetDisabled(false)
+		else
+			self.Dismantle:SetText(LT("ALL ON YOUR PADS", "ВСЕ НА ПЛОЩАДКАХ"))
+			self.Dismantle:SetDisabled(true)
+		end
+		self.Dismantle:SetPrice(yieldText(g.Tier))
+	end
 	self:Layout(self.W, self.H)
 end
 
@@ -681,6 +814,207 @@ local function refreshBlocks()
 	bindDetail()
 end
 
+------------------------------------------------------------------------------------------------
+-- Lucky Dust balance, the fly-in and the DUST FORGE cards
+------------------------------------------------------------------------------------------------
+local DUST = Color3.fromRGB(255, 214, 110) -- Resources.Kinds.LuckyDust.Color
+local DUST_DEEP = Color3.fromRGB(196, 128, 18)
+
+-- The projected balance: the attribute (Runtime.Project), else the snapshot.
+local function projectedDust(): number
+	local v = player:GetAttribute("LuckyDust")
+	if type(v) == "number" and v == v then
+		return math.max(0, math.floor(v))
+	end
+	local snap = st.Snapshot
+	local res = snap and type(snap.Profile) == "table" and snap.Profile.Resources
+	return type(res) == "table" and math.max(0, math.floor(tonumber(res.LuckyDust) or 0)) or 0
+end
+
+-- The balance to show: a fresh reply's balance wins while the attribute still holds the value from
+-- before that reply (it replicates a moment later), so the counter never steps back; any other
+-- change (a coffin, another reply) shows at once.
+local function dustBalance(): number
+	local n = projectedDust()
+	local pin = st.DustPin
+	if pin and os.clock() < pin.Until and n == pin.Stale then
+		return pin.Value
+	end
+	return n
+end
+
+-- Blocks in storage: the cap counts stored, placed and ready blocks (legacy credit stacks do not).
+local function storedBlocks(): number
+	local snap = st.Snapshot
+	local blocks = snap and type(snap.Profile) == "table" and snap.Profile.OwnedBlocks
+	local n = 0
+	for _ in pairs(type(blocks) == "table" and blocks or {}) do
+		n += 1
+	end
+	return n
+end
+local function blockCap(): number
+	return tonumber(Lifecycle.InventoryCapacity) or 60
+end
+
+local function renderDust(n: number)
+	if not ui then
+		return
+	end
+	local text = Format.Number(n)
+	if ui.DustPill then
+		ui.DustPill:Set("✨ " .. text)
+	end
+	if ui.ForgeDust then
+		ui.ForgeDust.Text = text
+	end
+end
+
+-- A short bounce (dust arrived, a block was forged). Skipped with reduced motion.
+local function pulse(object: any)
+	if not object or Kit.Motion.Reduced() then
+		return
+	end
+	local scale = object:FindFirstChild("DustPop") or Kit.New("UIScale", { Name = "DustPop" }, object)
+	scale.Scale = 1.16
+	Kit.Motion.Tween(scale, 0.38, { Scale = 1 }, Enum.EasingStyle.Back)
+end
+
+-- Sparks flying from one control to another inside the same kit layer (the dismantle button into
+-- the dust counter, the counter into a forge card). Small labels, no input, gone after ~1 s.
+local function flyDust(from: any, to: any, amount: number)
+	local ok, err = pcall(function()
+		if Kit.Motion.Reduced() or not (from and to) then
+			return
+		end
+		local gui = from:FindFirstAncestorWhichIsA("LayerCollector")
+		if not gui or to:FindFirstAncestorWhichIsA("LayerCollector") ~= gui then
+			return
+		end
+		if from.AbsoluteSize.X < 1 or to.AbsoluteSize.X < 1 or not (from.Visible and to.Visible) then
+			return
+		end
+		local origin = gui.AbsolutePosition
+		local a = from.AbsolutePosition + from.AbsoluteSize / 2 - origin
+		local b = to.AbsolutePosition + to.AbsoluteSize / 2 - origin
+		local sparks = math.clamp(3 + math.floor(math.log10(math.max(1, amount)) * 1.5), 4, 9)
+		local rng = Random.new()
+		for i = 1, sparks do
+			local spark = Kit.Text(nil, {
+				Name = "DustSpark",
+				Text = "✨",
+				TextSize = 20,
+				AlignX = "Center",
+				Color = DUST,
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Size = UDim2.fromOffset(30, 30),
+				Position = UDim2.fromOffset(a.X + rng:NextNumber(-18, 18), a.Y + rng:NextNumber(-10, 10)),
+				ZIndex = 1000,
+				NoTranslate = true,
+			})
+			spark.Active = false
+			spark.Parent = gui
+			local lift = Vector2.new(rng:NextNumber(-60, 60), -rng:NextNumber(40, 110))
+			local mid = (a + b) / 2 + lift
+			local delay = (i - 1) * 0.05
+			task.delay(delay, function()
+				if not spark.Parent then
+					return
+				end
+				-- Up and out on an arc, then down into the target.
+				Kit.Motion.Tween(spark, 0.24, { Position = UDim2.fromOffset(mid.X, mid.Y), TextSize = 28 }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+				task.delay(0.24, function()
+					if spark.Parent then
+						Kit.Motion.Tween(spark, 0.3, { Position = UDim2.fromOffset(b.X, b.Y), TextSize = 14, TextTransparency = 0.2 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+					end
+				end)
+			end)
+			-- Guaranteed cleanup, whatever happens to the tweens.
+			task.delay(delay + 0.62, function()
+				spark:Destroy()
+			end)
+		end
+		task.delay(0.55, function()
+			pulse(to)
+		end)
+	end)
+	if not ok then
+		warn("InventoryScreen dust fly-in: " .. tostring(err))
+	end
+end
+
+-- Buttons and progress of the forge cards for the current balance and storage.
+local function updateForge()
+	if not (ui and ui.ForgeCards and Dust) then
+		return
+	end
+	local dust = st.DustShown or dustBalance()
+	local stored, cap = storedBlocks(), blockCap()
+	local full = stored >= cap
+	if ui.ForgeCap then
+		ui.ForgeCap:Set(string.format("🎲 %d / %d", stored, cap), full and Theme.Danger or P.secondary, full and Theme.White or Theme.Ink)
+	end
+	for tier, c in pairs(ui.ForgeCards) do
+		local cost = Dust.ForgeCost(tier) or 0
+		local enough = cost > 0 and dust >= cost
+		c.Bar:SetValue(cost > 0 and math.min(1, dust / cost) or 0)
+		c.Bar:SetText(Format.Short(math.min(dust, cost), 0) .. " / " .. Format.Short(cost, 0))
+		c.Bar:SetColor(enough and Theme.Success or DUST_DEEP)
+		local times = cost > 0 and math.floor(dust / cost) or 0
+		c.Times.Text = times > 0 and ("🎲×" .. Format.Short(times, 0)) or "" -- how many this balance forges
+		if full then
+			c.Button:SetText(LT("STORAGE FULL", "ХРАНИЛИЩЕ ПОЛНО"))
+			c.Button:SetStyle("secondary")
+			c.Button:SetDisabled(true)
+		elseif not enough then
+			c.Button:SetText(FT("NEED ✨ %s", "НУЖНО ✨ %s", Format.Short(cost - dust, 0)))
+			c.Button:SetStyle("secondary")
+			c.Button:SetDisabled(true)
+		else
+			c.Button:SetText(LT("FORGE", "ВЫКОВАТЬ"))
+			c.Button:SetStyle("gold")
+			c.Button:SetDisabled(false)
+		end
+	end
+end
+
+-- Shows a balance: counts toward it when animate (dust arrived or was spent), else jumps.
+local function setDust(value: number, animate: boolean?)
+	if not ui or not ui.DustValue then
+		st.DustShown = nil
+		return
+	end
+	local from = st.DustShown
+	st.DustShown = value
+	if from == nil or not animate then
+		ui.DustValue.Value = value
+		renderDust(value)
+	elseif from ~= value then
+		local seconds = math.clamp(0.35 + math.abs(value - from) / 6000, 0.35, 0.9)
+		Kit.Motion.Tween(ui.DustValue, seconds, { Value = value }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+		if value > from and ui.DustPill then
+			pulse(ui.DustPill.Instance)
+		end
+	end
+	updateForge()
+end
+
+-- A reply carried the new balance: show it now and hold it until the attribute catches up (a
+-- re-check after the hold settles on the projected value either way).
+local function pinDust(balance: number)
+	local value = math.max(0, math.floor(balance))
+	local stale = projectedDust()
+	if stale ~= value then
+		st.DustPin = { Value = value, Stale = stale, Until = os.clock() + 3 }
+		task.delay(3.1, function()
+			if win and win.IsOpen and ui then
+				setDust(dustBalance(), true)
+			end
+		end)
+	end
+	setDust(value, true)
+end
+
 local function refresh(snapshot: any)
 	if snapshot then
 		st.Snapshot = snapshot
@@ -695,6 +1029,7 @@ local function refresh(snapshot: any)
 		refreshFinds(false)
 		refreshBlocks()
 		updateCapacity()
+		setDust(dustBalance(), st.DustShown ~= nil)
 	end
 end
 
@@ -1052,6 +1387,411 @@ function actions.Chances(g: any)
 	end
 end
 
+------------------------------------------------------------------------------------------------
+-- Lucky Dust: DISMANTLE (server quote -> quote card -> confirm) and the DUST FORGE
+------------------------------------------------------------------------------------------------
+local function profileView(): any
+	local snap = st.Snapshot or Net.Cached()
+	return snap and snap.Profile or nil
+end
+
+-- One DismantleQuote. The server forgets a quote after TTL seconds: Deadline (device clock) marks
+-- when a confirm has to ask for a fresh one first.
+local function requestQuote(selection: any): (boolean, any)
+	local args: any = { Uids = selection.Uids }
+	if next(selection.Credits) ~= nil then
+		args.Credits = selection.Credits
+	end
+	local ok, q = Net.Request("DismantleQuote", args)
+	if ok and type(q) == "table" then
+		q.Deadline = os.clock() + math.max(5, (tonumber(q.TTL) or 60) - 4)
+	end
+	return ok, q
+end
+
+-- The quote card inside the dialog: the dust you get, the event candy, your balance before -> after.
+local function quoteContent(q: any): (Frame, number) -> ()
+	return function(frame: Frame, width: number)
+		local z = frame.ZIndex
+		local total = tonumber(q.Total) or 0
+		local candy = tonumber(q.Candy) or 0
+		local panel = Kit.New("Frame", { Name = "Quote", BackgroundColor3 = Theme.White, BorderSizePixel = 0, Size = UDim2.fromOffset(width, 76), ZIndex = z }, frame)
+		Kit.Corner(panel, Theme.Radius.Card)
+		Kit.Stroke(panel, DUST_DEEP, 2, 0.15)
+		Kit.New("UIGradient", { Rotation = 90, Color = ColorSequence.new(DUST:Lerp(Theme.White, 0.45), DUST:Lerp(Theme.White, 0.85)) }, panel)
+		Kit.Text(panel, { Name = "Glyph", Text = "✨", TextSize = 40, AlignX = "Center", Position = UDim2.fromOffset(8, 10), Size = UDim2.fromOffset(56, 56), ZIndex = z + 1, NoTranslate = true })
+		local candyW = candy > 0 and 96 or 0
+		Kit.Text(panel, {
+			Name = "Amount",
+			Text = "+" .. Format.Number(total),
+			Font = "numeric",
+			TextSize = 32,
+			Scaled = true,
+			MinTextSize = 16,
+			Color = Theme.Ink,
+			Position = UDim2.fromOffset(68, 6),
+			Size = UDim2.new(1, -(76 + candyW), 0, 40),
+			ZIndex = z + 1,
+			NoTranslate = true,
+		})
+		local have = dustBalance()
+		Kit.Text(panel, {
+			Name = "Balance",
+			Text = FT("LUCKY DUST · %s → %s", "СЧАСТЛИВАЯ ПЫЛЬ · %s → %s", Format.Number(have), Format.Number(have + total)),
+			TextSize = 14,
+			Scaled = true,
+			MinTextSize = 10,
+			Color = Theme.InkMuted,
+			Position = UDim2.fromOffset(69, 46),
+			Size = UDim2.new(1, -(78 + candyW), 0, 22),
+			ZIndex = z + 1,
+			NoTranslate = true,
+		})
+		if candy > 0 then
+			Kit.Pill(panel, {
+				Name = "Candy",
+				Text = "🍬 +" .. Format.Number(candy),
+				Height = 32,
+				TextSize = 17,
+				Font = "numeric",
+				Color = Theme.Rarity.Pumpkin or DUST_DEEP,
+				AnchorPoint = Vector2.new(1, 0.5),
+				Position = UDim2.new(1, -10, 0.5, 0),
+				ZIndex = z + 1,
+				NoTranslate = true,
+			})
+		end
+	end
+end
+
+local commitDismantle: (q: any, selection: any, source: any) -> ()
+
+-- The quote dialog: what goes (cards per tier), what comes back; rank 4+ asks for a Danger hold.
+local function showQuote(q: any, selection: any, source: any)
+	local counts, order = {}, {}
+	for _, row in ipairs(type(q.Rows) == "table" and q.Rows or {}) do
+		local tier = tostring(row.Tier)
+		if counts[tier] == nil then
+			counts[tier] = 0
+			table.insert(order, tier)
+		end
+		counts[tier] += tonumber(row.Count) or 1
+	end
+	table.sort(order, function(a, b)
+		return (Dust.Rank(a) or 0) > (Dust.Rank(b) or 0)
+	end)
+	local cards = {}
+	for _, tier in ipairs(order) do
+		table.insert(cards, dustCard(tier, counts[tier], "✨ " .. Format.Number(Dust.Yield(tier) * counts[tier])))
+	end
+	local danger = q.NeedsConfirm == true
+	local total = tonumber(q.Total) or 0
+	local lines = { FT("You get ✨ %s Lucky Dust for the DUST FORGE.", "Ты получишь ✨ %s счастливой пыли для КУЗНИ ПЫЛИ.", Format.Number(total)) }
+	if (tonumber(q.Candy) or 0) > 0 then
+		table.insert(lines, FT("Halloween bonus: 🍬 %s Candy.", "Бонус Хэллоуина: 🍬 %s конфет.", Format.Number(q.Candy)))
+	end
+	if danger then
+		table.insert(lines, LT("Legendary and rarer blocks are gone for good. Hold to confirm.", "Легендарные и более редкие блоки исчезнут навсегда. Удерживай, чтобы подтвердить."))
+	end
+	local count = tonumber(q.Count) or 1
+	local modal = Kit.Modal({
+		Title = count == 1 and LT("DISMANTLE THIS BLOCK?", "РАЗОБРАТЬ ЭТОТ БЛОК?") or FT("DISMANTLE %s BLOCKS?", "РАЗОБРАТЬ БЛОКИ (%s)?", Format.Number(count)),
+		Body = table.concat(lines, "\n"),
+		NoTranslate = true,
+		Cards = cards,
+		CardKind = "Item",
+		Content = quoteContent(q),
+		ContentHeight = 76,
+		ConfirmText = FT("DISMANTLE · ✨ %s", "РАЗОБРАТЬ · ✨ %s", Format.Short(total, 0)),
+		ConfirmStyle = danger and "danger" or "gold",
+		Danger = danger,
+		Hold = danger and 1.2 or 0,
+		Accent = danger and Theme.Danger or DUST_DEEP,
+	})
+	modal:Then(function(confirmed)
+		if confirmed then
+			commitDismantle(q, selection, source)
+		end
+	end)
+end
+
+-- Where the sparks fly to: the dust counter of the window (not behind a phone's stacked detail).
+local function dustTarget(): any
+	if st.Phone and detailWin and detailWin.IsOpen then
+		return nil
+	end
+	return ui and ui.DustPill and ui.DustPill.Instance or nil
+end
+
+commitDismantle = function(q: any, selection: any, source: any)
+	if st.Busy then
+		return
+	end
+	st.Busy = true
+	local button = type(source) == "table" and source.SetBusy and source or nil
+	if button then
+		button:SetBusy(true)
+	end
+	local function done()
+		st.Busy = false
+		if button then
+			button:SetBusy(false)
+		end
+	end
+	local quote = q
+	if os.clock() > (tonumber(q.Deadline) or 0) then
+		-- The dialog stayed open past the quote's life: ask again, go on only when nothing changed.
+		local ok, fresh = requestQuote(selection)
+		if not ok then
+			done()
+			Kit.Toast(said(fresh), { Kind = "error" })
+			task.spawn(Net.Snapshot, 0)
+			return
+		end
+		if fresh.Total ~= q.Total or fresh.Count ~= q.Count or fresh.Candy ~= q.Candy or fresh.NeedsConfirm ~= q.NeedsConfirm then
+			done()
+			Kit.Toast(LT("The quote changed. Check it again.", "Оценка изменилась. Проверь её ещё раз."), { Kind = "warn", NoTranslate = true })
+			showQuote(fresh, selection, source)
+			return
+		end
+		quote = fresh
+	end
+	local ok, result = Net.Request("Dismantle", { Token = quote.Token, Confirm = quote.NeedsConfirm == true or nil })
+	done()
+	if not ok then
+		Kit.Toast(said(result), { Kind = "error" })
+		task.spawn(Net.Snapshot, 0)
+		return
+	end
+	local balance = type(result) == "table" and tonumber(result.Balance) or nil
+	Kit.Toast(said(result), { Kind = "success", Sound = "Coin" })
+	if button then
+		flyDust(button.Instance, dustTarget(), type(result) == "table" and tonumber(result.Dust) or 0)
+	end
+	if balance then
+		pinDust(balance)
+	end
+end
+
+-- Block detail: DISMANTLE one stored block of this tier (stored blocks first, then credit stacks).
+function actions.Dismantle(g: any, d: any)
+	if st.Busy or not g or not Dust then
+		return
+	end
+	local pick = Dust.Select(profileView(), { g.Tier }, 1, player.UserId)
+	if pick.Count == 0 then
+		Kit.Toast(LT("Only blocks in your bag can be dismantled, not the ones on your pads.", "Разобрать можно только блоки из сумки, не с площадок."), { Kind = "warn", NoTranslate = true })
+		return
+	end
+	st.Busy = true
+	d.Dismantle:SetBusy(true)
+	local ok, q = requestQuote(pick)
+	d.Dismantle:SetBusy(false)
+	st.Busy = false
+	if not ok then
+		Kit.Toast(said(q), { Kind = "error" })
+		return
+	end
+	showQuote(q, pick, d.Dismantle)
+end
+
+-- DISMANTLE ALL: chips for the cheap tiers (LuckyDustConfig.BulkTiers), a live server quote of
+-- the selection (up to MaxBatch at a time), confirm.
+function actions.BulkDismantle()
+	if st.Busy or not Dust then
+		return
+	end
+	local profile = profileView()
+	local options, selected = {}, {}
+	for _, tier in ipairs(Dust.Config.BulkTiers) do
+		local available = Dust.Select(profile, { tier }, math.huge, player.UserId).Available
+		if available > 0 then
+			table.insert(options, { Id = tier, Text = tierWord(tier) .. " ×" .. Format.Number(available), Color = Theme.RarityColor(tier), NoTranslate = true })
+			table.insert(selected, tier)
+		end
+	end
+	if #options == 0 then
+		Kit.Toast(LT("No Common or Rare blocks in your bag to dismantle.", "В сумке нет обычных или редких блоков для разбора."), { Kind = "info", NoTranslate = true })
+		return
+	end
+	local current: any = nil
+	local seq = 0
+	local summary: any, detail: any = nil, nil
+	local modal: any = nil
+	local batch = Dust.Config.MaxBatch
+	local function requote()
+		seq += 1
+		local mine = seq
+		current = nil
+		if not (modal and summary and detail) then
+			return
+		end
+		modal.ConfirmButton:SetDisabled(true)
+		if #selected == 0 then
+			summary.Text = LT("Choose what to dismantle.", "Выбери, что разобрать.")
+			detail.Text = ""
+			return
+		end
+		summary.Text = LT("Counting the dust…", "Считаем пыль…")
+		detail.Text = ""
+		task.delay(0.25, function()
+			if mine ~= seq or modal.Done then
+				return
+			end
+			local pick = Dust.Select(profileView(), selected, batch, player.UserId)
+			if pick.Count == 0 then
+				summary.Text = LT("Nothing to dismantle right now.", "Сейчас нечего разбирать.")
+				return
+			end
+			local ok, q = requestQuote(pick)
+			if mine ~= seq or modal.Done then
+				return
+			end
+			if not ok then
+				summary.Text = LT("No quote right now. Try again.", "Сейчас не получилось посчитать. Попробуй ещё раз.")
+				Kit.Toast(said(q), { Kind = "error" })
+				return
+			end
+			current = { Quote = q, Selection = pick }
+			summary.Text = FT("%s blocks → ✨ %s Lucky Dust", "Блоков: %s → ✨ %s счастливой пыли", Format.Number(q.Count), Format.Number(q.Total))
+			if pick.Available > pick.Count then
+				detail.Text = FT("%s of %s now: up to %s at a time.", "Сейчас %s из %s: не больше %s за раз.", Format.Number(pick.Count), Format.Number(pick.Available), Format.Number(batch))
+			else
+				local have = dustBalance()
+				detail.Text = FT("Your dust: %s → %s", "Твоя пыль: %s → %s", Format.Number(have), Format.Number(have + (tonumber(q.Total) or 0)))
+			end
+			modal.ConfirmButton:SetText(FT("DISMANTLE · ✨ %s", "РАЗОБРАТЬ · ✨ %s", Format.Short(q.Total, 0)))
+			modal.ConfirmButton:SetDisabled(false)
+		end)
+	end
+	modal = Kit.Modal({
+		Title = LT("DISMANTLE ALL", "РАЗОБРАТЬ ВСЁ"),
+		Body = FT(
+			"Common and Rare blocks from your bag become Lucky Dust for the DUST FORGE. Up to %s at a time; blocks on your pads stay.",
+			"Обычные и редкие блоки из сумки превращаются в счастливую пыль для КУЗНИ ПЫЛИ. Не больше %s за раз; блоки на площадках остаются.",
+			Format.Number(batch)
+		),
+		NoTranslate = true,
+		ContentHeight = 116,
+		Content = function(frame, width)
+			Kit.Chips(frame, {
+				Name = "Tiers",
+				Multi = true,
+				Options = options,
+				Selected = selected,
+				TextSize = 16,
+				Position = UDim2.fromOffset(0, 0),
+				Size = UDim2.fromOffset(width, 48),
+				ZIndex = frame.ZIndex,
+				OnChange = function(list)
+					selected = list
+					requote()
+				end,
+			})
+			summary = Kit.Text(frame, {
+				Name = "Summary",
+				TextSize = 20,
+				Scaled = true,
+				MinTextSize = 12,
+				Font = "numeric",
+				Color = DUST_DEEP,
+				AlignX = "Center",
+				Position = UDim2.fromOffset(0, 56),
+				Size = UDim2.fromOffset(width, 30),
+				ZIndex = frame.ZIndex,
+				NoTranslate = true,
+			})
+			detail = Kit.Text(frame, {
+				Name = "Detail",
+				TextSize = 14,
+				Scaled = true,
+				MinTextSize = 10,
+				Color = Theme.InkMuted,
+				AlignX = "Center",
+				Position = UDim2.fromOffset(0, 88),
+				Size = UDim2.fromOffset(width, 24),
+				ZIndex = frame.ZIndex,
+				NoTranslate = true,
+			})
+		end,
+		ConfirmText = LT("DISMANTLE", "РАЗОБРАТЬ"),
+		ConfirmStyle = "gold",
+		Accent = DUST_DEEP,
+	})
+	requote()
+	modal:Then(function(confirmed)
+		seq += 1
+		local chosen = current
+		if not (confirmed and chosen) then
+			return
+		end
+		if chosen.Quote.NeedsConfirm then
+			-- A rank 4+ tier in the bulk list still gets the Danger hold of the quote card.
+			showQuote(chosen.Quote, chosen.Selection, ui and ui.BulkButton)
+		else
+			commitDismantle(chosen.Quote, chosen.Selection, ui and ui.BulkButton)
+		end
+	end)
+end
+
+-- DUST FORGE: one block of `tier` for its forge cost (Legendary asks for a hold).
+function actions.Forge(tier: string, c: any)
+	if st.Busy or not Dust then
+		return
+	end
+	local cost = Dust.ForgeCost(tier)
+	if not cost then
+		return
+	end
+	if dustBalance() < cost then
+		Kit.Toast(LT("Not enough Lucky Dust yet: dismantle blocks in LUCKY BLOCKS.", "Пока не хватает счастливой пыли: разбери блоки во вкладке СЧАСТЛИВЫЕ БЛОКИ."), { Kind = "warn", NoTranslate = true })
+		return
+	end
+	if storedBlocks() >= blockCap() then
+		Kit.Toast(LT("Your Lucky Block storage is full. Open or dismantle a block first.", "Хранилище счастливых блоков заполнено. Сначала открой или разбери блок."), { Kind = "warn", NoTranslate = true })
+		return
+	end
+	local function forge()
+		if st.Busy then
+			return
+		end
+		st.Busy = true
+		c.Button:SetBusy(true)
+		local ok, result = Net.Request("DustForge", { Tier = tier })
+		c.Button:SetBusy(false)
+		st.Busy = false
+		if not ok then
+			Kit.Toast(said(result), { Kind = "error" })
+			task.spawn(Net.Snapshot, 0)
+			return
+		end
+		Kit.Toast(said(result), { Kind = "success", Sound = "Success" })
+		flyDust(ui and ui.ForgeGlyph, c.Frame, cost)
+		local balance = type(result) == "table" and tonumber(result.Balance) or nil
+		if balance then
+			pinDust(balance)
+		end
+		updateForge()
+	end
+	if Dust.ConfirmNeeded(tier) then
+		Kit.Confirm(LT("FORGE THIS BLOCK?", "ВЫКОВАТЬ ЭТОТ БЛОК?"), FT("It costs ✨ %s Lucky Dust.", "Это стоит ✨ %s счастливой пыли.", Format.Number(cost)), {
+			NoTranslate = true,
+			Cards = { dustCard(tier, 1, "✨ " .. Format.Number(cost)) },
+			CardKind = "Item",
+			ConfirmText = FT("FORGE · ✨ %s", "ВЫКОВАТЬ · ✨ %s", Format.Short(cost, 0)),
+			ConfirmStyle = "gold",
+			Hold = 0.8,
+			Accent = DUST_DEEP,
+		}):Then(function(confirmed)
+			if confirmed then
+				forge()
+			end
+		end)
+	else
+		forge()
+	end
+end
+
 -- The FILTERS popover: depth (one), mutations (several), favourites only, CLEAR.
 local function openFilters()
 	local Overlay = Kit.Overlay
@@ -1177,6 +1917,91 @@ local function place(object: GuiObject, x: number, y: number, w: number, h: numb
 	object.Size = UDim2.fromOffset(math.max(0, math.floor(w)), math.max(0, math.floor(h)))
 end
 
+-- LUCKY BLOCKS header: [🎲 count][✨ dust][hint ...][DISMANTLE ALL]. The dust pill grows with its
+-- number, so the hint follows it (and hides when there is no room, e.g. phones).
+local function layoutBlockHead()
+	if not (ui and ui.BlockHead and ui.HeadW) then
+		return
+	end
+	local w, h = ui.HeadW, ui.HeadH
+	local countW = st.Phone and 92 or 118
+	place(ui.BlockCount, 0, 0, countW, h)
+	local bulkW = 0
+	if ui.BulkButton then
+		bulkW = st.Phone and 132 or 176
+		place(ui.BulkButton.Instance, w - bulkW, 0, bulkW, h)
+	end
+	local x = countW + 6
+	if ui.DustPill then
+		ui.DustPill.Instance.Position = UDim2.new(0, x, 0.5, 0)
+		x += ui.DustPill.Instance.AbsoluteSize.X + 10
+	end
+	local hintW = w - x - bulkW - 10
+	ui.BlockHint.Visible = hintW >= 120
+	place(ui.BlockHint, x, 0, math.max(0, hintW), h)
+end
+
+-- A DUST FORGE card: block preview on a rarity stage, name, cost, progress to it, FORGE.
+local function layoutForgeCard(c: any, w: number, h: number)
+	local pad = 10
+	local inner = w - pad * 2
+	local buttonH = 44
+	local stageH = math.max(64, h - 150)
+	place(c.Stage, pad, pad, inner, stageH)
+	local y = pad + stageH + 6
+	place(c.Name, pad, y, inner, 22)
+	y += 26
+	place(c.Cost, pad, y, math.floor(inner * 0.66), 22)
+	place(c.Times, pad + math.floor(inner * 0.66), y, inner - math.floor(inner * 0.66), 22)
+	y += 26
+	place(c.Bar.Instance, pad, y, inner, 16)
+	place(c.Button.Instance, pad, h - pad - buttonH, inner, buttonH)
+end
+
+-- DUST FORGE page: balance panel, the cards (4 in a row, 2 on portrait phones), dust values.
+local function layoutForge(w: number, _h: number, phone: boolean, landscape: boolean)
+	if not (ui and ui.ForgeScroll) then
+		return
+	end
+	local fw = w - 8 -- room for the scroll bar
+	local gap = phone and 8 or 12
+	local topH = phone and (landscape and 64 or 76) or 92
+	place(ui.ForgeTop, 0, 0, fw, topH)
+	local glyph = topH - 16
+	place(ui.ForgeGlyph, 6, 8, glyph, glyph)
+	local textX = glyph + 14
+	local capW = phone and 100 or 124
+	local hintW = (not phone and fw >= 640) and math.min(330, math.floor(fw * 0.36)) or 0
+	local textW = fw - textX - math.max(capW, hintW) - 24
+	place(ui.ForgeTitle, textX, 8, textW, 18)
+	place(ui.ForgeDust, textX, 24, textW, topH - 30)
+	ui.ForgeCap.Instance.Position = UDim2.fromOffset(fw - 12, 12)
+	ui.ForgeHint.Visible = hintW > 0
+	if hintW > 0 then
+		place(ui.ForgeHint, fw - hintW - 12, 44, hintW, topH - 50)
+	end
+	local cols = (phone and not landscape) and 2 or (fw >= 4 * 168 + 3 * gap and 4 or 2)
+	local cardW = math.floor((fw - gap * (cols - 1)) / cols)
+	local cardH = phone and (landscape and 216 or 240) or 296
+	local y = topH + gap
+	local i = 0
+	for _, tier in ipairs(Dust.Config.Forgeable) do
+		local c = ui.ForgeCards[tier]
+		if c then
+			local col, row = i % cols, math.floor(i / cols)
+			place(c.Frame, col * (cardW + gap), y + row * (cardH + gap), cardW, cardH)
+			layoutForgeCard(c, cardW, cardH)
+			i += 1
+		end
+	end
+	local rows = math.ceil(i / cols)
+	y += rows * (cardH + gap) + 4
+	place(ui.ValuesTitle, 2, y, fw - 4, 20)
+	y += 24
+	ui.Values.Position = UDim2.fromOffset(0, y)
+	ui.Values.Size = UDim2.fromOffset(fw, 0)
+end
+
 local function relayout()
 	if not (win and ui) then
 		return
@@ -1229,9 +2054,11 @@ local function relayout()
 		place(ui.Detail.Root, listW + 12, y, detailW, h - y)
 		ui.Detail:Layout(detailW, h - y)
 	end
-	-- LUCKY BLOCKS.
-	local headH = phone and 26 or 30
+	-- LUCKY BLOCKS (the header holds touch-sized controls).
+	local headH = phone and 44 or 46
 	place(ui.BlockHead, 0, 0, w, headH)
+	ui.HeadW, ui.HeadH = w, headH
+	layoutBlockHead()
 	local by = headH + gap
 	place(ui.BlockGridHost, 0, by, listW, h - by)
 	ui.BlockDetail.Root.Visible = not phone
@@ -1239,6 +2066,8 @@ local function relayout()
 		place(ui.BlockDetail.Root, listW + 12, by, detailW, h - by)
 		ui.BlockDetail:Layout(detailW, h - by)
 	end
+	-- DUST FORGE.
+	layoutForge(w, h, phone, landscape)
 	if wasPhone ~= phone then
 		if not phone and detailWin and detailWin.IsOpen then
 			detailWin:Close("layout")
@@ -1269,9 +2098,191 @@ function S._buildDetailWindow()
 	S.DetailWindow, S.DetailUI = detailWin, dw
 end
 
+local function buildForgeCard(parent: Instance, tier: string, order: number): any
+	local c: any = { Tier = tier }
+	local color = Theme.RarityColor(tier)
+	local frame = Kit.New("Frame", { Name = "Forge_" .. tier, BackgroundColor3 = Theme.White, BorderSizePixel = 0, LayoutOrder = order, ZIndex = Z }, parent)
+	Kit.Corner(frame, Theme.Radius.Card)
+	Kit.Stroke(frame, color, 3, 0.05)
+	c.Frame = frame
+	c.Stage = Kit.New("Frame", { Name = "Stage", BackgroundColor3 = Theme.White, BorderSizePixel = 0, ZIndex = Z + 1 }, frame)
+	Kit.Corner(c.Stage, Theme.Radius.Card - 4)
+	local gradient = Theme.RarityGradient[tier]
+	local top = gradient and gradient[1] or color
+	Kit.New("UIGradient", { Rotation = 90, Color = ColorSequence.new(top:Lerp(Theme.White, 0.4), Theme.SurfaceAlt) }, c.Stage)
+	c.Holder = Kit.New("Frame", { Name = "PreviewHolder", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = Z + 2 }, c.Stage)
+	c.Slot = Kit.Preview.Slot(c.Holder)
+	c.Slot:Show({ Kind = "LuckyBlock", Tier = tier })
+	c.Name = Kit.Text(frame, {
+		Name = "BlockName",
+		Text = blockName(tier),
+		TextSize = 17,
+		Scaled = true,
+		MinTextSize = 10,
+		AlignX = "Center",
+		ZIndex = Z + 1,
+		NoTranslate = true,
+	})
+	c.Cost = Kit.Text(frame, {
+		Name = "Cost",
+		Text = "✨ " .. Format.Number(Dust.ForgeCost(tier) or 0),
+		Font = "numeric",
+		TextSize = 20,
+		Scaled = true,
+		MinTextSize = 12,
+		Color = DUST_DEEP,
+		ZIndex = Z + 1,
+		NoTranslate = true,
+	})
+	c.Times = Kit.Text(frame, {
+		Name = "Times",
+		Text = "",
+		Font = "numeric",
+		TextSize = 17,
+		Scaled = true,
+		MinTextSize = 10,
+		Color = Theme.Success,
+		AlignX = "Right",
+		ZIndex = Z + 1,
+		NoTranslate = true,
+	})
+	c.Bar = Kit.ProgressBar(frame, { Name = "Progress", Value = 0, Text = "", Height = 16, TextSize = 12, Color = DUST_DEEP, ZIndex = Z + 1, NoTranslate = true })
+	c.Button = Kit.Button(frame, {
+		Name = "Forge",
+		Text = LT("FORGE", "ВЫКОВАТЬ"),
+		Style = "gold",
+		TextSize = 17,
+		ZIndex = Z + 1,
+		NoTranslate = true,
+		OnClick = function()
+			actions.Forge(tier, c)
+		end,
+	})
+	pcall(function()
+		Kit.Tooltip(c.Button.Instance, function()
+			return FT("A new %s Lucky Block for your bag. Open it at your Lucky pads.", "Новый счастливый блок (%s) в сумку. Открывай его на своих площадках.", tierWord(tier)),
+				LT("FORGE", "ВЫКОВАТЬ")
+		end)
+	end)
+	return c
+end
+
+-- The DUST FORGE page (positions: layoutForge).
+local function buildForge(page: Instance)
+	local scroll = Kit.New("ScrollingFrame", {
+		Name = "Forge",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		CanvasSize = UDim2.new(),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		ScrollBarThickness = 4,
+		ScrollBarImageColor3 = DUST_DEEP,
+		ZIndex = Z,
+	}, page)
+	ui.ForgeScroll = scroll
+	-- Balance panel.
+	local top = Kit.New("Frame", { Name = "Balance", BackgroundColor3 = Theme.White, BorderSizePixel = 0, ZIndex = Z }, scroll)
+	Kit.Corner(top, Theme.Radius.Card)
+	Kit.Stroke(top, DUST_DEEP, 2, 0.2)
+	Kit.New("UIGradient", { Rotation = 90, Color = ColorSequence.new(DUST:Lerp(Theme.White, 0.3), DUST:Lerp(Theme.White, 0.82)) }, top)
+	ui.ForgeTop = top
+	ui.ForgeGlyph = Kit.Text(top, { Name = "Glyph", Text = "✨", TextSize = 46, Scaled = true, MinTextSize = 20, AlignX = "Center", ZIndex = Z + 1, NoTranslate = true })
+	ui.ForgeTitle = Kit.Text(top, {
+		Name = "Title",
+		Text = LT("LUCKY DUST", "СЧАСТЛИВАЯ ПЫЛЬ"),
+		TextSize = 15,
+		Scaled = true,
+		MinTextSize = 10,
+		Color = Theme.Darken(DUST_DEEP, 0.25),
+		ZIndex = Z + 1,
+		NoTranslate = true,
+	})
+	ui.ForgeDust = Kit.Text(top, {
+		Name = "Amount",
+		Text = "0",
+		Font = "numeric",
+		TextSize = 40,
+		Scaled = true,
+		MinTextSize = 18,
+		Color = Theme.Ink,
+		ZIndex = Z + 1,
+		NoTranslate = true,
+	})
+	ui.ForgeCap = Kit.Pill(top, { Name = "Storage", Text = "🎲 0 / 60", Height = 28, TextSize = 15, Font = "numeric", Color = P.secondary, TextColor = Theme.Ink, ZIndex = Z + 1, NoTranslate = true })
+	ui.ForgeCap.Instance.AnchorPoint = Vector2.new(1, 0)
+	pcall(function()
+		Kit.Tooltip(ui.ForgeCap.Instance, function()
+			return LT("Blocks in your bag and on your pads. Forged blocks need a free place.", "Блоки в сумке и на площадках. Для нового блока нужно свободное место."),
+				LT("LUCKY BLOCK STORAGE", "ХРАНИЛИЩЕ БЛОКОВ")
+		end)
+	end)
+	ui.ForgeHint = Kit.Text(top, {
+		Name = "Hint",
+		Text = LT("Dismantle blocks in LUCKY BLOCKS, then forge the block you want here.", "Разбирай блоки во вкладке СЧАСТЛИВЫЕ БЛОКИ и куй здесь нужный блок."),
+		TextSize = 14,
+		Wrap = true,
+		AlignX = "Right",
+		AlignY = "Top",
+		Color = Theme.InkMuted,
+		ZIndex = Z + 1,
+		NoTranslate = true,
+	})
+	-- One card per forgeable tier.
+	ui.ForgeCards = {}
+	for i, tier in ipairs(Dust.Config.Forgeable) do
+		if Dust.CanForge(tier) then
+			ui.ForgeCards[tier] = buildForgeCard(scroll, tier, i)
+		end
+	end
+	-- What each tier dismantles into.
+	ui.ValuesTitle = Kit.Text(scroll, {
+		Name = "ValuesTitle",
+		Text = LT("DUST FOR ONE DISMANTLED BLOCK", "ПЫЛЬ ЗА ОДИН РАЗОБРАННЫЙ БЛОК"),
+		TextSize = 15,
+		Color = Theme.InkMuted,
+		ZIndex = Z,
+		NoTranslate = true,
+	})
+	ui.Values = Kit.New("Frame", { Name = "Values", BackgroundTransparency = 1, AutomaticSize = Enum.AutomaticSize.Y, ZIndex = Z }, scroll)
+	Kit.New("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 6),
+		Wraps = true,
+	}, ui.Values)
+	Kit.Padding(ui.Values, 0, 0, 0, 10)
+	for i, tier in ipairs(Dust.Order) do
+		if Dust.Yield(tier) > 0 then
+			Kit.Pill(ui.Values, {
+				Name = "Value_" .. tier,
+				Text = tierWord(tier) .. "  " .. yieldText(tier),
+				Height = 30,
+				TextSize = 14,
+				Font = "numeric",
+				PadX = 10,
+				Color = Theme.RarityColor(tier),
+				LayoutOrder = i,
+				ZIndex = Z + 1,
+				NoTranslate = true,
+			})
+		end
+	end
+end
+
 local function build()
 	if win then
 		return
+	end
+	local tabs = {
+		{ Id = "finds", Text = T("FINDS"), NoTranslate = true },
+		{ Id = "blocks", Text = T("LUCKY BLOCKS"), NoTranslate = true },
+	}
+	if Dust then
+		table.insert(tabs, { Id = "forge", Text = LT("✨ DUST FORGE", "✨ КУЗНЯ ПЫЛИ"), NoTranslate = true })
+	elseif st.Tab == "forge" then
+		st.Tab = "blocks"
 	end
 	win = Kit.Window.new({
 		Key = "Inventory",
@@ -1280,10 +2291,7 @@ local function build()
 		Icon = "Inventory",
 		NoTranslate = true,
 		MaxSize = Vector2.new(1120, 780),
-		Tabs = {
-			{ Id = "finds", Text = T("FINDS"), NoTranslate = true },
-			{ Id = "blocks", Text = T("LUCKY BLOCKS"), NoTranslate = true },
-		},
+		Tabs = tabs,
 		Tab = st.Tab,
 		OnOpen = function()
 			S._opened()
@@ -1294,6 +2302,9 @@ local function build()
 		OnTab = function(id)
 			st.Tab = id
 			bindDetail()
+			if id == "forge" then
+				updateForge()
+			end
 		end,
 	})
 	S.Window = win
@@ -1437,12 +2448,14 @@ local function build()
 		Name = "Count",
 		Text = "🎲 0",
 		TextSize = 18,
+		Scaled = true,
+		MinTextSize = 12,
 		Font = "numeric",
-		Size = UDim2.new(0, 130, 1, 0),
+		Size = UDim2.new(0, 118, 1, 0),
 		ZIndex = Z,
 		NoTranslate = true,
 	})
-	Kit.Text(ui.BlockHead, {
+	ui.BlockHint = Kit.Text(ui.BlockHead, {
 		Name = "Hint",
 		Text = T("Open them at the Lucky pads in your yard."),
 		TextSize = 15,
@@ -1454,6 +2467,47 @@ local function build()
 		ZIndex = Z,
 		NoTranslate = true,
 	})
+	if Dust then
+		-- Lucky Dust: the balance (counts when dust arrives) and DISMANTLE ALL.
+		ui.DustPill = Kit.Pill(ui.BlockHead, {
+			Name = "LuckyDust",
+			Text = "✨ 0",
+			Height = 32,
+			TextSize = 17,
+			Font = "numeric",
+			PadX = 12,
+			Color = DUST,
+			TextColor = Theme.Ink,
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.new(0, 124, 0.5, 0),
+			ZIndex = Z + 1,
+			NoTranslate = true,
+		})
+		Kit.Stroke(ui.DustPill.Instance, DUST_DEEP, 2, 0.2)
+		ui.DustPill.Instance:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutBlockHead)
+		pcall(function()
+			Kit.Tooltip(ui.DustPill.Instance, function()
+				return LT("Dismantle Lucky Blocks into dust, forge the block you want in the DUST FORGE.", "Разбирай счастливые блоки на пыль и куй нужный блок в КУЗНЕ ПЫЛИ."),
+					LT("LUCKY DUST", "СЧАСТЛИВАЯ ПЫЛЬ")
+			end)
+		end)
+		ui.BulkButton = Kit.Button(ui.BlockHead, {
+			Name = "DismantleAll",
+			Text = LT("♻ DISMANTLE ALL", "♻ РАЗОБРАТЬ ВСЁ"),
+			Style = "secondary",
+			TextSize = 15,
+			ZIndex = Z + 1,
+			NoTranslate = true,
+			OnClick = function()
+				actions.BulkDismantle()
+			end,
+		})
+		ui.DustValue = Instance.new("NumberValue")
+		ui.DustValue.Name = "LuckyDustShown"
+		ui.DustValue.Changed:Connect(function(value)
+			renderDust(math.floor(value + 0.5))
+		end)
+	end
 	ui.BlockGridHost = Kit.New("Frame", { Name = "BlockGridHost", BackgroundTransparency = 1, ZIndex = Z }, blocks)
 	ui.BlockGrid = Kit.CardGrid(ui.BlockGridHost, {
 		Name = "Blocks",
@@ -1477,6 +2531,9 @@ local function build()
 	})
 	ui.BlockDetail = buildDetail(blocks, false)
 	ui.BlockDetail.Kind = "Block"
+	if Dust then
+		buildForge(win:Page("forge"))
+	end
 	win.Resized:Connect(function()
 		relayout()
 	end)
@@ -1500,12 +2557,15 @@ function S._opened()
 	local token = st.Token
 	st.Near = nearCollector()
 	local cached = Net.Cached()
+	-- The dust number jumps to the balance on open (it only counts while the window is open).
+	st.DustShown = nil
 	if cached then
 		refresh(cached)
 	else
 		updateCapacity()
 		refreshFinds(true)
 		refreshBlocks()
+		setDust(dustBalance(), false)
 	end
 	relayout()
 	task.spawn(function()
@@ -1576,12 +2636,25 @@ end
 for _, name in ipairs({ "InventoryRevision", "ItemCount", "ItemCapacity", "OwnedBlockCount", "AvailableBlockCount" }) do
 	player:GetAttributeChangedSignal(name):Connect(bagChanged)
 end
+-- Lucky Dust arrived (a dismantle, a Black Coffin, a pumpkin) or was spent: count to the new balance.
+player:GetAttributeChangedSignal("LuckyDust"):Connect(function()
+	if win and win.IsOpen and ui then
+		setDust(dustBalance(), true)
+	end
+end)
 
 -- Labels are localized when the window is built: after a language change it is rebuilt.
 local function rebuildIfLanguageChanged()
 	if win and ui and ui.Lang ~= Kit.Lang() and not win.IsOpen then
 		ui.Grid:Destroy()
 		ui.BlockGrid:Destroy()
+		for _, c in pairs(ui.ForgeCards or {}) do
+			c.Slot:Destroy()
+		end
+		if ui.DustValue then
+			ui.DustValue:Destroy()
+		end
+		st.DustShown = nil
 		win:Destroy()
 		win, ui = nil, nil
 		if detailWin then
@@ -1591,15 +2664,17 @@ local function rebuildIfLanguageChanged()
 	end
 end
 
--- arg: the page message (shown as a toast) or {Tab = "finds" | "blocks"}; page: the route
--- name ("LuckyBlocks" / "OwnedBlocks" open the blocks tab).
+-- arg: the page message (shown as a toast) or {Tab = "finds" | "blocks" | "forge"}; page: the route
+-- name ("LuckyBlocks" / "OwnedBlocks" open the blocks tab, "DustForge" / "LuckyDust" the forge).
 function S.Open(arg: any, page: string?)
 	rebuildIfLanguageChanged()
 	build()
 	local tab = nil
 	if page == "LuckyBlocks" or page == "OwnedBlocks" then
 		tab = "blocks"
-	elseif type(arg) == "table" and (arg.Tab == "finds" or arg.Tab == "blocks") then
+	elseif (page == "DustForge" or page == "LuckyDust") and Dust then
+		tab = "forge"
+	elseif type(arg) == "table" and (arg.Tab == "finds" or arg.Tab == "blocks" or (arg.Tab == "forge" and Dust ~= nil)) then
 		tab = arg.Tab
 	end
 	if tab then
