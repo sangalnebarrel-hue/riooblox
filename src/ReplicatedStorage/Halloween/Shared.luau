@@ -331,9 +331,26 @@ function S.ReducedMotion(): boolean
 	return player ~= nil and player:GetAttribute("ReducedMotion") == true
 end
 
+-- Chapter II quality keys (UnderMotes, Telegraph, FinaleFX, CalendarFX, CoffinFX, GhostLights) live in
+-- Chapter2Config.Quality; Config.Quality keys win when both define one
+local c2Quality: any = nil
 function S.Budget(key: string): number
-	local q = Config.Quality[S.Quality()] or Config.Quality.High
-	return q[key] or 0
+	local tier = S.Quality()
+	local q = Config.Quality[tier] or Config.Quality.High
+	local v = q[key]
+	if v ~= nil then
+		return v
+	end
+	if c2Quality == nil then
+		local mod = root:FindFirstChild("Chapter2Config")
+		local ok, cfg = false, nil
+		if mod then
+			ok, cfg = pcall(require, mod)
+		end
+		c2Quality = ok and type(cfg) == "table" and type(cfg.Quality) == "table" and cfg.Quality or false
+	end
+	local q2 = c2Quality and (c2Quality[tier] or c2Quality.High)
+	return q2 and q2[key] or 0
 end
 
 ---------------------------------------------------------------------------------------------------------------------
