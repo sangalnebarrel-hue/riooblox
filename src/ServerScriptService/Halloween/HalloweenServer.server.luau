@@ -71,7 +71,8 @@ for _, name in ipairs({ "Strike", "Ores", "DigSpots", "Boss", "Houses" }) do
 end
 -- CHAPTER II · THE UNDERYARD (docs/halloween2/DESIGN.md §4.1) + the calendar. Modules that are not in the place yet
 -- are reported and skipped like any other.
-for _, name in ipairs({ "EventHP", "Chapter2", "Underyard", "Seals", "SealEcho", "SealRun", "SealMirror", "SealMine",
+for _, name in ipairs({ "EventHP", "Chapter2", "Underyard", "Seals", "Chapter2Tutorial", -- [WP-H2] onboarding trials
+	"SealEcho", "SealRun", "SealMirror", "SealMine",
 	"SealDoors", "SealChoir", "SealBell", "Coffin", "Resonance", "BossFinale", "Calendar" }) do
 	start(name, Core, modules)
 end

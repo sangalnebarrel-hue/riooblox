@@ -363,7 +363,8 @@ function F.View(p: any, now: number): any
 		Chapter1 = { Complete = u.Chapter1.Complete, At = u.Chapter1.At, Notified = u.Chapter1.Notified, Ready = complete,
 			Checklist = checklist, Done = done, Total = #checklist },
 		RevealSeen = u.RevealSeen, RevealAt = u.RevealAt, Entered = u.Entered, FirstEnterAt = u.FirstEnterAt,
-		Tutorial = { Step = u.Tutorial.Step, Done = u.Tutorial.Done, Current = tutorialStep, Total = #cfg.Tutorial.Steps },
+		Tutorial = { Step = u.Tutorial.Step, Done = u.Tutorial.Done, Current = tutorialStep, Total = #cfg.Tutorial.Steps,
+			Mark = tonumber(u.Tutorial.Mark) or 0 }, -- [WP-H2] Mark: the guide's progress bar (step 1 shards / step 3 coffins)
 		Seals = seals, Cleared = F.Cleared(u), Mask = rules.SealMask(u.Seals, cfg),
 		Phase = rules.Phase(now, cfg, override), NextPhaseAt = rules.NextPhaseAt(now, cfg, override),
 		Shards = type(p.Resources) == "table" and int(p.Resources.BellShards) or 0,

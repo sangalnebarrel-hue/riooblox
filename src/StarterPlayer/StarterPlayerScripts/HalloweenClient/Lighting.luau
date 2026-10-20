@@ -6,6 +6,9 @@
 --                   bloom for the pumpkins / lanterns, readable — never pitch black
 --   BLOOD_SKY 25    outside the yard during a Blood Moon: a faint red tint only (no clock change)
 --   BLOOD_MOON 30   inside the yard during a Blood Moon: red sky, thicker fog, red moonlight, contrast
+--   UNDERYARD 35    [WP-H2] THE UNDERYARD (camera inside UnderyardLayout.Zone incl. Y, 40-stud feather): beneath the last
+--                   bell — deep night, violet-blue cavern air, thick haze, bloom for the lanterns, no clouds / stars /
+--                   built-in moon (the zone has its own moons); NIGHT / ZONE / BLOOD_* / BOSS_ENRAGE are zeroed inside
 --   BOSS_ENRAGE 40  inside the yard while State.Boss.Phase == 5: redder, harder
 --   MOON_HIDE 90    hides the built-in moon wherever BloodMoonFX's moon (Layout.Moon) is visible
 --   FLASH 95        lightning (Lighting.Flash), + any layer pushed by other modules (Lighting.Layer)
@@ -22,10 +25,13 @@
 --   * yield (release everything, keep only the camera grade at 0.6x) while a world event is ACTIVE/ENDING, while
 --     WorldEventLighting.Active, while the Mine mood grade exists, or during a Secret arrival hold; the Sky channel only
 --     yields to world events whose mood drives the Sky. Resume happens only inside RenderStep;
+--   * [WP-H2] inside THE UNDERYARD (W.Under > .5) nothing but the Mine mood makes it yield: island world-event moods and
+--     Secret arrivals never light the cavern (WorldEventLighting's DOGROTS_EventGrade is switched off locally there and
+--     back on when the camera leaves);
 --   * event switched off (State.Enabled false) -> everything released, grade/sky destroyed, a watcher keeps repairing
 --     echoes for 15 min; zone exit / Blood Moon end -> the layer weights glide to 0 and the keys are released exactly.
--- API: Lighting.Start(ctx), Lighting.Weights() -> {Zone, Night, Blood, BloodZone, Enrage, MoonVis, Approach, Yielded,
---      YieldReason}, Lighting.Flash(strength, duration), Lighting.Layer(name, profile) -> {Set(weight, fade), Remove()},
+-- API: Lighting.Start(ctx), Lighting.Weights() -> {Zone, Night, Blood, BloodZone, Enrage, MoonVis, Approach, Under,
+--      Yielded, YieldReason}, Lighting.Flash(strength, duration), Lighting.Layer(name, profile) -> {Set(weight, fade), Remove()},
 --      Lighting.Profiles (tunable), Lighting.Shutdown(), Lighting.Core / Lighting.Step / Lighting.Bind (offline tests).
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -39,6 +45,9 @@ local WHITE = Color3.new(1, 1, 1)
 M.ZoneFeather = 44 -- studs outside the yard's footprint where the zone profile fades out (camera position)
 M.ApproachFeather = 260 -- W.Approach: 0..1 closeness to the yard (moon size, approach effects)
 M.YieldGradeScale = .6 -- camera grade strength kept while a world event / cinematic owns Lighting
+M.UnderFeather = 40 -- [WP-H2] studs around UnderyardLayout.Zone (incl. Y) where the UNDERYARD profile fades out
+M.UnderTau = .35 -- [WP-H2] weight glide (the portal transition hides the switch)
+M.UnderInside = .5 -- [WP-H2] above this weight the camera counts as inside the Underyard (yield rules)
 M.HistorySeconds = 900 -- how long our own written values are remembered (echo repair)
 
 ---------------------------------------------------------------------------------------------------------------------
@@ -82,6 +91,16 @@ M.Profiles = {
 		Atmo = { Density = .34, Color = C3(136, 34, 44), Decay = C3(64, 8, 18), Glare = .25, Haze = 2 },
 		Grade = { Tint = C3(255, 204, 198), Saturation = .07, Contrast = .2 },
 		Bloom = { Intensity = .62, Size = 30, Threshold = 1.1 },
+	},
+	-- [WP-H2] THE UNDERYARD (DESIGN §18). Defines every key the lower layers drive, so nothing of the island leaks in.
+	UNDERYARD = { Prio = 35,
+		Lighting = { ClockTime = .5, Brightness = .9, ExposureCompensation = .26, Ambient = C3(52, 48, 92), OutdoorAmbient = C3(60, 58, 110),
+			ColorShift_Top = C3(90, 110, 200) },
+		Atmo = { Density = .32, Offset = .1, Color = C3(70, 80, 140), Decay = C3(30, 20, 60), Glare = 0, Haze = 2.4 },
+		Grade = { Tint = C3(200, 210, 255), Saturation = -.15, Contrast = .12, Brightness = 0 },
+		Bloom = { Intensity = .55, Size = 26, Threshold = 1.1 },
+		Clouds = { Cover = 0, Density = 0, Color = C3(40, 36, 70) },
+		Sky = { MoonAngularSize = 0, StarCount = 0 },
 	},
 	MOON_HIDE = { Prio = 90, Sky = { MoonAngularSize = 0 } },
 	FLASH = { Prio = 95,
@@ -393,7 +412,7 @@ end
 -- State
 ---------------------------------------------------------------------------------------------------------------------
 local W = { Zone = 0, Night = 0, Blood = 0, BloodZone = 0, Enrage = 0, MoonVis = 0, Approach = 0, Flash = 0, ShownDark = 0,
-	Yielded = false, YieldReason = nil, Active = false }
+	Under = 0, Yielded = false, YieldReason = nil, Active = false }
 M.W = W
 local layers = {} -- {Name, Prio, Profile, Weight, Target?, Rate?}
 local layerByName = {}
@@ -404,6 +423,7 @@ local ownSky = nil
 local ctxRef = nil
 local Layout = nil
 local Shared = nil
+local Under: any = nil -- [WP-H2] RS.Halloween.UnderyardRuntime (UnderWeight); nil in a place without Chapter II
 local flash = { T = 0, Dur = 0, Strength = 0, Second = false }
 local lastPrune = 0
 local janitorUntil = 0
@@ -456,6 +476,10 @@ local function layerWeights(dt: number, s)
 	W.Blood = math.clamp(s.BloodAlpha or 0, 0, 1)
 	W.Enrage = smoothTo(W.Enrage, s.Enraged and 1 or 0, dt, 1.2)
 	W.Approach = (s.CamPos and Layout) and Layout.Weight(s.CamPos, M.ApproachFeather) or 0
+	-- [WP-H2] THE UNDERYARD: its own weight (Y counts); every island layer is zeroed inside it
+	local underT = (s.CamPos and Under) and Under.UnderWeight(s.CamPos, M.UnderFeather) or 0
+	W.Under = smoothTo(W.Under, underT, dt, M.UnderTau)
+	local outside = 1 - W.Under
 	W.BloodZone = W.Blood * W.Zone
 	-- flash envelope
 	local fw = 0
@@ -472,11 +496,12 @@ local function layerWeights(dt: number, s)
 		end
 	end
 	W.Flash = fw
-	layerByName.NIGHT.Weight = W.Night
-	layerByName.ZONE.Weight = W.Zone
-	layerByName.BLOOD_SKY.Weight = W.Blood * (1 - W.Zone) * .35
-	layerByName.BLOOD_MOON.Weight = W.BloodZone
-	layerByName.BOSS_ENRAGE.Weight = W.Enrage * W.Zone
+	layerByName.NIGHT.Weight = W.Night * outside
+	layerByName.ZONE.Weight = W.Zone * outside
+	layerByName.BLOOD_SKY.Weight = W.Blood * (1 - W.Zone) * .35 * outside
+	layerByName.BLOOD_MOON.Weight = W.BloodZone * outside
+	layerByName.BOSS_ENRAGE.Weight = W.Enrage * W.Zone * outside
+	layerByName.UNDERYARD.Weight = W.Under
 	layerByName.FLASH.Weight = fw
 	-- the Buried Moon (BloodMoonFX) replaces the built-in moon wherever the DISPLAYED sky is dark: the clock we are about
 	-- to render (our composite), not the property (the server's 1 Hz replication overwrites it between our frames).
@@ -832,6 +857,12 @@ local function senseWorld()
 	local welActive = WEL ~= nil and WEL.Active == true
 	local mine = LightingService:FindFirstChild("DOGROTS_MineGrade") ~= nil
 	local secret = secretBusy(s.Clock)
+	-- [WP-H2] inside THE UNDERYARD only the Mine mood yields: no island world-event mood / Secret arrival hold down there
+	local under = W.Under > M.UnderInside or (s.CamPos ~= nil and Under ~= nil and Under.UnderWeight(s.CamPos, M.UnderFeather) > M.UnderInside)
+	s.Under = under
+	if under then
+		eventOwns, welActive, secret = false, false, false
+	end
 	s.YieldAll = eventOwns or welActive or mine or secret
 	s.YieldReason = eventOwns and "WorldEvent" or welActive and "WorldEventLighting" or mine and "MineMood" or secret and "Secret" or nil
 	local moodSky = false
@@ -853,7 +884,7 @@ local function publish()
 	if not f then
 		return
 	end
-	for attr, v in pairs({ HwZoneWeight = W.Zone, HwNight = W.Night, HwBlood = W.Blood, HwMoonVis = W.MoonVis }) do
+	for attr, v in pairs({ HwZoneWeight = W.Zone, HwNight = W.Night, HwBlood = W.Blood, HwMoonVis = W.MoonVis, HwUnderWeight = W.Under }) do
 		local old = f:GetAttribute(attr)
 		if type(old) ~= "number" or math.abs(old - v) > .02 or (v == 0 and old ~= 0) or (v == 1 and old ~= 1) then
 			f:SetAttribute(attr, math.floor(v * 100 + .5) / 100)
@@ -864,6 +895,30 @@ local function publish()
 	end
 end
 
+-- [WP-H2] WorldEventLighting's grade (Lighting.DOGROTS_EventGrade) stays off while the camera is in THE UNDERYARD: an
+-- island world-event colour never tints the cavern. Only Enabled is touched (WEL writes the grade values every frame and
+-- never Enabled; its Stop destroys the object), and only a grade we switched off is switched back on.
+local eventGradeOff: any = nil
+local function eventGrade(under: boolean)
+	local g = LightingService:FindFirstChild("DOGROTS_EventGrade")
+	if eventGradeOff and eventGradeOff ~= g then
+		if eventGradeOff.Parent then
+			eventGradeOff.Enabled = true
+		end
+		eventGradeOff = nil
+	end
+	if under and g and g:IsA("ColorCorrectionEffect") and g.Enabled then
+		g.Enabled = false
+		eventGradeOff = g
+	elseif not under and eventGradeOff then
+		if eventGradeOff.Parent then
+			eventGradeOff.Enabled = true
+		end
+		eventGradeOff = nil
+	end
+end
+M.EventGrade = eventGrade
+
 local bound = false
 local janitorBound = false
 function M.Shutdown()
@@ -871,6 +926,7 @@ function M.Shutdown()
 		RunService:UnbindFromRenderStep("DOGROTS_HalloweenLighting")
 		bound = false
 	end
+	pcall(eventGrade, false)
 	for _, ch in pairs(channels) do
 		pcall(function()
 			ch:Yield()
@@ -925,6 +981,16 @@ function M.Configure(ctx)
 	ctxRef = ctx
 	Shared = ctx.Shared
 	Layout = ctx.Layout
+	-- [WP-H2] the Underyard presence weight (tests pass ctx.Underyard; a place without Chapter II simply has none)
+	Under = ctx.Underyard
+	if Under == nil then
+		local ok, m = pcall(function()
+			local hw = RS:FindFirstChild("Halloween")
+			local mod = hw and hw:FindFirstChild("UnderyardRuntime")
+			return mod and require(mod) :: any
+		end)
+		Under = ok and type(m) == "table" and m or nil
+	end
 end
 
 function M.Start(ctx)
@@ -955,6 +1021,7 @@ function M.Start(ctx)
 				M.Shutdown()
 				return
 			end
+			eventGrade(s.Under == true) -- [WP-H2]
 			M.Step(dt, s)
 			acc += dt
 			if acc > .2 then
