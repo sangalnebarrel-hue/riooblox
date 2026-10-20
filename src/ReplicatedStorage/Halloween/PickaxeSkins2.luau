@@ -648,7 +648,7 @@ DESIGNS.HW_UyToothyAlarm = function(model, v, def, len, top)
 	light(lamp, 'DialLight', glow, 6.5, .9)
 	emitter(lamp, 'MawSparks', SPARK_TEX, glow:Lerp(WHITE, .3), 2, .22, .6, 1.3, V3(0, 1.2, 0))
 
-	model:SetAttribute('BackC0', CF(.25, -.3, .3))
+	model:SetAttribute('BackC0', CF(.45, -.6, .45)) -- the wide head hangs clear of the holder's head
 	model:SetAttribute('DisplayScale', .82)
 	return H + V3(-1.8, bellY, 0), H + V3(1.8, bellY, 0)
 end
@@ -749,10 +749,16 @@ DESIGNS.HW_UyFateHand = function(model, v, def, len, top)
 	rod(model, 'Wrist', V3(0, yW - .04, 0), wristTop, .44, shade(skin, .05), SP)
 	ball(model, 'WristJoint', .46, CF(wristTop), shade(skin, .05), SP)
 	ball(model, 'UlnaKnob', .15, CF(V3(.2, yW + .18, -.06)), shade(skin:Lerp(WHITE, .1), .04), SP, SMALL)
-	part(model, 'Palm', V3(.92, .62, .3), at(0, -.22, -.29), shade(skin, .05), SP)
-	part(model, 'PalmHeel', V3(.76, .22, .32), at(0, -.48, -.25), shade(skin:Lerp(BLACK, .05), .04), SP)
+	part(model, 'Palm', V3(.86, .5, .26), at(0, -.17, -.3), shade(skin, .05), SP)
+	part(model, 'PalmHeel', V3(.7, .24, .28), at(.04, -.5, -.26), shade(skin:Lerp(BLACK, .05), .04), SP)
+	for _, sx in ipairs({ -1, 1 }) do
+		wedge(model, 'PalmBevel', V3(.26, .12, .12), at(sx * .38, -.4, -.3) * CFrame.Angles(math.pi / 2, 0, 0) * CFrame.Angles(0, sx * math.pi / 2, 0), shade(skin, .05), SP)
+	end
+	blob(model, 'Thenar', V3(.3, .42, .32), at(-.38, -.3, -.18), shade(skin, .04), SP)
 	for t = -1, 2 do
-		bar(model, 'Tendon', H + V3(t * .16 - .08, -.46, -.45), H + V3(t * .2 - .1, .04, -.45), .045, .03, skin:Lerp(vein, .35), SP, SMALL)
+		local x0 = t * .16 - .08
+		bar(model, 'BackVein', H + V3(x0, -.44, -.44), H + V3(x0 * 1.15 - .02, -.18, -.44), .035, .025, skin:Lerp(vein, .6), SP, SMALL)
+		bar(model, 'BackVein', H + V3(x0 * 1.15 - .02, -.18, -.44), H + V3(x0 * 1.25 - .02, .02, -.44), .03, .025, skin:Lerp(vein, .6), SP, SMALL)
 	end
 	part(model, 'HandScar', V3(.03, .36, .02), at(.2, -.24, -.445) * CFrame.Angles(0, 0, .5), Color3.fromRGB(110, 70, 80), SP, SMALL)
 	for st = 0, 2 do
@@ -768,6 +774,7 @@ DESIGNS.HW_UyFateHand = function(model, v, def, len, top)
 		local k3 = H + V3(x, .08 + .04 * kf, .24 + .04 * kf)
 		local k4 = H + V3(x, -.2 - .04 * kf, .16)
 		local col = shade(skin, .07)
+		ball(model, 'BaseKnuckle', .2, CF(k1 + V3(0, .02, -.04)), shade(skin:Lerp(WHITE, .06), .04), SP)
 		local finger = {}
 		table.insert(finger, bar(model, 'Finger', k1, k2, .17, .17, col, SP))
 		table.insert(finger, ball(model, 'Knuckle', .19, CF(k2), shade(skin, .05), SP))
@@ -793,11 +800,11 @@ DESIGNS.HW_UyFateHand = function(model, v, def, len, top)
 	end
 	local thumb = {}
 	local t1, t2, t3, t4 = H + V3(-.44, -.34, -.14), H + V3(-.52, -.12, .14), H + V3(-.3, -.05, .36), H + V3(-.06, -.07, .38)
-	table.insert(thumb, bar(model, 'Thumb', t1, t2, .2, .2, shade(skin, .05), SP))
-	table.insert(thumb, ball(model, 'Knuckle', .21, CF(t2), shade(skin, .05), SP))
-	table.insert(thumb, bar(model, 'Thumb', t2, t3, .19, .19, shade(skin, .05), SP))
-	table.insert(thumb, ball(model, 'Knuckle', .19, CF(t3), shade(skin:Lerp(WHITE, .08), .05), SP))
-	table.insert(thumb, bar(model, 'Thumb', t3, t4, .17, .17, shade(skin, .05), SP))
+	table.insert(thumb, rod(model, 'Thumb', t1, t2, .22, shade(skin, .05), SP))
+	table.insert(thumb, ball(model, 'Knuckle', .22, CF(t2), shade(skin, .05), SP))
+	table.insert(thumb, rod(model, 'Thumb', t2, t3, .2, shade(skin, .05), SP))
+	table.insert(thumb, ball(model, 'Knuckle', .2, CF(t3), shade(skin:Lerp(WHITE, .08), .05), SP))
+	table.insert(thumb, rod(model, 'Thumb', t3, t4, .18, shade(skin, .05), SP))
 	table.insert(thumb, bar(model, 'Nail', t4 - V3(.13, 0, 0) + V3(0, 0, .08), t4 + V3(0, 0, .08), .13, .03, nailC, SP))
 	table.insert(thumb, spike(model, 'NailTip', t4 + V3(0, 0, .07), V3(1, -.1, 0), V3(0, 0, 1), .13, .12, .03, nailC, SP))
 	animAll(thumb, 'Live', .9, t1)
@@ -891,7 +898,7 @@ DESIGNS.HW_UyFateHand = function(model, v, def, len, top)
 	local lamp2 = part(model, 'SandGlowB', V3(.3, .3, .3), at(.84, -.1, 0), violet, SP, { Transparency = 1, CastShadow = false })
 	light(lamp2, 'SandLightB', violet, 4.5, .7)
 
-	model:SetAttribute('BackC0', CF(.25, -.3, .3))
+	model:SetAttribute('BackC0', CF(.45, -.6, .45)) -- the wide head hangs clear of the holder's head
 	model:SetAttribute('DisplayScale', .8)
 	return H + V3(-1.7, 0, 0), p3
 end
@@ -1068,7 +1075,7 @@ DESIGNS.HW_UyLaughsaw = function(model, v, def, len, top)
 	local sparkAt = part(model, 'SawSparkFX', V3(.3, .3, .3), at(0, -RD, 0), Color3.fromRGB(255, 170, 80), SP, { Transparency = 1, CastShadow = false })
 	emitter(sparkAt, 'SawSparks', SPARK_TEX, Color3.fromRGB(255, 190, 110), 2, .16, 1.2, .8, V3(0, -2, 0))
 
-	model:SetAttribute('BackC0', CF(.2, -.3, .35))
+	model:SetAttribute('BackC0', CF(.5, -.7, .5)) -- the wide head hangs clear of the holder's head
 	model:SetAttribute('DisplayScale', .8)
 	return H + V3(-RD - .08, 0, 0), H + V3(RD + .08, 0, 0)
 end
@@ -1557,7 +1564,7 @@ DESIGNS.HW_UyOctopus = function(model, v, def, len, top)
 	light(lamp, 'BogLight', glow, 7, 1)
 	emitter(lamp, 'BogBubbles', SPARK_TEX, glow:Lerp(WHITE, .4), 2, .2, .4, 1.6, V3(0, 1, 0))
 
-	model:SetAttribute('BackC0', CF(.25, -.35, .35))
+	model:SetAttribute('BackC0', CF(.4, -.5, .42)) -- the wide head hangs clear of the holder's head
 	model:SetAttribute('DisplayScale', .8)
 	return tips[1], tips[2]
 end
@@ -1752,7 +1759,7 @@ DESIGNS.HW_UyGummyHorror = function(model, v, def, len, top)
 	light(lamp, 'CoreLight', core, 7, 1.1)
 	emitter(lamp, 'SugarSparkle', SPARK_TEX, sugar, 2, .16, .5, 1.2, V3(0, .6, 0))
 
-	model:SetAttribute('BackC0', CF(.25, -.35, .35))
+	model:SetAttribute('BackC0', CF(.42, -.55, .42)) -- the wide head hangs clear of the holder's head
 	model:SetAttribute('DisplayScale', .8)
 	return tips[1], tips[2]
 end
