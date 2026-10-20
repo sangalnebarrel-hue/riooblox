@@ -833,6 +833,8 @@ function Strike.new(ctx)
   if ctx.Mine and ctx.Mine.Active then return false end
   local owner=part:GetAttribute('OwnerUserId')or 0
   if part:GetAttribute('Shared')==false and owner~=0 and owner~=player.UserId then return false end
+  local members=part:GetAttribute('UyMembers') -- [WP-J] a trial's own targets (",uid,uid,"): only its members get the prompt
+  if type(members)=='string'and members~=''and not string.find(members,','..player.UserId..',',1,true)then return false end
   return(part:GetAttribute('HP')or 1)>0
  end
  local function styleprompt(prompt,part)
