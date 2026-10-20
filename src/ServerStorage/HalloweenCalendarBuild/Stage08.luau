@@ -16,7 +16,7 @@ return {
 		local site, rng = ctx.Site, ctx.Rng
 		site:Claim("PumpkinPatch", rng, "SouthField", 12, 10)
 		site:Claim("HollowOak", rng, "WestLawn", OAK_H * OAK_THICK * 1.45, OAK_H + 2, { Tree = { Spread = OAK_H * .32, Height = OAK_H + 2 } })
-		site:Claim("GhostRing", rng, "HubEast", 8.5, 7)
+		site:Claim("GhostRing", rng, "HubEast", 9, 7)
 		site:Claim("WitchesRing", rng, "ShelterEast", 8.5, 6)
 		for _, name in ipairs({ "PumpkinPatch", "HollowOak", "GhostRing", "WitchesRing" }) do
 			if not (site.Claims and site.Claims[name]) then
@@ -83,15 +83,16 @@ return {
 					local a = math.atan2(s.Z - pc.Z, s.X - pc.X)
 					local base = CF(s.X, s.Top, s.Z) * ANG(0, -a + PI / 2, 0)
 					local wood = C(96, 72, 52):Lerp(C(58, 40, 32), rng:NextNumber(0, .5))
+					local fence = K.Model(patch, "PicketFence")
 					for k = -1, 1 do
 						if not (k == 1 and rng:NextNumber() < .4) then
 							local hgt = 2.4 + rng:NextNumber(-.4, .3)
-							K.Part(patch, "PicketPost", V3(.35, hgt, .3), base * CF(k * 1.5, hgt / 2 - .1, 0) * ANG(0, 0, rng:NextNumber(-.12, .12)),
+							K.Part(fence, "PicketPost", V3(.35, hgt, .3), base * CF(k * 1.5, hgt / 2 - .1, 0) * ANG(0, 0, rng:NextNumber(-.12, .12)),
 								wood, Enum.Material.WoodPlanks)
 						end
 					end
-					K.Part(patch, "PicketRail", V3(3.6, .26, .16), base * CF(0, 1.6, .2) * ANG(0, 0, rng:NextNumber(-.1, .1)), wood, Enum.Material.WoodPlanks)
-					K.Part(patch, "PicketRail", V3(3.2, .26, .16), base * CF(.2, .8, .2) * ANG(0, 0, rng:NextNumber(-.18, .18)), wood, Enum.Material.WoodPlanks)
+					K.Part(fence, "PicketRail", V3(3.6, .26, .16), base * CF(0, 1.6, .2) * ANG(0, 0, rng:NextNumber(-.1, .1)), wood, Enum.Material.WoodPlanks)
+					K.Part(fence, "PicketRail", V3(3.2, .26, .16), base * CF(.2, .8, .2) * ANG(0, 0, rng:NextNumber(-.18, .18)), wood, Enum.Material.WoodPlanks)
 				end
 			end
 			-- leaf litter on the patch floor
@@ -131,13 +132,17 @@ return {
 		-- 3. THE GHOST DOG SEANCE -------------------------------------------------------------------------------------
 		local gc = claims.GhostRing
 		if gc then
-			local ring = ctx.Model("GhostDogRing")
-			local r = 5.2
+			local ring = ctx.Model("GhostDogSeance")
+			local r = 5.8
+			CK.RuneCircle(ring, V3(gc.X, gc.Top, gc.Z), gc.Top, 3.4, rng, C(150, 220, 255))
 			for k = 1, 5 do
 				local a = k / 5 * TAU
-				local at = V3(gc.X + math.cos(a) * r, gc.Top + ((k % 2 == 0) and .5 or .9), gc.Z + math.sin(a) * r)
-				-- sitting round the lantern, facing it
-				CK.GhostDog(ring, K.Look(at, V3(gc.X, at.Y, gc.Z)), rng:NextNumber(.62, .78))
+				local at = V3(gc.X + math.cos(a) * r, gc.Top + ((k % 2 == 0) and .45 or .8), gc.Z + math.sin(a) * r)
+				-- sitting round the lantern, facing it, floating a little
+				CK.GhostDog(ring, K.Look(at, V3(gc.X, at.Y, gc.Z)), rng:NextNumber(.9, 1.02))
+				-- a candle between each pair of dogs
+				local ca = a + TAU / 10
+				K.Candles(ring, CF(gc.X + math.cos(ca) * (r - .4), gc.Top, gc.Z + math.sin(ca) * (r - .4)), 2, rng, { Spread = .3, Light = false })
 			end
 			-- the ghost lantern they chase: a floating lantern over a little stone plinth
 			K.CylY(ring, "GhostPlinth", .8, 2.2, CF(gc.X, gc.Top + .4, gc.Z), C(92, 96, 112), Enum.Material.Slate)
@@ -152,20 +157,21 @@ return {
 			local ring = ctx.Model("WitchesRing")
 			CK.RuneCircle(ring, V3(wc.X, wc.Top, wc.Z), wc.Top, 4.2, rng, CK.GLOW.Green)
 			local cfc = CF(wc.X, wc.Top, wc.Z)
+			local pot = K.Model(ring, "WitchCauldron")
 			for k = 1, 3 do
 				local a = k / 3 * TAU
-				K.Rod(ring, "CauldronLeg", (cfc * CF(math.cos(a) * 1.05, 1.2, math.sin(a) * 1.05)).Position,
+				K.Rod(pot, "CauldronLeg", (cfc * CF(math.cos(a) * 1.05, 1.2, math.sin(a) * 1.05)).Position,
 					(cfc * CF(math.cos(a) * 1.45, 0, math.sin(a) * 1.45)).Position, .25, K.Palette.Iron, Enum.Material.CorrodedMetal)
 			end
-			K.Ellipsoid(ring, "CauldronPot", V3(3.2, 2.4, 3.2), cfc * CF(0, 1.9, 0), C(36, 34, 42), Enum.Material.CorrodedMetal)
-			K.CylY(ring, "CauldronRim", .3, 2.7, cfc * CF(0, 2.95, 0), C(52, 50, 60), Enum.Material.CorrodedMetal)
-			local brew = K.CylY(ring, "CauldronBrew", .12, 2.3, cfc * CF(0, 3.0, 0), C(120, 255, 90), Enum.Material.Neon)
+			K.Ellipsoid(pot, "CauldronPot", V3(3.2, 2.4, 3.2), cfc * CF(0, 1.9, 0), C(36, 34, 42), Enum.Material.CorrodedMetal)
+			K.CylY(pot, "CauldronRim", .3, 2.7, cfc * CF(0, 2.95, 0), C(52, 50, 60), Enum.Material.CorrodedMetal)
+			local brew = K.CylY(pot, "CauldronBrew", .12, 2.3, cfc * CF(0, 3.0, 0), C(120, 255, 90), Enum.Material.Neon)
 			K.Light(brew, C(120, 255, 90), 16, 1)
 			for _ = 1, 3 do
-				K.Ball(ring, "BrewBubble", rng:NextNumber(.3, .5), cfc * CF(rng:NextNumber(-.6, .6), 3.12, rng:NextNumber(-.6, .6)), C(170, 255, 140),
+				K.Ball(pot, "BrewBubble", rng:NextNumber(.3, .5), cfc * CF(rng:NextNumber(-.6, .6), 3.12, rng:NextNumber(-.6, .6)), C(170, 255, 140),
 					Enum.Material.Neon)
 			end
-			K.Rod(ring, "CauldronLadle", (cfc * CF(.5, 2.7, .2)).Position, (cfc * CF(1.2, 4.4, .5)).Position, .14, C(96, 72, 52), Enum.Material.Wood)
+			K.Rod(pot, "CauldronLadle", (cfc * CF(.5, 2.7, .2)).Position, (cfc * CF(1.2, 4.4, .5)).Position, .14, C(96, 72, 52), Enum.Material.Wood)
 			local taken = { { wc.X, wc.Z, 5.2 } }
 			for k = 1, 6 do
 				local a = k / 6 * TAU + .3

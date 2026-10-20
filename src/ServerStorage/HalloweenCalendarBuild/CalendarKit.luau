@@ -351,7 +351,7 @@ function Site:Scatter(rng, count: number, r: number, opts: any): { { X: number, 
 		end
 		if ok and opts.Front then
 			local u = c.D / range
-			if u > opts.Front and rng:NextNumber() > math.exp(-(u - opts.Front) * 9) then
+			if u > opts.Front and rng:NextNumber() > math.exp(-(u - opts.Front) * 22) then
 				ok = false
 			end
 		end
@@ -959,8 +959,11 @@ function CK.Trees(ctx, n: number, opts: { [string]: any }): { Model }
 		if opts.Boxes then
 			box = CK.Regions[opts.Boxes[(i - 1) % #opts.Boxes + 1]]
 		end
-		local spots = site:Scatter(rng, 1, base, { Front = opts.Front, Box = box, Tree = { Spread = spread, Height = h + 2 }, Tries = 400 })
-		local s = spots[1]
+		local s = site:Scatter(rng, 1, base, { Front = opts.Front, Box = box, Tree = { Spread = spread, Height = h + 2 }, Tries = 400 })[1]
+		if not s and box then
+			-- the region is full: anywhere on the island's open grass instead
+			s = site:Scatter(rng, 1, base, { Front = opts.Front, Tree = { Spread = spread, Height = h + 2 }, Tries = 800 })[1]
+		end
 		if s then
 			local m, info = CK.TreeAt(model, site, s, h, rng, { Thick = thick, Face = opts.Face, EyeColor = opts.EyeColor,
 				MouthGlow = opts.MouthGlow, Roost = opts.Roost, Lantern = opts.Lantern, Lanterns = opts.Lanterns, Lite = opts.Lite, Branches = opts.Branches,
@@ -984,8 +987,12 @@ function CK.Props(ctx, n: number, r: number, opts: { [string]: any }, fn: (Insta
 		if opts.Boxes then
 			box = CK.Regions[opts.Boxes[(i - 1) % #opts.Boxes + 1]]
 		end
-		local s = ctx.Site:Scatter(ctx.Rng, 1, r, { Front = opts.Front, Box = box, Y1 = opts.Y1 or 6, Margin = opts.Margin, Tries = 300,
-			Reserve = { Y0 = 0, Y1 = opts.Y1 or 6 } })[1]
+		local scatter = { Front = opts.Front, Box = box, Y1 = opts.Y1 or 6, Margin = opts.Margin, Tries = 300, Reserve = { Y0 = 0, Y1 = opts.Y1 or 6 } }
+		local s = ctx.Site:Scatter(ctx.Rng, 1, r, scatter)[1]
+		if not s and box then
+			scatter.Box, scatter.Tries = nil, 600 -- the region is full: anywhere on the island's open grass
+			s = ctx.Site:Scatter(ctx.Rng, 1, r, scatter)[1]
+		end
 		if s then
 			fn(model, s)
 			made += 1

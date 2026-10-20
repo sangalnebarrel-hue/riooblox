@@ -32,7 +32,7 @@ return {
 			CK.Thorns(m, V3(s.X, s.Top, s.Z), s.Top, rng, 1.4)
 		end)
 		local big = CK.Trees(ctx, 3, { Height = { 20, 24 }, Thick = .16, Face = true, Name = "AncientFaceTrees", Branches = 5,
-			EyeColor = CK.GLOW.Green, Boxes = { "WestCliff", "WestLawnS", "CourtSouth" } })
+			EyeColor = CK.GLOW.Green, Boxes = { "WestCliff", "WestLawnS", "SouthField" } })
 		local lit = 0
 		local pumpkins = CK.Props(ctx, 6, 3.4, { Front = 1, Name = "Pumpkins", Y1 = 4,
 			Boxes = { "HubEast", "WestLawn", "EastLawn", "SouthField", "DogNorthW", "ParkEast" } }, function(m, s)

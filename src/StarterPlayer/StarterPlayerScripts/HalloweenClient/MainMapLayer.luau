@@ -302,7 +302,7 @@ local S = {
 	District = nil, Layer = nil, Lamps = nil, Conns = {}, LayerAdded = nil, DistrictAdded = nil,
 	Folder = nil, Plan = nil, Dirty = true, NextPlan = 0, Darkness = 0, CamPos = V3(0, 0, 377),
 	Flocks = {}, Ghosts = {}, Wisps = nil, Mist = nil, NextGhost = 0, NextMist = 0, Lights = {}, Flames = {},
-	Rng = Random.new(),
+	Rng = Random.new(), LampRetries = 0,
 }
 M._State = S
 
@@ -931,6 +931,14 @@ end
 -- re-apply the lamp colours for the current visibility (and tint)
 function M.RefreshLamps()
 	if not S.Started or S.Ctx == nil or S.Ctx.Shared.Config.MainMapDecorations == false then
+		return
+	end
+	if not S.District then
+		-- Start is still waiting for the district (up to 60 s): retry, never cache an empty lamp list
+		S.LampRetries += 1
+		if S.LampRetries <= 90 then
+			task.delay(1, M.RefreshLamps)
+		end
 		return
 	end
 	M.ApplyLamps(lampsList(), S.Visible)

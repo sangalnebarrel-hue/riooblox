@@ -42,6 +42,7 @@ local M = {}
 local Pure = {}
 M.Pure = Pure
 M.Warned = false
+M.Listening = false
 
 local V3 = Vector3.new
 local CF = CFrame.new
@@ -293,7 +294,7 @@ local S = {
 	Roosts = {} :: { Attachment }, GhostMarks = {} :: { Attachment }, GhostDogs = {} :: { [Instance]: any }, FaceTrees = {} :: { [Instance]: boolean },
 	Bats = {} :: { any }, Ghosts = {} :: { any }, Wisps = nil :: any, Leaves = nil :: any, Mist = nil :: any, Moon = nil :: any,
 	NextGhost = 0, NextWhisper = 0, NextSound = 0, BatRoostKey = "", Settled = true, Player = nil :: Player?, RestoreToken = 0,
-	GrassInstant = true,
+	GrassInstant = true, SwayAcc = 0,
 }
 M._State = S
 
@@ -923,8 +924,9 @@ local BAT = Color3.fromRGB(22, 14, 30)
 
 local function makeBat(model: Instance, s: number)
 	local body = part({ Name = "CalBatBody", Size = V3(.42, .36, .9) * s, Color = BAT, Mesh = true, Parent = model })
-	local wl = part({ Name = "CalBatWing", Class = "WedgePart", Size = V3(.05, .5, 1.1) * s, Color = BAT, Parent = model })
-	local wr = part({ Name = "CalBatWing", Class = "WedgePart", Size = V3(.05, .5, 1.1) * s, Color = BAT, Parent = model })
+	-- wings: flat wedges (thin axis turned vertical in updateBats), .9 span each, swept back
+	local wl = part({ Name = "CalBatWing", Class = "WedgePart", Size = V3(.05, .9, 1.0) * s, Color = BAT, Parent = model })
+	local wr = part({ Name = "CalBatWing", Class = "WedgePart", Size = V3(.05, .9, 1.0) * s, Color = BAT, Parent = model })
 	local eyes = part({ Name = "CalBatEyes", Size = V3(.22, .05, .05) * s, Color = Color3.fromRGB(255, 110, 60), Material = Enum.Material.Neon, Parent = model })
 	return { Body = body, L = wl, R = wr, Eyes = eyes, S = s }
 end
@@ -1002,9 +1004,9 @@ local function updateBats(t: number)
 			table.insert(parts, bat.Body)
 			table.insert(cfs, base)
 			table.insert(parts, bat.L)
-			table.insert(cfs, base * CF(-.2 * s, 0, 0) * CFrame.Angles(0, 0, -w) * CF(-.55 * s, 0, 0) * CFrame.Angles(0, 0, math.pi / 2))
+			table.insert(cfs, base * CF(-.2 * s, 0, 0) * CFrame.Angles(0, 0, -w) * CF(-.45 * s, 0, .1 * s) * CFrame.Angles(0, 0, math.pi / 2))
 			table.insert(parts, bat.R)
-			table.insert(cfs, base * CF(.2 * s, 0, 0) * CFrame.Angles(0, 0, w) * CF(.55 * s, 0, 0) * CFrame.Angles(0, 0, -math.pi / 2))
+			table.insert(cfs, base * CF(.2 * s, 0, 0) * CFrame.Angles(0, 0, w) * CF(.45 * s, 0, .1 * s) * CFrame.Angles(0, 0, -math.pi / 2))
 			table.insert(parts, bat.Eyes)
 			table.insert(cfs, base * CF(0, .06 * s, -.48 * s))
 		end
@@ -1392,8 +1394,8 @@ local function updateSounds(now: number, dt: number)
 	end
 	-- strange night sounds somewhere out in the dark
 	local rate = (S.Plan and S.Plan.Sounds or 0) * (Cfg.Sounds.Night + (1 - Cfg.Sounds.Night) * S.Dark)
-	if rate > 0 and now >= S.NextSound and rand() < rate / 60 * dt * 2 then
-		S.NextSound = now + 6
+	if rate > 0 and now >= S.NextSound and rand() < rate / 60 * dt then
+		S.NextSound = now + 4
 		local cues = Cfg.Sounds.Cues
 		local cue = cues[math.floor(rand() * #cues) + 1]
 		local a = rand() * TAU
@@ -1402,8 +1404,8 @@ local function updateSounds(now: number, dt: number)
 	end
 	-- whispers from the face trees near you (else from the dark right beside you, less often)
 	local wr = S.Plan and S.Plan.Whispers or 0
-	if wr > 0 and now >= S.NextWhisper and rand() < wr / 60 * dt * 2 then
-		S.NextWhisper = now + 8
+	if wr > 0 and now >= S.NextWhisper and rand() < wr / 60 * dt then
+		S.NextWhisper = now + 5
 		local best, bestD = nil, Cfg.Whispers.Range
 		for m in pairs(S.FaceTrees) do
 			local ok, piv = pcall(function()
@@ -1672,8 +1674,13 @@ local function step(dt: number)
 		return
 	end
 	updateEyes(now, dt)
-	updateSway(now)
-	updateGhostDogs(now)
+	-- branches and ghost dogs move slowly: 30 Hz is plenty (half the BulkMoveTo work at 60 fps)
+	S.SwayAcc += dt
+	if S.SwayAcc >= 1 / 30 then
+		S.SwayAcc = 0
+		updateSway(now)
+		updateGhostDogs(now)
+	end
 	flicker(now)
 	updateWindows(now, dt)
 	if #S.Bats > 0 then
@@ -1856,13 +1863,18 @@ function M.Start(ctx)
 			clearMoon()
 		end
 	end)
-	-- the event can be switched off on a live server: put everything back
-	if st then
-		table.insert(S.Conns, st:GetAttributeChangedSignal("Enabled"):Connect(function()
+	-- the event can be switched off (and on again, Studio) on a live server: put everything back / start over
+	if st and not M.Listening then
+		M.Listening = true
+		st:GetAttributeChangedSignal("Enabled"):Connect(function()
 			if not Shared.Enabled() then
-				M.Stop()
+				if S.Started then
+					M.Stop()
+				end
+			elseif not S.Started then
+				task.spawn(M.Start, ctx)
 			end
-		end))
+		end)
 	end
 end
 

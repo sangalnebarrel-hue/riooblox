@@ -7,7 +7,7 @@ return {
 	Build = function(ctx)
 		local CK, rng = ctx.CK, ctx.Rng
 		local V3 = Vector3.new
-		local sky = CK.SkyIslandTrees(ctx, 2, { 20, 28 })
+		local sky = CK.SkyIslandTrees(ctx, 2, { 26, 34 })
 		local faces = CK.Trees(ctx, 2, { Height = { 15, 19 }, Thick = .15, Face = true, Name = "FaceTrees", EyeColor = CK.GLOW.Violet,
 			Boxes = { "ParkEast", "DogNorthW" } })
 		local trees = CK.Trees(ctx, 2, { Height = { 12, 16 }, Thick = .11, Name = "CrookedTrees", Boxes = { "CourtWest", "ShelterEast" } })

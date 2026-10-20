@@ -9,7 +9,7 @@ return {
 		local V3 = Vector3.new
 		local faces = CK.Trees(ctx, 4, { Height = { 16, 21 }, Thick = .16, Face = true, Name = "WatchingTrees", Branches = 4,
 			Boxes = { "HubEast", "ShelterEast", "CourtWest", "DogNorthE" } })
-		local sky = CK.SkyIslandTrees(ctx, 1, { 24, 34 })
+		local sky = CK.SkyIslandTrees(ctx, 1, { 32, 44 })
 		local patches = CK.Patches(ctx, 30, .72, { Leaves = .3 })
 		local thorns = CK.Props(ctx, 3, 1.8, { Front = .75, Name = "ThornBushes", Y1 = 3 }, function(m, s)
 			CK.Thorns(m, V3(s.X, s.Top, s.Z), s.Top, rng)

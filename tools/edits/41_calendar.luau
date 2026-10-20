@@ -3,8 +3,10 @@
 -- docs/halloween2/DESIGN.md §13. Idempotent:
 -- 1. removes the previous ServerStorage.HalloweenCalendar and any Workspace.DOGROTS_District.41_HalloweenCalendar,
 -- 2. measures the real island once (CalendarKit.Site: grass, ground-level geometry, keep-outs, prompts),
--- 3. runs every ModuleScript ServerStorage.HalloweenCalendarBuild.StageNN ({Stage = n, Build = function(ctx)}) in stage
---    order into its own Folder StageNN (attribute CalendarStage = n); later stages see what earlier ones reserved,
+-- 3. runs every ModuleScript ServerStorage.HalloweenCalendarBuild.StageNN ({Stage = n, Claim = function(ctx)?,
+--    Build = function(ctx)}): first every Claim (set pieces reserve their ground before anything is scattered), then
+--    every Build in stage order into its own Folder StageNN (attribute CalendarStage = n); later stages see what
+--    earlier ones reserved,
 -- 4. final pass per folder (decor never collides / casts, lights Shadows=false + HwBaseBrightness), budget report,
 -- 5. leaves an empty Workspace.DOGROTS_District.41_HalloweenCalendar Model for the server (Calendar.luau) to fill.
 -- Builder ctx = {Stage, Folder, Site, CK, Kit, YardKit, Cfg, Rules, Params, Rng, District, Note(text), Model(name)}.

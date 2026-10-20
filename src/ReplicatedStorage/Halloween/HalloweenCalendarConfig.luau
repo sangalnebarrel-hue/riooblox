@@ -140,7 +140,7 @@ C.Windows = {
 
 -- tree faces (CalEyes parts) and branches (CalSway models) built by the stage builders
 C.Eyes = { Range = 220, Open = { 2.5, 7 }, Closed = { 3, 10 }, BlinkTime = .12, Color = { 255, 150, 50 } }
-C.Sway = { Range = 170, Speed = { .45, .8 }, Gust = .35, MaxParts = 900 }
+C.Sway = { Range = 170, Speed = { .45, .8 }, Gust = .35, MaxParts = 600 } -- MaxParts: moved per update (30 Hz), × quality
 C.Candles = { Range = 140 }
 
 -- creatures and presences (counts are High quality; × C.Quality)
