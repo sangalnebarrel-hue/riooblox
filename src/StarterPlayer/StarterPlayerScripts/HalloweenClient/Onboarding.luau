@@ -4,7 +4,10 @@
 -- Gravekeeper, the Event DogDex). Each card can focus the camera on its place (moderate tweens, cuts with reduced
 -- motion), puts a world beacon + bouncing arrow there, outlines the model (Highlight) and rings the matching HUD
 -- element (Bus "HUDFocus"). NEXT / SKIP; the end sends Request "Onboarded". Bus "Onboarding" {Replay = true} (HOW TO
--- PLAY in the window) shows it again. The card hides while a menu, a modal or the main tutorial is open.
+-- PLAY in the window) shows it again. The card hides while a menu, a modal, a cinematic or the main tutorial is open
+-- (a guide that starts blocked starts paused, without a camera shot); leaving the Dead Yard stops it (a first visit
+-- resumes at the same card on return). Movement locks go through GUIIntegration.LockControls("HalloweenGuide") and every
+-- delayed camera restore is token-guarded, so the guide never unlocks a menu's controls or a later shot's camera.
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
@@ -286,8 +289,25 @@ function O.Start(ctx)
 		end
 	end
 
+	-- [WP-D2] Movement goes through GUIIntegration's ref-counted control locks (reason "HalloweenGuide"), so the guide
+	-- never re-enables controls a menu holds and a menu never re-enables them under a camera shot (A04 §12.2). Without
+	-- GUIIntegration the PlayerModule is used directly, and controls are only enabled again while no menu is open.
+	local navigation = nil
+	do
+		local module = modules:FindFirstChild("GUIIntegration")
+		if module then
+			local ok, value = pcall(require, module)
+			if ok and type(value) == "table" and type(value.LockControls) == "function" then
+				navigation = value
+			end
+		end
+	end
 	local controls = nil
 	local function setControls(on)
+		if navigation then
+			pcall(on and navigation.UnlockControls or navigation.LockControls, "HalloweenGuide")
+			return
+		end
 		pcall(function()
 			if not controls then
 				local mod = player:WaitForChild("PlayerScripts"):FindFirstChild("PlayerModule")
@@ -295,7 +315,9 @@ function O.Start(ctx)
 			end
 			if controls then
 				if on then
-					controls:Enable()
+					if (gui:GetAttribute("ModalOwnerCount") or 0) == 0 then
+						controls:Enable()
+					end
 				else
 					controls:Disable()
 				end
@@ -319,13 +341,20 @@ function O.Start(ctx)
 		camTween = TweenService:Create(cam, TweenInfo.new(1.3, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), { CFrame = cf })
 		camTween:Play()
 	end
+	-- [WP-D2] Every camera hand-over carries a token: a delayed restore that a newer shot superseded does nothing (it
+	-- used to reset the camera or unlock the controls in the middle of the next card, A08 §8.7). A shot that starts
+	-- while a restore is still tweening keeps the camera state from before the guide.
+	local camToken = 0
+	local pendingBack = nil
 	local function shot(s)
 		local cam = workspace.CurrentCamera
 		if not cam or not s.Shot or not (State and State.InZone and State.InZone()) then
 			return false
 		end
 		if not saved then
-			saved = { Type = cam.CameraType, Subject = cam.CameraSubject, CFrame = cam.CFrame }
+			camToken += 1
+			saved = pendingBack or { Type = cam.CameraType, Subject = cam.CameraSubject, CFrame = cam.CFrame }
+			pendingBack = nil
 			cam.CameraType = Enum.CameraType.Scriptable
 			setControls(false)
 		end
@@ -339,15 +368,26 @@ function O.Start(ctx)
 		end
 		local back = saved
 		saved = nil
+		camToken += 1
+		local token = camToken
+		pendingBack = back
 		local function finish()
+			if camToken ~= token then
+				return
+			end
+			pendingBack = nil
 			if camTween then
 				camTween:Cancel()
 				camTween = nil
 			end
-			cam.CameraType = back.Type == Enum.CameraType.Scriptable and Enum.CameraType.Custom or back.Type
-			if back.Subject then
-				cam.CameraSubject = back.Subject
-			end
+			pcall(function()
+				cam.CameraType = back.Type == Enum.CameraType.Scriptable and Enum.CameraType.Custom or back.Type
+				if back.Subject and back.Subject.Parent then
+					cam.CameraSubject = back.Subject
+				elseif player.Character then
+					cam.CameraSubject = player.Character:FindFirstChildOfClass("Humanoid")
+				end
+			end)
 			setControls(true)
 		end
 		if instant or reduced() then
@@ -362,9 +402,10 @@ function O.Start(ctx)
 	------------------------------------------------------------------------------------------------------------------
 	-- flow
 	------------------------------------------------------------------------------------------------------------------
+	-- [WP-D2] A cinematic (gui attribute CinemaActive, HC/Cinema) pauses the guide like a menu does.
 	local function blocked()
 		return gui:GetAttribute("OpenMenu") ~= nil or (gui:GetAttribute("ModalOwnerCount") or 0) > 0 or player:GetAttribute("TutorialActive") == true
-			or gui:GetAttribute("UIHidden") == true
+			or gui:GetAttribute("UIHidden") == true or gui:GetAttribute("CinemaActive") == true
 	end
 	local function render()
 		local s = STEPS[step]
@@ -435,14 +476,23 @@ function O.Start(ctx)
 			end
 		end
 	end
-	function O.Begin(isReplay)
+	-- [WP-D2] A guide that starts while something blocks it (a menu, HIDE UI, a cinematic, the main tutorial) starts
+	-- paused: no camera shot and no control lock behind a hidden card (A04 §12.1); visibility() enters the card once
+	-- nothing blocks it any more. fromStep resumes a guide that stopped when the player left the Dead Yard.
+	function O.Begin(isReplay, fromStep)
 		if running then
 			return
 		end
 		running = true
 		replay = isReplay == true
-		show(not blocked())
-		enter(1)
+		step = math.clamp(math.floor(tonumber(fromStep) or 1), 1, #STEPS)
+		if blocked() then
+			render()
+			show(false)
+			return
+		end
+		show(true)
+		enter(step)
 	end
 	function O.Next()
 		if not running then
@@ -483,7 +533,7 @@ function O.Start(ctx)
 			enter(step)
 		end
 	end
-	for _, a in ipairs({ "OpenMenu", "ModalOwnerCount", "UIHidden" }) do
+	for _, a in ipairs({ "OpenMenu", "ModalOwnerCount", "UIHidden", "CinemaActive" }) do
 		gui:GetAttributeChangedSignal(a):Connect(visibility)
 	end
 	player:GetAttributeChangedSignal("TutorialActive"):Connect(visibility)
@@ -493,6 +543,25 @@ function O.Start(ctx)
 			restoreCamera(true)
 		end
 	end)
+
+	-- [WP-D2] Leaving the Dead Yard stops the guide (its cards, beacons and camera shots are about the zone). A first
+	-- visit that was cut short resumes at the same card the next time the player comes back; a replay just ends.
+	local function stopOutside()
+		if not running then
+			return
+		end
+		running = false
+		show(false)
+		clearWorld()
+		restoreCamera(true)
+		Bus.Fire("HUDFocus", { Key = nil })
+		if not replay then
+			O.ResumeStep = step
+			O.Done = false
+		end
+		replay = false
+	end
+	O.Stop = stopOutside
 
 	-- when to start: first time inside the Dead Yard with Onboarded == false
 	local function maybeStart()
@@ -509,12 +578,20 @@ function O.Start(ctx)
 		end
 		O.Done = true
 		task.delay(1.5, function()
-			O.Begin(false)
+			-- still inside? (a quick in-and-out must not start the guide outside the zone)
+			if State.InZone and not State.InZone() then
+				O.Done = false
+				return
+			end
+			O.Begin(false, O.ResumeStep)
+			O.ResumeStep = nil
 		end)
 	end
 	Bus.On("ZoneChanged", function(d)
 		if d and d.Inside then
 			maybeStart()
+		elseif d and d.Inside == false then
+			stopOutside()
 		end
 	end)
 	Bus.On("StateChanged", maybeStart)
