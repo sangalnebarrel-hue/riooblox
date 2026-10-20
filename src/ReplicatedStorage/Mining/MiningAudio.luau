@@ -8,15 +8,22 @@
 --   Idle   (optional) a faint loop while the local player holds it (Saw, TV, Squish, Slime, Magic, Shing, Metal, Fairy, Plastic, Digital, Alarm, Electric, Clown, Wet, Doom)
 --   Run    (optional) a loop under Idle that follows the holder's running speed (Shing, Metal, Fairy, Saw, Plastic, Digital, Slime, Alarm, Electric, Clown, Wet, Doom)
 --   Inspect (optional) the inspect show (MiningClient.Tool; TV-Head, Gummy Horror, Ponycorn, Scythe, Twin Claws, Butterfly Catcher, Laughsaw, LEGO Hand, Pickaxe 67, Rotten Slime Slug, Toothy Alarm Clock, Zombie-Frankenstein, Clown Chronomord, Nasty Octopus, Hand of Fate)
+-- v5 (docs/halloween2/DESIGN.md §16.3): ONE soft impact per hit. The kits' own KNOCK / LAND thud rows are no longer
+-- played on Hit / Perfect; a pooled soft impact replaces them (4 recordings, never the same one twice in a row, pitch
+-- .96-1.04, 0.14 s, 45% of the thud it replaces, gentle EQ, no distortion), every hit is kept under a fixed headroom,
+-- Perfect = the kit's accent + tick + sparkle + crack at the combo's rising pitch, the rock Break is softer, and a weak
+-- point has its own cue. Everything plays in the Pickaxe bus (SoundService.DOGROTS_SFX.Pickaxe, RS.AudioMixer).
 -- API (backwards compatible):
---   Audio.Play(cue, parent?, ...)                generic cues (Break, RareBreak, Coin, Buy, Deny, Miss,
+--   Audio.Play(cue, parent?, ...)                generic cues (Break, RareBreak, Coin, Buy, Deny, Miss, WeakPoint,
 --                                               Milestone, Whoosh, Click, Holster, Lift, LiftTop, Strength)
 --                                               Play('Hit'|'Perfect'|'Crit', parent, tier, soundName) = kit
 --   Audio.Pickaxe(cue, def, parent?, opts?)      def = pickaxe def (or its Sound name); parent nil = 2D
---        opts: Remote (3D lite: 2 layers, quieter, own budget), Key (throttle key, e.g. the corner),
+--        opts: Remote (3D lite: 1 layer + the impact, quieter, own budget), Key (throttle key, e.g. the corner),
 --              Volume (multiplier), Combo (perfect accent rises), Air (swing follows the animation)
+--   Audio.Plan(kit, cue, opts?, state?, rand?)   pure: every voice a cue would play (tests/audio_kits.luau)
+--   Audio.Impact (the soft impact pool + its numbers), Audio.Soften(rows) (a kit list without its thud rows)
 --   Audio.StartIdle(def, parent) / Audio.StopIdle()
---   Audio.SetVolume(0..1) (the SoundService.DOGROTS_MiningSFX group), Audio.Stats() (live voices)
+--   Audio.SetVolume(0..1) (the DOGROTS_MiningSFX group inside the Pickaxe bus), Audio.Stats() (live voices)
 -- Upload real SFX later: Audio.AssetIds[cue] (generic) and Audio.KitAssetIds[kit][cue] (0 = recipe).
 -- Every kit is plain data (Audio.Kits) and can be tuned live from the Studio command bar, e.g.
 --   require(game.ReplicatedStorage.Mining.MiningAudio).Kits.Saw.Hit[1][2]=.4   (row = {id, volume, speed, fx})
@@ -31,7 +38,7 @@ local Audio={}
 
 -- UPLOAD SLOTS -----------------------------------------------------------------------------------
 Audio.AssetIds={Hit=0,Perfect=0,Crit=0,Break=0,RareBreak=0,Coin=0,Buy=0,Deny=0,Lift=0,LiftTop=0,Strength=0,Miss=0,Click=0,
- Whoosh=0,Draw=0,Holster=0,Milestone=0}
+ Whoosh=0,Draw=0,Holster=0,Milestone=0,WeakPoint=0}
 local KIT_CUES={'Swing','Hit','Perfect','Crit','Draw','Break','Inspect'}
 local KIT_NAMES={'Wood','Fairy','Plastic','Digital','Squish','Slime','Alarm','Magic','Electric','Clown','Wet','Doom','Saw','Shing','Metal','Glitch'}
 Audio.KitAssetIds={}
@@ -54,14 +61,13 @@ local HOP='rbxasset://sounds/action_jump.mp3'          -- soft "hup": light swis
 Audio.Sources={TICK,PING,KNOCK,LAND,WIND,WATER,SPLAT,CLICK,SLASH,LUNGE,SHEATH,HOP}
 
 -- MIX --------------------------------------------------------------------------------------------
--- Every cue plays through one SoundGroup, SoundService.DOGROTS_MiningSFX (created here when missing),
--- with a soft compressor, so stacked hits never clip; its Volume is the one knob for all mining
--- sounds (the tail groups below sit inside it and follow it). It is deliberately NOT inside
--- SoundService.DOGROTS_AUDIO: the island's music ducks (a Secret arrival anywhere on the server,
--- Scope:Duck) move every SoundGroup there, which would drop hit feedback to 8% in the middle of a
--- session, and their baseline is captured once (one taken while a cinematic held the groups at 0
--- would keep mining silent until rejoin). The lab's Corrupted silence (all SoundGroups, restored
--- exactly) still covers it.
+-- Every cue plays through one SoundGroup, DOGROTS_MiningSFX, with a soft compressor (no makeup gain),
+-- so stacked hits never clip; its Volume is the one knob for all mining sounds (the tail groups below
+-- sit inside it and follow it). It lives inside the Pickaxe bus, SoundService.DOGROTS_SFX.Pickaxe
+-- (ReplicatedStorage.AudioMixer, built in the place by tools/edits/05_audio.luau): NOT inside
+-- SoundService.DOGROTS_AUDIO, whose music groups duck for Secret arrivals and cinematics, so hit
+-- feedback only moves when the mixer deliberately ducks the Pickaxe bus (a cinematic preset).
+-- The lab's Corrupted silence (all SoundGroups, restored exactly) still covers it.
 -- Reverb is never put on the voice: a Sound's effects stop with it, so a 4 s bell would end dead
 -- the moment its short sample ends. A row whose preset has a ReverbSoundEffect plays into a child
 -- "MiningTail" SoundGroup holding that one reverb (shared by every voice with the same settings,
@@ -69,13 +75,25 @@ Audio.Sources={TICK,PING,KNOCK,LAND,WIND,WATER,SPLAT,CLICK,SLASH,LUNGE,SHEATH,HO
 local GROUP_NAME='DOGROTS_MiningSFX'
 local group=nil
 local tails={} -- reverb settings key -> child SoundGroup of the group
+local Mixer=nil -- ReplicatedStorage.AudioMixer (false when the place has none)
+local function mixer()
+ if Mixer==nil then
+  local ok,m=pcall(function()return require(script.Parent.Parent:WaitForChild('AudioMixer',2))end)
+  Mixer=ok and type(m)=='table'and m or false
+ end
+ return Mixer or nil
+end
 local function soundGroup()
  if group and group.Parent then return group end
- local g=SoundService:FindFirstChild(GROUP_NAME)
+ local m=mixer()
+ local g=m and m.Child(GROUP_NAME) -- the bus layout: DOGROTS_SFX.Pickaxe.DOGROTS_MiningSFX (compressor, no makeup)
  if not(g and g:IsA('SoundGroup'))then
-  g=Instance.new('SoundGroup');g.Name=GROUP_NAME;g.Volume=1
-  local c=Instance.new('CompressorSoundEffect');c.Threshold=-14;c.Ratio=3;c.Attack=.004;c.Release=.12;c.GainMakeup=2;c.Parent=g
-  g.Parent=SoundService
+  g=SoundService:FindFirstChild(GROUP_NAME)
+  if not(g and g:IsA('SoundGroup'))then
+   g=Instance.new('SoundGroup');g.Name=GROUP_NAME;g.Volume=1
+   local c=Instance.new('CompressorSoundEffect');c.Threshold=-14;c.Ratio=3;c.Attack=.004;c.Release=.12;c.GainMakeup=0;c.Parent=g
+   g.Parent=SoundService
+  end
  end
  group=g;table.clear(tails)
  return g
@@ -159,15 +177,6 @@ local function shot(row,k,p,where,lane,first)
  end
  return s
 end
--- A list of rows; one pitch jitter for the whole cue (chords and two-tone horns stay in tune).
-local function play(list,where,lane,k,p,maxLayers)
- local layers=0
- for i,row in ipairs(list)do
-  if maxLayers and layers>=maxLayers then break end
-  layers+=1
-  later(row.at,function()shot(row,k,p,where,lane,i==1)end)
- end
-end
 -- Rising / falling note runs: arp(id, volume, base speed, {ratios}, gap, fx, start)
 local function arp(id,vol,base,steps,gap,fx,start)
  local rows={}
@@ -188,8 +197,12 @@ end
 local WOODY={EqualizerSoundEffect={LowGain=4,MidGain=2,HighGain=-14}}
 local BRIGHT={EqualizerSoundEffect={LowGain=-10,MidGain=0,HighGain=4}}
 local THUMP={EqualizerSoundEffect={LowGain=10,MidGain=-2,HighGain=-30},DistortionSoundEffect={Level=.45}}
-local IMPACT={EqualizerSoundEffect={LowGain=10,MidGain=0,HighGain=-30},DistortionSoundEffect={Level=.55},
- ReverbSoundEffect={DecayTime=1.6,WetLevel=-6,DryLevel=0,Density=1,Diffusion=1}}
+-- v5 impact presets: the soft pooled impact, the rock break body (round, no distortion, a short room), a dry crack and a
+-- clean low punch (the weak-point cue)
+local SOFT={EqualizerSoundEffect={LowGain=2,MidGain=0,HighGain=-6}}
+local BREAKFX={EqualizerSoundEffect={LowGain=6,MidGain=0,HighGain=-16},ReverbSoundEffect={DecayTime=1.3,WetLevel=-9,DryLevel=0,Density=1,Diffusion=1}}
+local CRISP={DistortionSoundEffect={Level=.4},EqualizerSoundEffect={LowGain=-6,MidGain=5,HighGain=3}}
+local PUNCH={EqualizerSoundEffect={LowGain=8,MidGain=-2,HighGain=-18},ReverbSoundEffect={DecayTime=.9,WetLevel=-10,DryLevel=0,Density=1,Diffusion=1}}
 local CHIME={ReverbSoundEffect={DecayTime=1.8,WetLevel=-4}}
 local CHORUS={ChorusSoundEffect={Depth=.3,Mix=.6,Rate=4},ReverbSoundEffect={DecayTime=1.4,WetLevel=-6}}
 local SPARKLE={ChorusSoundEffect={Depth=.35,Mix=.6,Rate=5},ReverbSoundEffect={DecayTime=2.2,WetLevel=-3},EqualizerSoundEffect={LowGain=-8,MidGain=0,HighGain=4}}
@@ -620,8 +633,150 @@ Audio.Kit=kitName
 
 -- Swing timing out of a session (the whoosh follows the character animation's downstroke).
 local SWING_DELAY={Chop=.04,Smash=.12,Slash=.03,Claw=.05,Bounce=.04,Prance=.05,Reap=.09,Scoop=.07,Rip=.1,Clack=.09,SixSeven=.15,Alarm=.1,Franken=.12,Chrono=.1,Octo=.09,Fate=.13}
--- A common gold-zone shimmer every kit's Perfect gets (the timing judgement sounds the same).
-local GOLD={{TICK,.12,2.6,CHIME,at=.02}}
+-- A Perfect: a bright tick, a three-note sparkle and a crisp crack on top of the kit's own accent, all at the combo's
+-- rising pitch (this replaces the old gold shimmer and the separate Halloween "Sparkle" cue).
+local PERFECT_STACK=join(
+ {{CLICK,.13,2.6,nil,dur=.06,fade=.03}},                                          -- tick
+ arp(PING,.05,2.4,{1,1.5,2},.035,SPARKLE,.03),                                   -- sparkle
+ {{SLASH,.07,2.8,BRIGHT,at=.02,dur=.1,fade=.05},{CLICK,.09,1.4,CRISP,at=.025}})  -- crack
+Audio.PerfectStack=PERFECT_STACK
+
+-- IMPACT -----------------------------------------------------------------------------------------
+-- The kits' thud layer (KNOCK / LAND rows, often THUMP-distorted) used to land on every hit as a dull,
+-- loud, identical "donk" and dominate fast hitting (the remote / dense paths kept only those rows).
+-- Now Hit and Perfect drop every KNOCK / LAND row and play ONE soft impact instead, drawn from a pool
+-- of 4 recordings that never repeats itself twice in a row, at a fresh pitch .96-1.04 per hit,
+-- 0.14 s long, at 45% of the loudest thud it replaces (Default when the kit had none), clamped to
+-- Min..Max. What remains of an impact loses its distortion (THUMP-style presets: low boost, high
+-- cut + distortion). The whole hit (every voice, worst case all at once) is scaled to stay under
+-- MaxSum, so stacked layers never clip. Crit and Break keep their own rows, without distortion;
+-- Break thuds play at BreakThud.
+Audio.Impact={
+ Pool={{KNOCK,1,1.06},{KNOCK,.9,1.24},{LAND,.85,1.34},{KNOCK,.92,.94}}, -- {sample, relative level, speed}
+ Fx=SOFT,Scale=.45,Default=.4,Min=.05,Max=.22,Dur=.14,Fade=.05,Pitch={.96,1.04},
+ MaxSum=1.05,Remote=.7,BreakThud=.6,
+}
+local THUD={[KNOCK]=true,[LAND]=true}
+Audio.Thud=THUD
+-- The pool index of the next impact: uniform, never `last` again. rand() -> [0, 1).
+function Audio.Impact.Draw(last,rand)
+ local n=#Audio.Impact.Pool
+ local r=rand or math.random
+ if n<=1 then return 1 end
+ if type(last)~='number'or last<1 or last>n then return math.clamp(math.floor(r()*n)+1,1,n)end
+ local i=math.clamp(math.floor(r()*(n-1))+1,1,n-1)
+ if i>=last then i+=1 end
+ return i
+end
+-- A preset without its distortion when it is a thump (low boost + high cut + distortion), else itself.
+local clean=setmetatable({},{__mode='k'})
+local function unthump(fx)
+ if type(fx)~='table'or fx.DistortionSoundEffect==nil then return fx end
+ local eq=fx.EqualizerSoundEffect
+ if not(type(eq)=='table'and(eq.LowGain or 0)>=6 and(eq.HighGain or 0)<=-14)then return fx end
+ local out=clean[fx]
+ if not out then
+  out={};for class,props in pairs(fx)do if class~='DistortionSoundEffect'then out[class]=props end end
+  clean[fx]=out
+ end
+ return out
+end
+-- A kit list without its thud rows (and without thump distortion) + the loudest thud it dropped. Cached per list.
+local softened=setmetatable({},{__mode='k'})
+local function soften(list)
+ if type(list)~='table'then return{},0 end
+ local done=softened[list]
+ if done and done.N==#list then return done.Rows,done.Thud end
+ local rows,thud={},0
+ for _,row in ipairs(list)do
+  if type(row)=='table'then
+   if THUD[row[1]]then
+    thud=math.max(thud,tonumber(row[2])or 0)
+   else
+    local fx=unthump(row[4])
+    if fx~=row[4]then row=table.clone(row);row[4]=fx end
+    table.insert(rows,row)
+   end
+  end
+ end
+ softened[list]={Rows=rows,Thud=thud,N=#list}
+ return rows,thud
+end
+Audio.Soften=soften
+-- Crit / Break rows: distortion off the thumps, Break thuds quieter (cached per row and scale).
+local gentled=setmetatable({},{__mode='k'})
+local function gentle(row,thudScale)
+ local byScale=gentled[row];if not byScale then byScale={};gentled[row]=byScale end
+ local out=byScale[thudScale]
+ if out then return out end
+ out=row
+ local fx=unthump(row[4])
+ if fx~=row[4]or(THUD[row[1]]and thudScale~=1)then
+  out=table.clone(row);out[4]=fx
+  if THUD[row[1]]then out[2]=(tonumber(row[2])or 0)*thudScale end
+ end
+ byScale[thudScale]=out
+ return out
+end
+-- Scale the layers so the whole cue sums to at most maxSum; the impact keeps its level (a Perfect never hits softer
+-- than a Hit: its extra accents make room by trimming the character layers instead).
+local function headroom(voices,maxSum)
+ local fixed,rest=0,0
+ for _,v in ipairs(voices)do
+  local x=(tonumber(v.Row[2])or 0)*v.K
+  if v.Impact then fixed+=x else rest+=x end
+ end
+ if fixed+rest>maxSum and rest>0 then
+  local s=math.max(0,maxSum-fixed)/rest
+  for _,v in ipairs(voices)do if not v.Impact then v.K*=s end end
+ end
+end
+-- PURE: every voice one pickaxe cue plays -> {{Row, K (volume multiplier), P (pitch multiplier), Impact?}}, pool index.
+--   kit = a KITS entry; o = {Remote, Dense (fast local hitting), Combo, Volume, Pitch (the claw alternation)};
+--   state = {Last = the previous pool index} (updated); rand() -> [0, 1) (math.random by default).
+function Audio.Plan(kit,cue,o,state,rand)
+ o=type(o)=='table'and o or{}
+ local r=rand or math.random
+ local I=Audio.Impact
+ local voices={}
+ local k=(tonumber(o.Volume)or 1)*(o.Remote and I.Remote or 1)
+ local p=(1+(r()*2-1)*.035)*(tonumber(o.Pitch)or 1) -- one jitter for the character layers (chords stay in tune)
+ if type(kit)~='table'then return voices,nil end
+ if cue~='Hit'and cue~='Perfect'then
+  local list=kit[cue]
+  if type(list)~='table'then return voices,nil end
+  local maxRows=o.Remote and(cue=='Swing'and 1 or 2)or nil
+  local impactCue=cue=='Crit'or cue=='Break'
+  for i,row in ipairs(list)do
+   if maxRows and i>maxRows then break end
+   if impactCue then row=gentle(row,cue=='Break'and I.BreakThud or 1)end
+   table.insert(voices,{Row=row,K=k,P=p})
+  end
+  if impactCue then headroom(voices,I.MaxSum)end
+  return voices,nil
+ end
+ local rows,thud=soften(kit.Hit)
+ -- another player's pickaxe / dense hitting: the kit's first character layer + the impact
+ local maxChar=(o.Remote or o.Dense)and 1 or #rows
+ for i,row in ipairs(rows)do
+  if i>maxChar then break end
+  table.insert(voices,{Row=row,K=k,P=p})
+ end
+ if cue=='Perfect'and not o.Remote then
+  local rise=1+math.min(.06,(tonumber(o.Combo)or 0)*.004)
+  for _,row in ipairs((soften(kit.Perfect)))do table.insert(voices,{Row=row,K=k,P=p*rise})end
+  for _,row in ipairs(PERFECT_STACK)do table.insert(voices,{Row=row,K=k,P=rise})end
+ end
+ local index=I.Draw(state and state.Last,r)
+ if state then state.Last=index end
+ local pool=I.Pool[index]
+ local level=math.clamp((thud>0 and thud or I.Default)*I.Scale*pool[2],I.Min,I.Max)
+ local pitch=I.Pitch[1]+r()*(I.Pitch[2]-I.Pitch[1])
+ -- second voice: the remote / dense limits and the voice cap always keep it
+ table.insert(voices,math.min(2,#voices+1),{Row={pool[1],level,pool[3],I.Fx,dur=I.Dur,fade=I.Fade},K=k,P=pitch,Impact=true})
+ headroom(voices,I.MaxSum)
+ return voices,index
+end
 
 -- A sound must never break gameplay code: every public entry runs protected, the first error is
 -- reported once.
@@ -631,8 +786,16 @@ local function guard(fn,...)
  if not ok and not warned then warned=true;warn('MiningAudio: '..tostring(err))end
 end
 
+-- the local player's hit just made its impact: the Halloween dig cues play softly under it (Halloween.Audio)
+local function markImpact()
+ local m=mixer()
+ if m then m.Mark('PickaxeImpact')end
+end
+
 local kitLast=setmetatable({},{__mode='k'}) -- throttle key (lane name, a corner or a player) -> kit..cue -> time
 local KIT_GAP={Swing=.07,Hit=.045,Perfect=.045,Crit=.08,Draw=.6,Break=.3,Inspect=2}
+local IMPACT_CUE={Hit=true,Perfect=true,Crit=true,Break=true}
+local impactState={Local={},Remote={}} -- the pool's last pick per lane
 local density,densityAt=0,0
 local function pickaxe(cue,def,where,opts)
  if type(cue)~='string'then return end
@@ -645,35 +808,31 @@ local function pickaxe(cue,def,where,opts)
  local now=os.clock()
  if KIT_GAP[cue]and now-(stamps[name..cue]or -1)<KIT_GAP[cue]then return end
  stamps[name..cue]=now
- local k=(opts.Volume or 1)*(opts.Remote and .7 or 1)
- local p=jitter()
  -- Left / right claw: every other swing and every other strike (hit or perfect) of this owner.
+ local alternate=1
  if kit.Alternate and(cue=='Swing'or cue=='Hit'or cue=='Perfect')then
   local side=name..(cue=='Swing'and'SwingSide'or'HitSide')
   stamps[side]=not stamps[side]
-  if stamps[side]then p*=kit.Alternate end
+  if stamps[side]then alternate=kit.Alternate end
  end
- -- Another player's pickaxe: the first two layers (the swish only its first), its own voice budget.
- local max=opts.Remote and(cue=='Swing'and 1 or 2)or nil
- -- Dense hitting (several hits within ~half a second): the impact keeps its two main layers.
+ -- Dense hitting (several hits within ~half a second): one character layer + the impact.
+ local dense=false
  if not opts.Remote and(cue=='Hit'or cue=='Perfect')then
   density=density*math.exp(-(now-densityAt)/.5)+1;densityAt=now
-  if density>3 then max=2 end
+  dense=density>3
  end
  local upload=Audio.KitAssetIds[name]and Audio.KitAssetIds[name][cue]
  local function go()
   if type(upload)=='number'and upload>0 then
-   shot({'rbxassetid://'..string.format('%.0f',upload),Audio.UploadVolume,1},k,p,where,lane,true)
-  elseif cue=='Perfect'then
-   play(kit.Hit,where,lane,k,p,max)
-   if not opts.Remote then
-    local rise=1+math.min(.06,(tonumber(opts.Combo)or 0)*.004)
-    play(kit.Perfect or{},where,lane,k,p*rise)
-    play(GOLD,where,lane,k,rise)
+   local k=(opts.Volume or 1)*(opts.Remote and Audio.Impact.Remote or 1)
+   shot({'rbxassetid://'..string.format('%.0f',upload),Audio.UploadVolume,1},k,jitter()*alternate,where,lane,true)
+  else
+   local voices=Audio.Plan(kit,cue,{Remote=opts.Remote,Dense=dense,Combo=opts.Combo,Volume=opts.Volume,Pitch=alternate},impactState[lane])
+   for i,v in ipairs(voices)do
+    later(v.Row.at,function()shot(v.Row,v.K,v.P,where,lane,i==1 or v.Impact==true)end)
    end
-  elseif kit[cue]then
-   play(kit[cue],where,lane,k,p,max)
   end
+  if not opts.Remote and IMPACT_CUE[cue]then markImpact()end
  end
  local delay=(cue=='Swing'and opts.Air)and(SWING_DELAY[type(def)=='table'and def.Swing or'Chop']or 0)or 0
  later(delay,go)
@@ -735,15 +894,28 @@ end
 local CUES={}
 CUES.Milestone=function(where)
  for i,step in ipairs({1,1.25,1.5,2,2.5})do one(PING,.16,step*1.1,where,CHIME,{at=(i-1)*.07})end
- one(TICK,.3,.2,where,IMPACT)
+ one(TICK,.24,.2,where,BREAKFX)
 end
 CUES.Draw=function(where)one(SHEATH,.2,1.1,where);one(TICK,.1,1.3,where)end
 CUES.Holster=function(where)one(CLICK,.15,.9,where);one(HOP,.12,.9,where)end
 CUES.Miss=function(where)
  one(TICK,.14,.5,where,{EqualizerSoundEffect={LowGain=0,MidGain=0,HighGain=-18},DistortionSoundEffect={Level=.3}})
 end
+-- The rock gives way (softened in v5: a rounder, quieter body without distortion and a short room; the kit's own Break
+-- flavour plays on top of it).
 CUES.Break=function(where)
- one(KNOCK,.48,.72,where);one(LAND,.42,.8,where);one(TICK,.3,.16,where,IMPACT)
+ local p=jitter(.03)
+ one(KNOCK,.3,.74*p,where,SOFT);one(LAND,.26,.82*p,where,BREAKFX,{at=.01});one(TICK,.16,.18,where,BREAKFX,{at=.02})
+ if not where then markImpact()end
+end
+-- A weak point gives way (Halloween boss weak spots: the Strike reply's Extra.Weak / BossDamage): a dry crack, a low
+-- round punch and a bright tick on top. Juicy but clean (no distortion on the punch); the whole cue sums to .92.
+CUES.WeakPoint=function(where)
+ local p=jitter(.03)
+ one(SLASH,.16,1.7*p,where,CRISP);one(CLICK,.2,.85*p,where,CRISP,{at=.008})
+ one(LAND,.34,.52*p,where,PUNCH,{at=.012})
+ one(PING,.12,3.1*p,where,BRIGHT,{at=.03,dur=.18,fade=.1});one(TICK,.1,2.8*p,where,nil,{at=.035})
+ if not where then markImpact()end
 end
 CUES.RareBreak=function(where)
  CUES.Break(where)
@@ -775,7 +947,7 @@ end
 CUES.Click=function(where)one(TICK,.1,1.2,where)end
 
 local KIT_CUE={Hit=true,Perfect=true,Crit=true}
-local throttle={Hit=.04,Perfect=.04,Crit=.05,Miss=.08,Lift=.05,Click=.05,Milestone=.4,Draw=.5,Holster=.3}
+local throttle={Hit=.04,Perfect=.04,Crit=.05,Miss=.08,Lift=.05,Click=.05,Milestone=.4,Draw=.5,Holster=.3,WeakPoint=.08}
 local lastPlayed={}
 -- Legacy entry: Play(cue, parent, ...). Hit / Perfect / Crit with a sound name use that kit.
 local function playCue(cue,where,...)
@@ -794,7 +966,7 @@ local function playCue(cue,where,...)
 end
 function Audio.Play(cue,where,...)guard(playCue,cue,where,...)end
 
--- The one knob for every mining sound (a future settings slider): 0..1.
+-- The one knob for every mining sound (a future settings slider): 0..1. (The Pickaxe bus above it is the mixer's.)
 function Audio.SetVolume(v)guard(function()soundGroup().Volume=math.clamp(tonumber(v)or 1,0,1)end)end
 function Audio.Stats()return{Local=live.Local,Remote=live.Remote}end
 

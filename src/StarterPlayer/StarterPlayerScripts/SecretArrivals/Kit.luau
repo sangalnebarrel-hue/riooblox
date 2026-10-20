@@ -411,7 +411,22 @@ function Scope:Drone(kind,volume,speed,fade)
 end
 --[[ Scope:Duck(level, fade): lower the game's music to `level` (fraction) and bring it back
  on Clean. Several scopes may duck at once; the quietest wins. Only SoundGroup volumes
- move (from a fixed baseline), so the music scripts' own Sound.Volume fades keep working. ]]
+ move (from a fixed baseline), so the music scripts' own Sound.Volume fades keep working.
+ The ducking itself is ReplicatedStorage.AudioMixer's (one reason per scope over the music
+ buses: Music incl. the Halloween OST, WorldEvents, Ambience incl. the island's background
+ track, UI); the old group walk below only runs in a place without the mixer. ]]
+local Mixer=nil
+pcall(function()
+ local m=require(RS:WaitForChild('AudioMixer',5))
+ if type(m)=='table'and type(m.Duck)=='function'then Mixer=m end
+end)
+local DUCK_BUSES={'Music','WorldEvents','Ambience','UI'}
+local scopeIds=setmetatable({},{__mode='k'});local nextScopeId=0
+local function duckReason(scope)
+ local id=scopeIds[scope]
+ if not id then nextScopeId+=1;id='SecretArrival'..nextScopeId;scopeIds[scope]=id end
+ return id
+end
 local ducks={};local baseline=setmetatable({},{__mode='k'})
 local function musicGroups()
  local list={}
@@ -435,6 +450,14 @@ local function applyDuck(seconds)
  end
 end
 function Scope:Duck(level,fade)
+ if Mixer then
+  local reason=duckReason(self)
+  local levels={};for _,bus in ipairs(DUCK_BUSES)do levels[bus]=level end
+  local first=not Mixer.Ducking(reason)
+  Mixer.Duck(reason,levels,fade or 1)
+  if first then self:Add(function()Mixer.Release(reason,1.5)end)end
+  return
+ end
  ducks[self]=level;applyDuck(fade or 1)
  self:Add(function()ducks[self]=nil;applyDuck(1.5)end)
 end

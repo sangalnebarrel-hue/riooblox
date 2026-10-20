@@ -7,9 +7,11 @@
 --   Kit.Sound.Enabled() / Kit.Sound.SetEnabled(false)    -- the "UI SOUNDS" setting
 -- Cue data (asset ids to replace with real audio, volumes, pitches): Kit/SoundConfig.luau.
 -- A few Sound instances per cue are created on first use in SoundService.KitUISounds and play
--- through SoundService.DOGROTS_AUDIO.UI. Each cue has a minimum gap (hover 60 ms) and at most
+-- through the UI bus of ReplicatedStorage.AudioMixer (SoundService.DOGROTS_AUDIO.UI; created here
+-- when the place has no mixer). Each cue has a minimum gap (hover 60 ms) and at most
 -- Config.MaxPerSecond sounds start per second. Nothing runs while no sound is requested.
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SoundService = game:GetService("SoundService")
 local UserInputService = game:GetService("UserInputService")
 local Config = require(script.Parent.SoundConfig)
@@ -29,11 +31,25 @@ local holder: Folder? = nil
 local stats = { Played = 0, Throttled = 0, Voices = 0 }
 local warmed = false
 
+local mixer: any = nil -- ReplicatedStorage.AudioMixer (false when the place has none)
 local function soundGroup(): SoundGroup?
 	if group and group.Parent then
 		return group
 	end
 	group = nil
+	if mixer == nil then
+		local ok, m = pcall(function()
+			return require(ReplicatedStorage:WaitForChild("AudioMixer", 2) :: ModuleScript)
+		end)
+		mixer = ok and type(m) == "table" and m or false
+	end
+	if mixer then
+		local bus = mixer.Group(Config.Group)
+		if bus then
+			group = bus
+			return bus
+		end
+	end
 	local root = SoundService:FindFirstChild(Config.Folder)
 	if root then
 		local existing = root:FindFirstChild(Config.Group)
