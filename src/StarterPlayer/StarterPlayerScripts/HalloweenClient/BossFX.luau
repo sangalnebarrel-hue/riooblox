@@ -29,6 +29,20 @@
 -- BossPlateCrack {Slot, Stage, Wear}, BossKillingBlow {Mine}, BossDeath {Stage = Stagger|Collapse|SoulBurst|Scatter|MoonFlare}.
 -- Honours Shared.Quality() (Low: no flame particles, fewer debris / lights / scattered bones, no 3D reticle) and
 -- Shared.ReducedMotion() (no camera shot, no shake, no screen flash; smaller bell swing, still reticle).
+-- CHAPTER II (WP-N, docs/halloween2/DESIGN.md §10, §23):
+-- * Event HP: attacks that carry a HazardId / HazardIds (Attack telegraphs, rock waves) are drawn by CombatFX, so BossFX
+--   draws no telegraph of its own for them (the wind-up / impact animation and the impact FX still play); a Knock that
+--   dealt Event HP damage leaves the red hit flash to CombatHUD; "PERFECT ONLY" (difficulty V weak points) and
+--   "SYNC STRIKE" hit feedback; the weak-point tag says PERFECT while State.Boss.PerfectOnly is set.
+-- * Endgame patterns (BossEvent Pattern {Name = GraveLines | LanternWalk | BoneRain, StartAt, Duration}; late joiners from
+--   State.Boss Pattern / PatternUntil): a banner + a pose layered over the boss's animation for the pattern's duration.
+-- * No boss camera shot while the local player is DOWNED (HwDowned); a shot running when they go down ends at once.
+-- * Team wipe (BossEvent Wiped, then Escaped {Reason = "Wiped"}): the boss roars over the fallen pit, one banner.
+-- * Difficulty V finale handoff (FinaleFX owns the finale): on Finale {Stage = "FakeDeath"} the boss plays the first half
+--   of its death (killing blow -> stagger -> collapse, no soul to the moon, no camera of its own); the corpse lies dark,
+--   twitches at the toll and crumbles into the floor once the spirit tears out (At + 5.4). While State.Boss.Mode is
+--   "Finale" the rig is never rebuilt, and the finale's Defeated / Escaped / Reward get no false-victory banners
+--   (the reward banner waits for the finale's victory shot). BossFX.CorpsePos() -> Vector3? (the corpse's soul core).
 -- Everything lives in workspace.DOGROTS_HalloweenFX (SelfManagedFX).
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
@@ -90,6 +104,19 @@ function BossFX.Start(ctx)
 	end
 	local function now(): number
 		return Shared.Now()
+	end
+	-- the difficulty V finale (State.Finale, BossFinale / WP-C) runs on this fight: Mode "Finale", or a finale state
+	local function finaleOn(): boolean
+		if A("Mode") == "Finale" then
+			return true
+		end
+		local fin = stateFolder.Parent and stateFolder.Parent:FindFirstChild("Finale")
+		local st = fin and fin:GetAttribute("State")
+		return type(st) == "string" and st ~= ""
+	end
+	-- Event HP: the local player is DOWNED (EventHP writes HwDowned)
+	local function downed(): boolean
+		return player:GetAttribute("HwDowned") == true
 	end
 	local function low(): boolean
 		return Shared.Low()
@@ -184,7 +211,8 @@ function BossFX.Start(ctx)
 	---------------------------------------------------------------------------------------------------------------
 	local boss = nil -- {Model, Rig, Root, Cur = {bone = CFrame}, Pos, Yaw, Y, Flames, Lights, Plates, Weak, ...}
 	local anim = { Mode = "", ModeAt = 0, Attack = "", Impact = 0, ImpactKind = "", Yoff = -40, Phase = 0, Death = nil, Shield = nil,
-		HoldUntil = 0, SlowUntil = 0 } -- hit-stop (rig frozen) / slow motion (after the killing blow), os.clock
+		HoldUntil = 0, SlowUntil = 0, -- hit-stop (rig frozen) / slow motion (after the killing blow), os.clock
+		Gait = 0, Pattern = nil :: any } -- Pattern = the endgame pattern pose {Name, StartAt, Until} (server time)
 	local deathTL = nil -- the running death timeline
 
 	local function eachPart(root: Instance, fn)
@@ -389,6 +417,8 @@ function BossFX.Start(ctx)
 	local function R(x: number?, y: number?, z: number?): CFrame
 		return ANG(x or 0, y or 0, z or 0)
 	end
+	-- the server modes an endgame pattern pose may layer over (never a rise / burrow / death / escape)
+	local PATTERN_POSE_MODES = { [""] = true, Idle = true, Walk = true, Roar = true, Enrage = true }
 
 	-- target pose for the current mode (all angles in radians; +X pitch = nose / leg forward-up)
 	local function pose(mode: string, t: number, ma: number, moving: number): { [string]: CFrame }
@@ -473,6 +503,60 @@ function BossFX.Start(ctx)
 				P.Head = R(0, -.35 * k, .15 * k)
 				P.ArmR = R(.5 * k, -.6 * k, .3 * k)
 				P.Jaw = R(-.3 * k)
+			end
+		end
+		-- endgame pattern (BossEvent Pattern): a pose layered over idle / walk for the pattern's duration
+		local pat = anim.Pattern
+		if pat and PATTERN_POSE_MODES[mode] then
+			local st = now()
+			local e = st - pat.StartAt
+			local k = smooth(e / .45) * (1 - smooth((st - (pat.Until - .5)) / .5))
+			if k > .001 then
+				local trem = math.sin(t * 34) * .02 * k
+				if pat.Name == "GraveLines" then
+					-- rears up and claws the lines across the floor, one arm after the other on every line
+					local beat = e * PI * 1.3
+					local s = math.sin(beat)
+					P.Pelvis = R(.16 * k, 0, 0)
+					P.Chest = R(.1 * k, .12 * s * k, 0)
+					P.Neck = R((-.22 + .1 * math.abs(s)) * k, -.25 * s * k, 0)
+					P.Head = R(-.12 * k, -.15 * s * k, 0)
+					P.Jaw = R(-(.35 + .25 * math.abs(s)) * k)
+					P.ArmR = R((.75 + .55 * s) * k, 0, -.2 * k)
+					P.ArmL = R((.75 - .55 * s) * k, 0, .2 * k)
+					P.ForeR = R(-(.5 + .35 * math.max(0, s)) * k, 0, 0)
+					P.ForeL = R(-(.5 + .35 * math.max(0, -s)) * k, 0, 0)
+					P.ThighR = R(-.2 * k, 0, 0)
+					P.ThighL = R(-.2 * k, 0, 0)
+					P.ShinR = R(.25 * k, 0, 0)
+					P.ShinL = R(.25 * k, 0, 0)
+				elseif pat.Name == "LanternWalk" then
+					-- head high, swaying after the lantern it holds up in its right claw; the left claw beckons
+					local sway = math.sin(e * 1.4)
+					P.Chest = R(.05 * k, .14 * sway * k, 0)
+					P.Neck = R(.32 * k, .38 * sway * k, 0)
+					P.Head = R(.18 * k, .25 * sway * k, .06 * sway * k)
+					P.Jaw = R(-.18 * k - math.max(0, math.sin(e * 2.3)) * .14 * k)
+					P.ArmR = R(1.15 * k, 0, -.28 * k)
+					P.ForeR = R(-.35 * k, 0, 0)
+					P.PawR = R(-.4 * k, 0, 0)
+					P.ArmL = R((.35 + .2 * math.sin(e * 3.1)) * k, 0, .1 * k)
+					P.ForeL = R(-.6 * k, 0, 0)
+					P.Tail1 = R(.3 * k, .3 * sway * k, 0)
+				elseif pat.Name == "BoneRain" then
+					-- howls bones down from the sky: head thrown back, arms spread, the whole body trembling
+					P.Pelvis = R(.12 * k, 0, 0)
+					P.Chest = R(.16 * k + trem, 0, 0)
+					P.Neck = R(.72 * k, trem, 0)
+					P.Head = R(.42 * k, 0, trem)
+					P.Jaw = R(-.95 * k)
+					P.ArmR = R(.95 * k, 0, -.45 * k)
+					P.ArmL = R(.95 * k, 0, .45 * k)
+					P.ForeR = R(-.35 * k, 0, 0)
+					P.ForeL = R(-.35 * k, 0, 0)
+					P.Tail1 = R(.55 * k, 0, 0)
+					P.Tail2 = R(.3 * k, math.sin(t * 8) * .25 * k, 0)
+				end
 			end
 		end
 		if mode == "Roar" or mode == "Enrage" or mode == "Rise" then
@@ -953,6 +1037,10 @@ function BossFX.Start(ctx)
 				return t
 			end
 			label("Mult", "x" .. tostring(WEAK_MULT), UDim2.fromScale(.5, .34), UDim2.fromScale(.5, .5), GOLD_HOT)
+			if A("PerfectOnly") == true then
+				-- difficulty V: only Perfect hits count on the weak points
+				label("Perfect", L("PERFECT ONLY", "ТОЛЬКО ИДЕАЛЬНО"), UDim2.fromScale(1.25, .2), UDim2.fromScale(.5, .12), WHITE)
+			end
 			fx.Count = label("Left", "", UDim2.fromScale(.32, .24), UDim2.fromScale(.5, .9), WHITE)
 			g.Adornee = att
 			g.Parent = att
@@ -1506,14 +1594,17 @@ function BossFX.Start(ctx)
 		table.clear(rockByTarget)
 	end
 
-	-- a rock falling from the sky toward its telegraph circle (on the real surface: arena floor or terrace ring)
-	local function startRockFall(key: any, pos: Vector3, landAt: number, radius: number?)
+	-- a rock falling from the sky toward its telegraph circle (on the real surface: arena floor or terrace ring);
+	-- hazard = the landing is an Event HP hazard (CombatFX draws its telegraph, so no circle of our own)
+	local function startRockFall(key: any, pos: Vector3, landAt: number, radius: number?, hazard: boolean?)
 		local m = Models.Rock(tonumber(key) or 1)
 		m.Parent = FX.Folder()
 		local to = groundAt(pos)
 		local fall = { Key = key, Model = m, To = to, LandAt = landAt, Start = now(), Radius = radius or 4.5,
 			From = Vector3.new(pos.X + 14, FLOOR + 95, pos.Z - 26) }
-		fall.Telegraph = telegraph("Circle", pos, fall.Radius, landAt, nil, nil, PURPLE, to.Y)
+		if not hazard then
+			fall.Telegraph = telegraph("Circle", pos, fall.Radius, landAt, nil, nil, PURPLE, to.Y)
+		end
 		m:PivotTo(CF(fall.From))
 		local core = m:FindFirstChild("Core")
 		if not low() and core then
@@ -1646,10 +1737,12 @@ function BossFX.Start(ctx)
 	end
 	-- a short scripted camera shot: goalAt(e) -> CFrame (e = seconds since the shot started), eased in from and back out
 	-- to the player's camera; any key / click / tap skips it. Never with ReducedMotion, while a timing session or a menu
-	-- owns the camera (cameraLocked, also checked every frame), for another camera owner, outside the zone, or (unless
-	-- allowPit) for fighters in the pit. Returns true when the shot started.
+	-- owns the camera (cameraLocked, also checked every frame), while the local player is DOWNED (Event HP: they need
+	-- their camera to see who comes to revive them; also checked every frame), during the difficulty V finale (FinaleFX
+	-- owns its shots), for another camera owner, outside the zone, or (unless allowPit) for fighters in the pit. Returns
+	-- true when the shot started.
 	local function cameraShot(duration: number, goalAt: (number) -> CFrame, allowPit: boolean?): boolean
-		if cameraBusy or Shared.ReducedMotion() or cameraLocked() then
+		if cameraBusy or Shared.ReducedMotion() or cameraLocked() or downed() or finaleOn() then
 			return false
 		end
 		local cam = workspace.CurrentCamera
@@ -1696,8 +1789,8 @@ function BossFX.Start(ctx)
 			if done then
 				return
 			end
-			if cameraLocked() then
-				-- a timing session / menu started during the shot: hand the camera straight back
+			if cameraLocked() or downed() then
+				-- a timing session / menu started during the shot, or the player went down: hand the camera straight back
 				finish()
 				return
 			end
@@ -2792,6 +2885,165 @@ function BossFX.Start(ctx)
 		deathTL.Mine = mine
 	end
 
+	-- difficulty V: the FALSE VICTORY (BossEvent Finale {Stage = "FakeDeath", At}). The first half of the death on the
+	-- server's clock (so the corpse falls inside FinaleFX's shot): killing blow -> stagger -> collapse; then the corpse lies
+	-- dark through the silence, its eyes flare violet and it twitches at the bell's toll, and when the spirit tears out of
+	-- it (FinaleFX, At + 5.4) the bones burst apart and the rest crumbles into the floor. No soul to the moon, no moon
+	-- flare and no camera of its own (FinaleFX owns the shot, the music and the fake reward card).
+	local FAKE = { Toll = 3.9, Twitch = 4.6, Spirit = 5.4, Gone = 8.2 } -- seconds after At (DESIGN §23.2)
+	local function startFakeDeath(at: number)
+		if not boss or (deathTL and deathTL.Fake) then
+			return
+		end
+		if deathTL then
+			deathTL.Cancelled = true
+		end
+		local late = math.clamp(now() - at, 0, 2)
+		local mine = os.clock() - lastKillHit < 1.5
+		anim.Mode, anim.ModeAt = "Death", at
+		anim.Death = os.clock()
+		anim.Pattern = nil
+		clearTelegraphs()
+		for _, w in pairs(boss.Weak) do
+			if w.Shown then
+				w.Shown = false
+				for p in pairs(w.Parts) do
+					FX.Tween(p, .25, { Transparency = 1 })
+				end
+				closeWeakFX(w, true)
+			end
+		end
+		setSoulDim(0)
+		if late < .25 then
+			anim.HoldUntil = os.clock() + .28
+			anim.SlowUntil = os.clock() + .8
+		end
+		local cues = {
+			{ 0, function()
+				local core = corePos()
+				play("KillBlow", core)
+				flash(WHITE, mine and .55 or .35, .35)
+				FX.Punch(mine and 1.4 or .9)
+				FX.Light(core, GREEN_HOT, 60, 6, .6)
+				FX.Burst(core, { Color = WHITE, Color2 = GREEN_HOT, Count = 40, Speed = { 16, 34 }, Lifetime = { .25, .6 }, Size = { .6, 1.2, 0 } })
+				FX.Shockwave(floorAt(boss and boss.Pos or PIT) + V3(0, .3, 0), GREEN_HOT, 22, .6)
+				shakeAt(core, mine and .7 or .5, .45, 120)
+				if mine then
+					FX.Popup(core + V3(0, 7, 0), L("KILLING BLOW!", "СМЕРТЕЛЬНЫЙ УДАР!"), GOLD_HOT, true)
+				end
+				Bus.Fire("BossKillingBlow", { Mine = mine })
+			end },
+			{ .5, function()
+				if not boss then
+					return
+				end
+				play("BossDeath", boss.Pos)
+				setFlameRate(.35)
+				eyesTo(WHITE)
+				FX.Debris(corePos(), BONE, Enum.Material.SmoothPlastic, 8, 18, { MaxSize = .7, Floor = FLOOR + .2 })
+				deathStage("Stagger")
+			end },
+			{ .95, function()
+				if boss then
+					eyesTo(GREEN)
+					play("BossStep", boss.Pos, { Pitch = .8 })
+					FX.Ring(floorAt(boss.Pos), DUST, 10, .6, { Thickness = .12, Transparency = .45, Material = Enum.Material.SmoothPlastic })
+					shakeAt(boss.Pos, .25, .3, 70)
+				end
+			end },
+			{ 1.45, function()
+				if boss then
+					eyesTo(RGB(120, 160, 110))
+					play("BossStep", boss.Pos, { Pitch = .72 })
+					FX.Debris(corePos(), BONE, Enum.Material.SmoothPlastic, 6, 16, { MaxSize = .6, Floor = FLOOR + .2 })
+					shakeAt(boss.Pos, .3, .3, 70)
+				end
+			end },
+			{ 2.75, function()
+				if not boss then
+					return
+				end
+				impact(boss.Pos, 16, GREEN, true)
+				FX.Ring(floorAt(boss.Pos), DUST, 30, 1.4, { Thickness = .3, Transparency = .5, Material = Enum.Material.SmoothPlastic })
+				FX.Smoke(floorAt(boss.Pos) + V3(0, 2, 0), RGB(110, 100, 96), 9, 2.2)
+				deathStage("Collapse")
+			end },
+			{ 3.1, function()
+				-- the false victory: it lies dark and still (the soul fire gutters out, nothing leaves it... yet)
+				if not boss then
+					return
+				end
+				setFlameRate(0)
+				eyesTo(RGB(30, 30, 34))
+				setLights(.15)
+				setSoulDim(1)
+			end },
+			{ FAKE.Toll, function()
+				-- the bell tolls (FinaleFX): the eyes snap open violet, the corpse jerks
+				if not boss then
+					return
+				end
+				eyesTo(PURPLE)
+				setSoulDim(.55)
+				addFlinch("Chest", .14, 0, .05)
+				addFlinch("Neck", .3, .12, 0, .05)
+				addFlinch("Head", .25, -.1, .1, .08)
+				FX.Light(corePos(), PURPLE, 34, 3, .9)
+				FX.Debris(corePos(), BONE, Enum.Material.SmoothPlastic, 4, 12, { MaxSize = .5, Floor = FLOOR + .2 })
+			end },
+			{ FAKE.Twitch, function()
+				if not boss then
+					return
+				end
+				eyesTo(RGB(226, 190, 255))
+				setSoulDim(.3)
+				addFlinch("Pelvis", .1, 0, -.06)
+				addFlinch("ArmR", .35, 0, .2, .04)
+				addFlinch("Jaw", -.45, 0, 0, .06)
+				play("SkeletonRattle", corePos(), { Volume = .6, Pitch = .7 })
+				shakeAt(corePos(), .2, .3, 80)
+			end },
+			{ FAKE.Spirit, function()
+				-- the spirit tears out (FinaleFX draws it): the ribcage bursts, the bones fly, the rest crumbles away
+				if not boss then
+					return
+				end
+				local core = corePos()
+				for p in pairs(boss.Soul or {}) do
+					p.Transparency = 1
+				end
+				eyesTo(RGB(30, 30, 34))
+				FX.Burst(core, { Color = PURPLE, Color2 = GREEN_HOT, Count = low() and 24 or 50, Speed = { 10, 26 }, Lifetime = { .6, 1.3 }, Size = { .8, 1.4, 0 } })
+				FX.Shockwave(floorAt(boss.Pos) + V3(0, .3, 0), PURPLE, 20, .8)
+				scatterBones()
+				play("BoneScatter", boss.Pos)
+				local m = boss.Model
+				for _, p in ipairs(m:GetDescendants()) do
+					if p:IsA("BasePart") and p.Transparency < 1 and not scattered[p] then
+						task.delay(math.random() * 1.4, function()
+							if p.Parent then
+								FX.Tween(p, 1.3, { Transparency = 1 })
+							end
+						end)
+					end
+				end
+				shatterModel(m, BONE, low() and 12 or 26)
+				deathStage("Scatter")
+			end },
+			{ FAKE.Gone, function()
+				if anim.Mode == "Death" then
+					destroyBoss()
+				end
+			end },
+		}
+		for _, c in ipairs(cues) do
+			c[1] = math.max(0, c[1] - late)
+		end
+		deathTL = timeline(cues)
+		deathTL.Mine = mine
+		deathTL.Fake = true
+	end
+
 	---------------------------------------------------------------------------------------------------------------
 	-- events
 	---------------------------------------------------------------------------------------------------------------
@@ -2808,6 +3060,49 @@ function BossFX.Start(ctx)
 
 	local function inArena(): boolean
 		return nearPit(10)
+	end
+
+	-- endgame patterns (BossEvent Pattern, difficulties III-V; DESIGN §10.5)
+	local PATTERNS = {
+		GraveLines = { Title = { "GRAVE LINES", "МОГИЛЬНЫЕ ЛИНИИ" }, Color = PURPLE,
+			Hint = { "Stand in the gaps between the lines!", "Встань в просветы между линиями!" } },
+		LanternWalk = { Title = { "LANTERN WALK", "ФОНАРНЫЙ ОБХОД" }, Color = GREEN,
+			Hint = { "Stay inside the lantern's light!", "Держись в свете фонаря!" } },
+		BoneRain = { Title = { "BONE RAIN", "КОСТЯНОЙ ДОЖДЬ" }, Color = BONE,
+			Hint = { "Watch the shadows - dodge the falling bones!", "Следи за тенями - уворачивайся от костей!" } },
+	}
+	local WIPE_ROAR = 1.6 -- seconds the boss gloats over a wiped pit before it burrows
+	local REWARD_AFTER_FINALE = 9.5 -- the reward banner waits for FinaleFX's victory / fail shot
+	local wipedAt = -100
+
+	-- the pattern's opening beat: a roar + a flourish; LANTERN WALK lights a green lantern glow in its raised claw
+	local function patternFX(name: string)
+		if not boss then
+			return
+		end
+		local core = corePos()
+		play("BossRoar", boss.Pos, { Volume = .7, Pitch = name == "BoneRain" and .8 or 1.05 })
+		if name == "GraveLines" then
+			FX.Cracks(floorAt(boss.Pos), V3(0, 1, 0), PURPLE, 18, 2.5)
+			shakeAt(boss.Pos, .3, .4, 90)
+		elseif name == "BoneRain" then
+			FX.Burst(core + V3(0, 6, 0), { Color = BONE, Color2 = GREEN_HOT, Count = low() and 10 or 24, Speed = { 18, 34 }, Lifetime = { .5, 1 },
+				Size = { .5, .9, 0 } })
+			play("BoneScatter", boss.Pos, { Delay = .4, Volume = .7 })
+		elseif name == "LanternWalk" then
+			local paw = boss.Paws and (boss.Paws.PawFR or boss.Paws.PawFL)
+			if paw and not boss.PatternLight then
+				local l = Instance.new("PointLight")
+				l.Name = "PatternLantern"
+				l.Color = GREEN
+				l.Range = 20
+				l.Brightness = 2.4
+				l.Shadows = false
+				l.Parent = paw
+				boss.PatternLight = l
+			end
+			FX.Light(core, GREEN, 26, 2.5, .6)
+		end
 	end
 
 	local function onEvent(d: any)
@@ -2834,6 +3129,9 @@ function BossFX.Start(ctx)
 		if kind == "Phase" then
 			local p = tonumber(d.Phase) or 1
 			local hint = PHASE_HINT[p]
+			if p == 5 and A("PerfectOnly") == true then
+				hint = { "Weak points open - only PERFECT hits break through (x3)!", "Открылись слабые места - пробивают только ИДЕАЛЬНЫЕ удары (x3)!" }
+			end
 			local name = tostring(d.Name or "")
 			if p > 1 then
 				banner(L("PHASE ", "ФАЗА ") .. p .. " · " .. L(name, PHASE_RU[name]), hint and L(hint[1], hint[2]) or nil, p == 5 and BLOOD or PURPLE, 3.2)
@@ -2842,9 +3140,11 @@ function BossFX.Start(ctx)
 			if d.Stage == "Telegraph" then
 				anim.Attack = d.Attack
 				local pos = typeof(d.Position) == "Vector3" and d.Position or PIT
-				if d.Attack == "Sweep" then
+				-- an Event HP hazard (HazardId / HazardIds) is drawn by CombatFX: no second telegraph on top of it
+				local hazard = d.HazardId ~= nil or (type(d.HazardIds) == "table" and next(d.HazardIds) ~= nil)
+				if not hazard and d.Attack == "Sweep" then
 					telegraph("Cone", pos, tonumber(d.Radius) or 20, tonumber(d.ImpactAt) or now() + 1, d.Direction, tonumber(d.Angle) or 120, BLOOD)
-				else
+				elseif not hazard then
 					telegraph("Circle", pos, tonumber(d.Radius) or 12, tonumber(d.ImpactAt) or now() + 1.2, nil, nil, d.Attack == "Stomp" and PURPLE or BLOOD)
 				end
 				play("BossRoar", pos, { Volume = .35, Pitch = 1.25 })
@@ -2863,14 +3163,17 @@ function BossFX.Start(ctx)
 			end
 		elseif kind == "Knock" then
 			local r = myRoot()
-			if r and typeof(d.Velocity) == "Vector3" then
+			if r and typeof(d.Velocity) == "Vector3" and not downed() then
 				r.AssemblyLinearVelocity = d.Velocity
 				local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 				if hum then
 					hum:ChangeState(Enum.HumanoidStateType.Freefall)
 				end
 			end
-			FX.Flash(CURSE, .22, .35)
+			-- a knock that dealt Event HP damage: CombatHUD already flashes red + vignettes, so no second flash here
+			if (tonumber(d.Damage) or 0) <= 0 then
+				FX.Flash(CURSE, .22, .35)
+			end
 			FX.Shake(.45, .35)
 			if (tonumber(d.Curse) or 0) > 0 and r then
 				FX.Popup(r.CFrame.Position + V3(0, 3, 0), "+" .. math.floor(d.Curse) .. " " .. L("CURSE", "ПРОКЛЯТИЕ"), CURSE, false)
@@ -2960,9 +3263,10 @@ function BossFX.Start(ctx)
 			end
 		elseif kind == "Rocks" then
 			if type(d.Rocks) == "table" then
+				local wave = type(d.HazardIds) == "table" and next(d.HazardIds) ~= nil
 				for _, r in ipairs(d.Rocks) do
-					if typeof(r.Position) == "Vector3" then
-						startRockFall(r.Key, r.Position, tonumber(r.LandAt) or now() + 1.6, tonumber(r.Radius))
+					if type(r) == "table" and typeof(r.Position) == "Vector3" then
+						startRockFall(r.Key, r.Position, tonumber(r.LandAt) or now() + 1.6, tonumber(r.Radius), r.HazardId ~= nil or wave)
 					end
 				end
 			end
@@ -3063,9 +3367,25 @@ function BossFX.Start(ctx)
 				elseif not low() then
 					FX.Debris(pos, STONE, Enum.Material.Slate, 3, 14, { MaxSize = .6, Floor = FLOOR + .3 })
 				end
+			elseif d.NeedPerfect then
+				-- difficulty V: the weak points only take Perfect hits
+				FX.Popup(pos + V3(0, 3.5, 0), L("PERFECT ONLY!", "ТОЛЬКО ИДЕАЛЬНЫЕ!"), GOLD_HOT, false)
+				FX.Burst(pos, { Color = GOLD, Count = 6, Speed = { 3, 7 }, Lifetime = { .2, .45 } })
 			elseif d.Weak == false and n == 0 then
 				FX.Popup(pos + V3(0, 3, 0), L("NO EFFECT", "НЕТ ЭФФЕКТА"), PURPLE, false)
 			end
+			if d.Sync and n > 0 then
+				-- SYNC STRIKE: two players' Perfects within .5 s (+50% for both; Retro = the partner's earlier hit)
+				FX.Popup(corePos() + V3(0, 8, 0), L("SYNC STRIKE +50%", "СИНХРОННЫЙ УДАР +50%"), GREEN_HOT, true)
+				FX.Light(corePos(), GREEN_HOT, 22, 3, .35)
+			end
+		elseif kind == "Defeated" and (d.Finale ~= nil or finaleOn()) then
+			-- the difficulty V finale's end (Victory / Fail): FinaleFX presents it; the boss already died in the false
+			-- victory (a rig still standing, e.g. a missed FakeDeath, just goes)
+			if boss and not deathTL then
+				destroyBoss()
+			end
+			clearTelegraphs()
 		elseif kind == "Defeated" then
 			local top = type(d.Top) == "table" and d.Top or {}
 			local names = {}
@@ -3079,23 +3399,75 @@ function BossFX.Start(ctx)
 				startDeath(os.clock() - lastKillHit < 1.5)
 			end
 		elseif kind == "Escaped" then
+			local wiped = d.Reason == "Wiped"
 			local why = d.Reason == "Empty" and L("Everyone left the pit.", "Все покинули яму.")
+				or (wiped and L("The whole pit went down.", "Вся яма повержена."))
 				or (d.Reason == "Disabled" and "" or L("Time ran out - it burrowed away.", "Время вышло - он зарылся."))
-			if d.Reason ~= "Disabled" then
+			-- no banner when the event switched off, during the finale (FinaleFX: "THE BELL SILENCES YOU"), or right
+			-- after our own WIPED OUT banner
+			if d.Reason ~= "Disabled" and not finaleOn() and not (wiped and os.clock() - wipedAt < 8) then
 				banner(L("THE GRAVEKEEPER ESCAPED", "СМОТРИТЕЛЬ СБЕЖАЛ"), why, PURPLE, 3.5)
 			end
-			if boss then
-				anim.Mode, anim.ModeAt = "Escape", now()
-				play("BossBurrow", boss.Pos)
-				task.delay(.6, function()
-					if boss then
-						FX.Debris(floorAt(boss.Pos) + V3(0, 1, 0), DIRT, Enum.Material.Ground, 24, 36, { MaxSize = 1.8, Floor = FLOOR + .3 })
-						FX.Smoke(floorAt(boss.Pos) + V3(0, 1, 0), RGB(96, 82, 70), 8, 2)
+			if boss and anim.Mode ~= "Death" then
+				local function burrowAway()
+					if not boss then
+						return
 					end
-				end)
-				task.delay(3.4, destroyBoss)
+					anim.Mode, anim.ModeAt = "Escape", now()
+					play("BossBurrow", boss.Pos)
+					task.delay(.6, function()
+						if boss then
+							FX.Debris(floorAt(boss.Pos) + V3(0, 1, 0), DIRT, Enum.Material.Ground, 24, 36, { MaxSize = 1.8, Floor = FLOOR + .3 })
+							FX.Smoke(floorAt(boss.Pos) + V3(0, 1, 0), RGB(96, 82, 70), 8, 2)
+						end
+					end)
+					task.delay(3.4, function()
+						if boss and anim.Mode == "Escape" then
+							destroyBoss()
+						end
+					end)
+				end
+				if wiped and os.clock() - wipedAt < 3 then
+					-- it gloats over the fallen pit first (the WIPED roar), then burrows
+					timeline({ { WIPE_ROAR, burrowAway } })
+				else
+					burrowAway()
+				end
 			end
+			anim.Pattern = nil
 			clearTelegraphs()
+		elseif kind == "Wiped" then
+			-- the whole team is DOWNED (Event HP): the boss roars over the pit, then escapes (Escaped {Reason = "Wiped"})
+			wipedAt = os.clock()
+			anim.Pattern = nil
+			clearTelegraphs()
+			banner(L("WIPED OUT", "ВСЕ ПАЛИ"), L("Everyone is down - the Gravekeeper escapes!", "Все повержены - Смотритель уходит!"), BLOOD, 4)
+			flash(BLOOD, .18, .6)
+			if boss and anim.Mode ~= "Death" then
+				anim.Mode, anim.ModeAt = "Roar", now()
+				eyesTo(BLOOD)
+				setLights(1.4)
+				play("BossRoar", boss.Pos, { Volume = 1, Pitch = .85 })
+				play("Cackle", boss.Pos, { Delay = .7, Volume = .8 })
+				FX.Shockwave(floorAt(boss.Pos) + V3(0, .4, 0), BLOOD, 30, 1)
+				shakeAt(boss.Pos, .45, .8, 120)
+			end
+		elseif kind == "Pattern" then
+			-- an endgame pattern (difficulties III-V): banner + the boss's pose; the hazards (CombatFX) do the rest
+			local name = tostring(d.Name or "")
+			local start = tonumber(d.StartAt) or now()
+			local dur = math.max(.5, tonumber(d.Duration) or 8)
+			anim.Pattern = { Name = name, StartAt = start, Until = start + dur }
+			local info = PATTERNS[name]
+			if info then
+				banner(L(info.Title[1], info.Title[2]), L(info.Hint[1], info.Hint[2]), info.Color, 2.8)
+			end
+			patternFX(name)
+		elseif kind == "Finale" then
+			-- the difficulty V finale (FinaleFX presents it; BossFX only plays the false victory's collapse)
+			if d.Stage == "FakeDeath" then
+				startFakeDeath(tonumber(d.At) or now())
+			end
 		elseif kind == "Reward" then
 			local parts = {}
 			if (tonumber(d.Candy) or 0) > 0 then
@@ -3118,7 +3490,12 @@ function BossFX.Start(ctx)
 				local def = B.Difficulties[tonumber(d.Unlocked) or 0]
 				title = title .. " · " .. L("UNLOCKED ", "ОТКРЫТО ") .. tostring(def and def.Numeral or d.Unlocked)
 			end
-			task.delay(4.6, function()
+			if d.Finale then
+				title = L("FINALE REWARD", "НАГРАДА ФИНАЛА")
+			end
+			-- after a finale the banner waits for its victory / fail shot
+			local wait = (d.FinaleRun or d.Finale or finaleOn()) and REWARD_AFTER_FINALE or 4.6
+			task.delay(wait, function()
 				banner(title, table.concat(parts, "  ·  "), RGB(255, 200, 70), 4)
 				Bus.Fire("CandyGain", { Amount = tonumber(d.Candy) or 0, Source = "Boss", Big = true })
 				play("TreasureReveal")
@@ -3177,12 +3554,52 @@ function BossFX.Start(ctx)
 	local ACTIVE = { Rising = true, Fight = true }
 	local lastSync = 0
 	local lastPhase = 0
+	-- the endgame pattern from State.Boss (late joiners; the event may also arrive before / after the attributes)
+	local function syncPattern()
+		local name = A("Pattern")
+		local untilAt = tonumber(A("PatternUntil")) or 0
+		local t = now()
+		if type(name) == "string" and name ~= "" and untilAt > t and not finaleOn() then
+			if not anim.Pattern or anim.Pattern.Name ~= name then
+				anim.Pattern = { Name = name, StartAt = t, Until = untilAt }
+			else
+				anim.Pattern.Until = untilAt
+			end
+		elseif anim.Pattern and (t > anim.Pattern.Until + .2 or ((name == "" or name == nil) and t > anim.Pattern.StartAt + 1)) then
+			anim.Pattern = nil
+		end
+		if boss and boss.PatternLight and not (anim.Pattern and anim.Pattern.Name == "LanternWalk") then
+			boss.PatternLight:Destroy()
+			boss.PatternLight = nil
+		end
+	end
+
+	local finaleSeen = nil -- os.clock when a standing rig first met the finale without its FakeDeath event
 	local function syncMode()
 		local st = A("State")
 		local mode = A("Mode") or ""
+		syncPattern()
 		if ACTIVE[st] then
-			if not boss and inArena() then
+			local fin = finaleOn()
+			-- the finale: the Gravekeeper is dead (FinaleFX owns the stage), the rig is never rebuilt
+			if not boss and inArena() and not fin then
 				buildBoss()
+			end
+			if fin and boss and not deathTL then
+				-- the FakeDeath event never reached us (it arrived while the rig streamed in): catch up from State.Finale
+				finaleSeen = finaleSeen or os.clock()
+				if os.clock() - finaleSeen > 1 then
+					finaleSeen = nil
+					local ff = stateFolder.Parent and stateFolder.Parent:FindFirstChild("Finale")
+					local at = ff and tonumber(ff:GetAttribute("StageStart"))
+					if ff and ff:GetAttribute("State") == "FakeDeath" and at and now() - at < FAKE.Spirit then
+						startFakeDeath(at)
+					else
+						destroyBoss()
+					end
+				end
+			elseif not fin then
+				finaleSeen = nil
 			end
 			-- server mode drives the animation unless a local sequence (death / escape) owns it
 			if anim.Mode ~= "Death" and anim.Mode ~= "Escape" then
@@ -3398,13 +3815,24 @@ function BossFX.Start(ctx)
 			return deathTL
 		end,
 		StopSequences = stopSequences,
+		FakeDeath = startFakeDeath,
+		FinaleOn = finaleOn,
+		Downed = downed,
 	}
+
+	-- the corpse's soul core while the (false-victory) death plays: FinaleFX tears the spirit out of it
+	BossFX.CorpsePos = function(): Vector3?
+		if boss and anim.Mode == "Death" then
+			return corePos()
+		end
+		return nil
+	end
 
 	-- preload the rig the first time the player reaches the pit (no hitch when it rises), joining mid-fight works too
 	task.spawn(function()
 		while true do
 			task.wait(1)
-			if Shared.Enabled() and ACTIVE[A("State")] and not boss and inArena() then
+			if Shared.Enabled() and ACTIVE[A("State")] and not boss and inArena() and not finaleOn() then
 				buildBoss()
 				syncMode()
 			end
