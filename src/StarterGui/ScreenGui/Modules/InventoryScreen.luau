@@ -138,7 +138,7 @@ local st: any = {
 	Busy = false,
 	Token = 0,
 	DustShown = nil, -- the Lucky Dust number on screen (counts toward the balance)
-	DustPin = nil, -- {Value, Until}: a reply's balance wins over a not yet replicated attribute
+	DustPin = nil, -- {Value, Stale, Until}: a reply's balance wins while the attribute still shows Stale
 }
 S.State = st
 
@@ -820,20 +820,24 @@ end
 local DUST = Color3.fromRGB(255, 214, 110) -- Resources.Kinds.LuckyDust.Color
 local DUST_DEEP = Color3.fromRGB(196, 128, 18)
 
--- The balance: the projected attribute (Runtime.Project), else the snapshot; a fresh reply's balance
--- wins for a moment so the counter never steps back while the attribute replicates.
-local function dustBalance(): number
+-- The projected balance: the attribute (Runtime.Project), else the snapshot.
+local function projectedDust(): number
 	local v = player:GetAttribute("LuckyDust")
-	local n = 0
 	if type(v) == "number" and v == v then
-		n = math.max(0, math.floor(v))
-	else
-		local snap = st.Snapshot
-		local res = snap and type(snap.Profile) == "table" and snap.Profile.Resources
-		n = type(res) == "table" and math.max(0, math.floor(tonumber(res.LuckyDust) or 0)) or 0
+		return math.max(0, math.floor(v))
 	end
+	local snap = st.Snapshot
+	local res = snap and type(snap.Profile) == "table" and snap.Profile.Resources
+	return type(res) == "table" and math.max(0, math.floor(tonumber(res.LuckyDust) or 0)) or 0
+end
+
+-- The balance to show: a fresh reply's balance wins while the attribute still holds the value from
+-- before that reply (it replicates a moment later), so the counter never steps back; any other
+-- change (a coffin, another reply) shows at once.
+local function dustBalance(): number
+	local n = projectedDust()
 	local pin = st.DustPin
-	if pin and os.clock() < pin.Until and n ~= pin.Value then
+	if pin and os.clock() < pin.Until and n == pin.Stale then
 		return pin.Value
 	end
 	return n
@@ -957,7 +961,7 @@ local function updateForge()
 		c.Bar:SetText(Format.Short(math.min(dust, cost), 0) .. " / " .. Format.Short(cost, 0))
 		c.Bar:SetColor(enough and Theme.Success or DUST_DEEP)
 		local times = cost > 0 and math.floor(dust / cost) or 0
-		c.Times.Text = times > 0 and ("×" .. Format.Short(times, 0)) or ""
+		c.Times.Text = times > 0 and ("🎲×" .. Format.Short(times, 0)) or "" -- how many this balance forges
 		if full then
 			c.Button:SetText(LT("STORAGE FULL", "ХРАНИЛИЩЕ ПОЛНО"))
 			c.Button:SetStyle("secondary")
@@ -993,6 +997,22 @@ local function setDust(value: number, animate: boolean?)
 		end
 	end
 	updateForge()
+end
+
+-- A reply carried the new balance: show it now and hold it until the attribute catches up (a
+-- re-check after the hold settles on the projected value either way).
+local function pinDust(balance: number)
+	local value = math.max(0, math.floor(balance))
+	local stale = projectedDust()
+	if stale ~= value then
+		st.DustPin = { Value = value, Stale = stale, Until = os.clock() + 3 }
+		task.delay(3.1, function()
+			if win and win.IsOpen and ui then
+				setDust(dustBalance(), true)
+			end
+		end)
+	end
+	setDust(value, true)
 end
 
 local function refresh(snapshot: any)
@@ -1549,8 +1569,7 @@ commitDismantle = function(q: any, selection: any, source: any)
 		flyDust(button.Instance, dustTarget(), type(result) == "table" and tonumber(result.Dust) or 0)
 	end
 	if balance then
-		st.DustPin = { Value = math.floor(balance), Until = os.clock() + 3 }
-		setDust(math.floor(balance), true)
+		pinDust(balance)
 	end
 end
 
@@ -1750,8 +1769,7 @@ function actions.Forge(tier: string, c: any)
 		flyDust(ui and ui.ForgeGlyph, c.Frame, cost)
 		local balance = type(result) == "table" and tonumber(result.Balance) or nil
 		if balance then
-			st.DustPin = { Value = math.floor(balance), Until = os.clock() + 3 }
-			setDust(math.floor(balance), true)
+			pinDust(balance)
 		end
 		updateForge()
 	end
