@@ -28,6 +28,7 @@ CE.Errors = {}
 CE.Warnings = {}
 CE.Overrides = {}
 CE.Verbose = false
+CE.TextWidth = nil -- [WP-L] optional fn(text, size) -> width for TextService:GetTextSize / TextBounds (default #text * size * .5)
 
 ------------------------------------------------------------------------------------------------------------------------
 -- Scheduler
@@ -578,6 +579,9 @@ newInstance = function(className)
 			return (st.Props.CFrame or CFrame.new()).Position
 		elseif key == "TextBounds" then
 			local text = tostring(st.Props.Text or "")
+			if CE.TextWidth then -- [WP-L] optional font metrics
+				return Vector2.new(CE.TextWidth(text, st.Props.TextSize or 14), st.Props.TextSize or 14)
+			end
 			return Vector2.new(#text * (st.Props.TextSize or 14) * 0.5, st.Props.TextSize or 14)
 		end
 		local m = METHODS[st.Class] and METHODS[st.Class][key]
@@ -760,8 +764,27 @@ METHODS.TweenService = {
 local TextService = service("TextService")
 METHODS.TextService = {
 	GetTextSize = function(_, text, size, _font, frame)
-		local width = #tostring(text) * size * 0.5
 		local maxW = frame and frame.X or 1e6
+		if CE.TextWidth then -- [WP-L] greedy word wrap with the optional metrics
+			local lines, widest = 0, 0
+			for para in (tostring(text) .. "\n"):gmatch("(.-)\n") do
+				lines += 1
+				local cur = 0
+				for word in para:gmatch("%S+") do
+					local ww = CE.TextWidth(word, size)
+					local add = cur > 0 and CE.TextWidth(" ", size) + ww or ww
+					if cur > 0 and cur + add > maxW then
+						lines += 1
+						cur = ww
+					else
+						cur += add
+					end
+					widest = math.max(widest, math.min(cur, maxW))
+				end
+			end
+			return Vector2.new(widest, lines * size * 1.2)
+		end
+		local width = #tostring(text) * size * 0.5
 		local lines = math.max(1, math.ceil(width / math.max(1, maxW)))
 		return Vector2.new(math.min(width, maxW), lines * size * 1.2)
 	end,
