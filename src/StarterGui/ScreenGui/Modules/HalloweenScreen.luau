@@ -703,7 +703,7 @@ local function revealLayer(): ScreenGui
 	g.Name = "DOGROTS_HalloweenReward"
 	g.ResetOnSpawn = false
 	g.IgnoreGuiInset = true
-	g.DisplayOrder = 70 -- above the kit windows (60) and modals (62), under toasts (95)
+	g.DisplayOrder = 74 -- [WP-D2] above the kit windows (60), modals (62) and CommunityServices (70, no tie), under toasts (95)
 	g.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	g:SetAttribute("NoTranslate", true)
 	g.Parent = player:WaitForChild("PlayerGui")

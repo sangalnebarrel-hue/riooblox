@@ -115,7 +115,18 @@ function Nav.Acquire(key: string): boolean
 	local ok, err = pcall(n.Acquire, Nav.Owner, key)
 	if not ok then
 		warn("Kit: N.Acquire failed: " .. tostring(err))
-		return false
+		-- [WP-D2] A partial Acquire may already have taken navigation (prompts and movement locked, OpenMenu = key)
+		-- before it threw. If it did, the window owns it, so closing the window gives it back; anything else half set
+		-- goes back to the HUD. Either way nothing stays locked without an owner (A04 §8, A07 D5).
+		if not Nav.Owns(key) then
+			if n.Owner ~= "HUD" then
+				local closed, closeErr = pcall(n.Close)
+				if not closed then
+					warn("Kit: N.Close failed: " .. tostring(closeErr))
+				end
+			end
+			return false
+		end
 	end
 	-- Kit windows dim the screen themselves; Acquire showed the main GUI backdrop.
 	local backdrop = mainGui and mainGui:FindFirstChild("Backdrop")

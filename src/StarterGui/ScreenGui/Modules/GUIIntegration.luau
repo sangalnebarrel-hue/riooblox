@@ -1,4 +1,13 @@
 -- The PAWPAD navigation owner. All presentation lives under one ScreenGui.
+-- [WP-D2] Navigation state that other systems read is derived, never saved and restored (A07 D5, A04 §8):
+--  * ProximityPromptService.Enabled == (N.Owner == 'HUD'): every prompt works whenever no menu owns the screen;
+--  * movement: ref-counted control locks by reason (N.LockControls / N.UnlockControls); a non-HUD owner holds the
+--    'Menu' lock. Controls are enabled again only when the last lock goes and only if a lock disabled them, so a
+--    guide or a cinematic using the same locks never fights a menu;
+--  * N.Acquire always ends consistent: each presentation step is isolated, the state steps always run;
+--  * a 1 s watchdog: a non-HUD owner whose surface (window, page, panel, overlay) has been invisible for 2 s gives
+--    navigation back to the HUD (N.Close), and the HUD state re-asserts the prompts invariant. Owners register their
+--    surface check with N.RegisterSurface(owner, fn); an owner without one is never auto-closed.
 local Players=game:GetService('Players')
 local RS=game:GetService('ReplicatedStorage')
 local UIS=game:GetService('UserInputService')
@@ -23,71 +32,90 @@ local function ready()return screens and switchPage and serviceOpen and inventor
 local function dispatch(fn)if ready()then fn()else table.insert(N.Pending,fn)end end
 local function flush()if ready()then local pending=N.Pending;N.Pending={};for _,fn in ipairs(pending)do fn()end end end
 local function mapOverlay()local guide=gui:FindFirstChild('DistrictGuide');return guide and guide:FindFirstChild('MapOverlay')end
-local playerControls,controlsDisabledByUI
-local promptsBeforeMenu
-local function menuControls(active)
- if active then
-  if promptsBeforeMenu==nil then promptsBeforeMenu=Prompts.Enabled end
-  Prompts.Enabled=false
- elseif promptsBeforeMenu~=nil then
-  Prompts.Enabled=promptsBeforeMenu;promptsBeforeMenu=nil
- end
+local playerControls,controlsDisabledByLocks
+local controlLocks={} -- [reason]=true
+local function lockReasons()
+ local list={};for reason in pairs(controlLocks)do table.insert(list,reason)end;table.sort(list);return list
+end
+local function applyControls()
+ pcall(function()local reasons=lockReasons();gui:SetAttribute('ControlLocks',#reasons>0 and table.concat(reasons,',')or nil)end)
  if not playerControls then return end
- if active and not controlsDisabledByUI then
-  if playerControls.controlsEnabled~=false then playerControls:Disable();controlsDisabledByUI=true end
- elseif not active and controlsDisabledByUI then
-  controlsDisabledByUI=false;playerControls:Enable()
- end
+ local ok,err=pcall(function()
+  if next(controlLocks)~=nil then
+   if not controlsDisabledByLocks and playerControls.controlsEnabled~=false then playerControls:Disable();controlsDisabledByLocks=true end
+  elseif controlsDisabledByLocks then
+   controlsDisabledByLocks=false;playerControls:Enable()
+  end
+ end)
+ if not ok then warn('DOGROTS navigation controls: '..tostring(err))end
+end
+-- Ref-counted movement lock (reason: any string, e.g. 'Menu', 'HalloweenGuide', 'Cinema').
+function N.LockControls(reason)controlLocks[tostring(reason or 'Lock')]=true;applyControls()end
+function N.UnlockControls(reason)controlLocks[tostring(reason or 'Lock')]=nil;applyControls()end
+function N.ControlsLocked(reason)if reason~=nil then return controlLocks[tostring(reason)]==true end;return next(controlLocks)~=nil end
+function N.ControlLockReasons()return lockReasons()end
+-- Prompts, the menu lock and the movement sink follow N.Owner (never a saved boolean).
+local function applyNavigation()
+ local hud=N.Owner=='HUD'
+ local ok,err=pcall(function()Prompts.Enabled=hud end)
+ if not ok then warn('DOGROTS navigation prompts: '..tostring(err))end
+ controlLocks.Menu=(not hud)or nil
+ applyControls()
+ ok,err=pcall(function()
+  if hud then
+   Actions:UnbindAction('PawpadMovement')
+  else
+   Actions:BindActionAtPriority('PawpadMovement',function()return Enum.ContextActionResult.Sink end,false,2500,
+    Enum.PlayerActions.CharacterForward,Enum.PlayerActions.CharacterBackward,Enum.PlayerActions.CharacterLeft,Enum.PlayerActions.CharacterRight,Enum.PlayerActions.CharacterJump)
+  end
+ end)
+ if not ok then warn('DOGROTS navigation movement sink: '..tostring(err))end
 end
 task.spawn(function()
  local module=player:WaitForChild('PlayerScripts'):WaitForChild('PlayerModule',15)
  if not module then return end
  local ok,controls=pcall(function()return require(module):GetControls()end)
- if ok and controls then playerControls=controls;menuControls(N.ModalOwnerCount>0)end
+ if ok and controls then playerControls=controls;applyControls()end
 end)
+local function step(name,fn)
+ local ok,err=pcall(fn)
+ if not ok then warn('DOGROTS navigation ('..name..'): '..tostring(err))end
+end
+N.AcquireCount=0
 function N.Acquire(owner,page)
  local previousOwner=N.Owner
-	N.Owner=owner
+ if type(owner)~='string'or owner==''then owner='HUD'end
+ N.Owner=owner
+ N.AcquireCount+=1
  -- Navigation owns one window family; nested dialogs borrow that owner.
  N.ModalOwnerCount=owner=='HUD'and 0 or 1
- gui:SetAttribute('ModalOwnerCount',N.ModalOwnerCount)
- menuControls(N.ModalOwnerCount>0)
- if owner~='RewardMachineWorld'then local toast=gui:FindFirstChild('RewardMachineRewardToast');if toast then toast:Destroy()end end
-	if owner == 'HUD' then
-		Actions:UnbindAction('PawpadMovement')
-	else
-		Actions:BindActionAtPriority(
-			'PawpadMovement',
-			function()
-				return Enum.ContextActionResult.Sink
-			end,
-			false,
-			2500,
-			Enum.PlayerActions.CharacterForward,
-			Enum.PlayerActions.CharacterBackward,
-			Enum.PlayerActions.CharacterLeft,
-			Enum.PlayerActions.CharacterRight,
-			Enum.PlayerActions.CharacterJump
-		)
-	end
- if screens then screens:Hide()end
-	local reward = gui:FindFirstChild('RewardReveal')
-
-	if reward and owner ~= 'HUD' then
-		reward:Destroy()
-	end
- local map=mapOverlay();if map and owner~='Map'then map.Visible=false end
+ step('ModalOwnerCount',function()gui:SetAttribute('ModalOwnerCount',N.ModalOwnerCount)end)
+ applyNavigation()
+ step('toast',function()if owner~='RewardMachineWorld'then local toast=gui:FindFirstChild('RewardMachineRewardToast');if toast then toast:Destroy()end end end)
+ step('screens',function()if screens then screens:Hide()end end)
+ step('reward',function()
+  local reward=gui:FindFirstChild('RewardReveal')
+  if reward and owner~='HUD'then reward:Destroy()end
+ end)
+ step('map',function()local map=mapOverlay();if map and owner~='Map'then map.Visible=false end end)
  -- Hide UI (StarterPlayerScripts.HideUI): any menu brings the interface back.
- if owner~='HUD'and gui:GetAttribute('UIHidden')then gui:SetAttribute('UIHidden',nil)end
+ step('UIHidden',function()if owner~='HUD'and gui:GetAttribute('UIHidden')then gui:SetAttribute('UIHidden',nil)end end)
  -- One open / close sound for every menu family (kit windows play the same cue; Kit.Sound drops the repeat).
- if previousOwner=='HUD'and owner~='HUD'then Sound.Play('Open')elseif previousOwner~='HUD'and owner=='HUD'then Sound.Play('Close')end
- main.Visible=false;gui.ServiceMenus.Visible=false;gui.Backdrop.Visible=owner~='HUD';gui.HUD.Visible=owner=='HUD'and not gui:GetAttribute('UIHidden')
- gui.InventoryToast.Visible=false
- for _,p in ipairs(pages:GetChildren())do if p:IsA('GuiObject')then p.Visible=false end end
- local keyboard=pages:FindFirstChild('SearchKeyboard');if keyboard then keyboard.Visible=false end
- gui:SetAttribute('OpenMenu',owner~='HUD'and(page or owner)or nil)
- gui:SetAttribute('MenuFamily',owner~='HUD'and owner or nil)
- gui:SetAttribute('RewardMachineWorldOpen',owner=='RewardMachineWorld')
+ step('sound',function()if previousOwner=='HUD'and owner~='HUD'then Sound.Play('Open')elseif previousOwner~='HUD'and owner=='HUD'then Sound.Play('Close')end end)
+ step('shell',function()
+  main.Visible=false;gui.ServiceMenus.Visible=false;gui.Backdrop.Visible=owner~='HUD';gui.HUD.Visible=owner=='HUD'and not gui:GetAttribute('UIHidden')
+ end)
+ step('InventoryToast',function()gui.InventoryToast.Visible=false end)
+ step('pages',function()
+  for _,p in ipairs(pages:GetChildren())do if p:IsA('GuiObject')then p.Visible=false end end
+  local keyboard=pages:FindFirstChild('SearchKeyboard');if keyboard then keyboard.Visible=false end
+ end)
+ step('OpenMenu',function()
+  gui:SetAttribute('OpenMenu',owner~='HUD'and(page or owner)or nil)
+  gui:SetAttribute('MenuFamily',owner~='HUD'and owner or nil)
+  gui:SetAttribute('RewardMachineWorldOpen',owner=='RewardMachineWorld')
+ end)
+ return true
 end
 function N.Close()N.Acquire('HUD')end
 function N.DismissDialog()
@@ -148,7 +176,7 @@ end
 function N.BeginReward(receipt)
  if receipt and N.SeenRewards[receipt]then return end
  if receipt then N.SeenRewards[receipt]=true end
- N.RewardEpoch+=1;N.Acquire('Reward','Reward')
+ N.RewardEpoch+=1;N.RewardAt=os.clock();N.Acquire('Reward','Reward')
 return N.RewardEpoch
 end
 function N.EndReward(epoch)if N.Owner=='Reward'and N.RewardEpoch==epoch then N.Close()end end
@@ -223,7 +251,10 @@ end
 for _,child in ipairs(gui:GetChildren())do watchGuide(child)end
 connect(gui.ChildAdded,watchGuide)
 connect(player.CharacterRemoving,N.Close)
-connect(gui.Destroying,function()menuControls(false);Actions:UnbindAction('PawpadMovement');for _,c in ipairs(connections)do c:Disconnect()end;table.clear(N.Pending)end)
+connect(gui.Destroying,function()
+ table.clear(controlLocks);applyControls();pcall(function()Prompts.Enabled=true end);pcall(function()Actions:UnbindAction('PawpadMovement')end)
+ for _,c in ipairs(connections)do c:Disconnect()end;table.clear(N.Pending)
+end)
 -- MY DOGS and the DOGDEX are kit windows on every device (Modules.DogsScreen / DogdexScreen); the static
 -- DogsPage / DogDexPage stay hidden. state: the legacy Menus fields (SelectedDog, SelectedDexIndex/Bonus).
 local function dogScreens(page,state)
@@ -256,6 +287,7 @@ end
 -- that is missing or fails to load leaves the legacy route in place.
 local kitScreens={Inventory='InventoryScreen',Trade='TradeScreen',Navigate='NavigatorScreen',Titles='TitlesScreen',
  Showcase='ShowcaseScreen',Decor='DecorScreen',Mine='MineScreen',Halloween='HalloweenScreen'}
+kitScreens.Shelter='ShelterScreen' -- [WP-D2] DOG SHELTER (DogEconomyOpen('Shelter') from the ShelterPrompt)
 N.KitScreens=kitScreens
 local function kitScreen(page,arg)
  local name=kitScreens[aliases[page]or page];if not name then return false end
@@ -276,6 +308,76 @@ do
   return openScreen(page,state)
  end
 end
+-- Watchdog [WP-D2] ------------------------------------------------------------------------------
+-- Is the current owner's surface on screen? Unknown owners count as visible (never auto-closed).
+local playerGui=player:FindFirstChildOfClass('PlayerGui')
+local function kitWindowVisible()
+ local layer=playerGui and playerGui:FindFirstChild('KitWindows')
+ if not(layer and layer:IsA('LayerCollector')and layer.Enabled)then return false end
+ for _,child in ipairs(layer:GetChildren())do if child:IsA('GuiObject')and child.Visible then return true end end
+ return false
+end
+N.Surfaces={
+ Kit=kitWindowVisible,
+ Page=function()return main.Visible end,
+ Screen=function()return main.Visible end,
+ Service=function()return gui.ServiceMenus.Visible end,
+ Map=function()local map=mapOverlay();return map~=nil and map.Visible end,
+ Community=function()local g=playerGui and playerGui:FindFirstChild('CommunityServices');return g~=nil and g:IsA('LayerCollector')and g.Enabled end,
+ RewardMachineWorld=function()local panel=gui:FindFirstChild('RewardMachineWorldPanel');return panel~=nil and panel.Visible end,
+ -- Reward cards live in RewardReveal; cinematics that borrow the Reward owner (lab machines) have no overlay of their
+ -- own, so a reward owner counts as shown for a grace period after BeginReward.
+ Reward=function()
+  if gui:FindFirstChild('RewardReveal')then return true end
+  local top=playerGui and playerGui:FindFirstChild('KitOverlay')
+  if top and top:FindFirstChild('LabSkip')then return true end
+  return os.clock()-(N.RewardAt or 0)<45
+ end,
+}
+function N.RegisterSurface(owner,fn)if type(owner)=='string'and type(fn)=='function'then N.Surfaces[owner]=fn end end
+N.WatchdogGrace=2
+-- The invariant of the Studio probe (docs/halloween2/SHELTER_TEST.md): OpenMenu==nil <=> the HUD owns navigation
+-- <=> ProximityPromptService.Enabled and no Menu control lock.
+function N.Invariant()
+ local openMenu=gui:GetAttribute('OpenMenu')
+ if N.Owner=='HUD'then
+  if openMenu~=nil then return false,'HUD owner with OpenMenu='..tostring(openMenu)end
+  if not Prompts.Enabled then return false,'HUD owner with ProximityPromptService disabled'end
+  if controlLocks.Menu then return false,'HUD owner holds the Menu control lock'end
+  return true,'HUD'
+ end
+ if openMenu==nil then return false,'owner '..tostring(N.Owner)..' without OpenMenu'end
+ return true,tostring(N.Owner)..':'..tostring(openMenu)
+end
+task.spawn(function()
+ local hiddenSince,seen=nil,-1
+ while gui.Parent do
+  task.wait(1)
+  local ok,err=pcall(function()
+   if seen~=N.AcquireCount then seen=N.AcquireCount;hiddenSince=nil end
+   local consistent,why=N.Invariant()
+   if N.Owner=='HUD'then
+    hiddenSince=nil
+    if not consistent then
+     warn('DOGROTS navigation watchdog: '..why..'; restoring the HUD state')
+     if gui:GetAttribute('OpenMenu')~=nil then N.Close()else applyNavigation()end
+    end
+    return
+   end
+   local visible=consistent
+   local check=N.Surfaces[N.Owner]
+   if visible and check then local okCheck,value=pcall(check);visible=(not okCheck)or value==true end
+   if visible or UIS:GetFocusedTextBox()then hiddenSince=nil;return end
+   hiddenSince=hiddenSince or os.clock()
+   if os.clock()-hiddenSince>=N.WatchdogGrace then
+    warn('DOGROTS navigation watchdog: '..tostring(N.Owner)..' has no visible surface ('..tostring(why)..'); back to the HUD')
+    hiddenSince=nil
+    N.Close()
+   end
+  end)
+  if not ok then warn('DOGROTS navigation watchdog: '..tostring(err))end
+ end
+end)
 Theme.AttachNavigation(gui,N);Theme.BindStandalone(gui,N)
  require(script.Parent.BuffHUD).Start(gui)
 require(script.Parent.OnboardingGuide).Start(gui,N)
