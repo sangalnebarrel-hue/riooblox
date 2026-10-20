@@ -1,0 +1,94 @@
+-- Owned Halloween cosmetics after the event is switched off (ServerScriptService.Halloween.AfterEvent).
+-- With Config.HalloweenEventEnabled = false the event server does not start (HalloweenServer), but pickaxe skins are
+-- owned forever (docs/halloween2/DESIGN.md §2): the equipped skin keeps showing because the player attribute
+-- PickaxeSkin is set from the saved profile, and the Halloween Request remote still answers SkinEquip so a skins menu
+-- can change it. Every other action is refused politely. Player data is never written except p.Halloween.Skin.
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local SSS = game:GetService("ServerScriptService")
+
+local AE = {}
+
+local function owned(h: any, id: string): boolean
+	return type(h) == "table" and type(h.Skins) == "table" and h.Skins[id] == true
+end
+
+local function project(player: Player, Runtime: any)
+	local p = Runtime.Views[player.UserId]
+	local h = type(p) == "table" and p.Halloween or nil
+	local skin = type(h) == "table" and type(h.Skin) == "string" and h.Skin or ""
+	player:SetAttribute("PickaxeSkin", (skin ~= "" and owned(h, skin)) and skin or "")
+end
+
+function AE.Start(request: RemoteFunction?, closedMessage: string)
+	local okRuntime, Runtime = pcall(function()
+		return require(SSS:WaitForChild("Economy"):WaitForChild("Runtime"))
+	end)
+	local okRules, R = pcall(function()
+		return require(SSS.Economy:WaitForChild("Rules"))
+	end)
+	if not okRuntime or not okRules then
+		warn("Halloween AfterEvent: economy runtime unavailable")
+		Runtime = nil
+	end
+
+	local function watch(player: Player)
+		if not Runtime then
+			return
+		end
+		task.spawn(function()
+			for _ = 1, 120 do
+				if not player.Parent then
+					return
+				end
+				if Runtime.Ready(player) then
+					project(player, Runtime)
+					return
+				end
+				task.wait(1)
+			end
+		end)
+	end
+	Players.PlayerAdded:Connect(watch)
+	for _, player in ipairs(Players:GetPlayers()) do
+		watch(player)
+	end
+
+	if not (request and request:IsA("RemoteFunction")) then
+		return
+	end
+	local busy = {}
+	request.OnServerInvoke = function(player: Player, action: any, args: any)
+		if action ~= "SkinEquip" or not Runtime then
+			return false, closedMessage
+		end
+		if busy[player] or not Runtime.Ready(player) then
+			return false, "Your saved profile is still loading"
+		end
+		local id = type(args) == "table" and type(args.Id) == "string" and #args.Id <= 40 and args.Id or ""
+		busy[player] = true
+		local key = "p:" .. player.UserId
+		local ok, result = Runtime.Tx:Run({ key }, function(v)
+			local p = v[key]
+			Runtime.Engine:Authorize(p, player.UserId)
+			local h = p.Halloween
+			R.Check(id == "" or owned(h, id), "You don't own this skin")
+			if type(h) == "table" then
+				h.Skin = id
+			end
+			R.Validate(p)
+			return { Message = id == "" and "Skin removed" or "Skin equipped", Skin = id }
+		end)
+		busy[player] = nil
+		if not ok then
+			return false, tostring(result)
+		end
+		player:SetAttribute("PickaxeSkin", id)
+		return true, result
+	end
+	Players.PlayerRemoving:Connect(function(player)
+		busy[player] = nil
+	end)
+end
+
+return AE

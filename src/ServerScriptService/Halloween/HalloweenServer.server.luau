@@ -12,12 +12,17 @@ local here = script.Parent
 local World = require(here:WaitForChild("World"))
 if not Config.HalloweenEventEnabled then
 	World.Disable()
-	-- an invoke must never hang on a client (event dex tab, skins menu): answer every request politely
+	-- an invoke must never hang on a client (event dex tab, skins menu): every request is answered politely, and owned
+	-- pickaxe skins stay usable (AfterEvent: PickaxeSkin from the saved profile + SkinEquip)
 	local remotes = Halloween:FindFirstChild("Remotes")
 	local request = remotes and remotes:FindFirstChild("Request")
-	if request and request:IsA("RemoteFunction") then
+	local closed = "The Night of the Buried Moon has ended"
+	local okAfter, AfterEvent = pcall(require, here:WaitForChild("AfterEvent"))
+	if okAfter then
+		AfterEvent.Start(request, closed)
+	elseif request and request:IsA("RemoteFunction") then
 		request.OnServerInvoke = function()
-			return false, "The Night of the Buried Moon has ended"
+			return false, closed
 		end
 	end
 	print("DOGROTS_HALLOWEEN_DISABLED (player data kept)")
