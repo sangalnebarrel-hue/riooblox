@@ -592,7 +592,9 @@ for _,module in ipairs(script:GetChildren())do
  end
 end
 
-local venues={Tongue='ON THE DOG LINE',Yard='FROM A LUCKY BLOCK',Machine='AT THE DOG-O-MATIC',Excavation='DUG UP FROM THE DEEP'}
+local venues={Tongue='ON THE DOG LINE',Yard='FROM A LUCKY BLOCK',Machine='AT THE DOG-O-MATIC',Excavation='DUG UP FROM THE DEEP',
+ -- [WP-K1] Chapter II venues (THE UNDERYARD: the Black Coffin, a Crooked Door's rare room, the Last Bark finale)
+ Coffin='FROM THE BLACK COFFIN',RareRoom='BEHIND A CROOKED DOOR',Finale='AFTER THE LAST BARK',Underyard='IN THE UNDERYARD'}
 --[[ M.Run(info): info = {DogId, Start, Origin, Venue, By, Uid, Model?}. Safe to call more than
  once per arrival (the broadcast and the streamed dog both call it): the first call wins. ]]
 function M.Run(info)

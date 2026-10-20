@@ -113,6 +113,18 @@ local rows = {
  {Index=206,Id="HW_PlaguePug",DisplayName="Plague Pug",Rank=5,Ability="Plague",Signature="Strongly raises the mutation chance of its finds and slightly for the whole team.",Tags={"Halloween","Arcane"},VisualAsset="HW_PlaguePug",LayerAffinity=4,Acquisition="Event",MuseumExcluded=true,EventDex="BuriedMoon2026",EventIndex=6,EventCode="H06"},
  {Index=207,Id="HW_HeadlessHound",DisplayName="Headless Hound",Rank=5,Ability="HeadlessTreasure",Signature="Finds Headless Treasure: bonus coin caches on digs, double Cursed Treasure chance.",Tags={"Halloween","Undead","Demonic"},VisualAsset="HW_HeadlessHound",LayerAffinity=4,Acquisition="Event",MuseumExcluded=true,EventDex="BuriedMoon2026",EventIndex=7,EventCode="H07"},
  {Index=208,Id="HW_EclipseDog",DisplayName="Eclipse Dog",Rank=6,Ability="Eclipse",Signature="Rarely turns a find into ECLIPSED (x20 value).",Tags={"Halloween","Night","Space"},VisualAsset="HW_EclipseDog",LayerAffinity=5,Acquisition="Event",MuseumExcluded=true,EventDex="BuriedMoon2026",EventIndex=8,EventCode="H08"},
+ -- THE UNDERYARD 2026 event dogs H09-H16 (Chapter II, WP-K1; DESIGN §9.8). Same contract as H01-H08: permanent, MuseumExcluded,
+ -- their own dex (EventDex "Underyard2026", numbered on from the Buried Moon dex: EventIndex 9..16). Ability numbers live in
+ -- Halloween.Chapter2Config.Dogs; the Chapter II systems apply them while the dog works a yard dig slot. Models / clips:
+ -- RS.Halloween.Models.EventDogs2 (baked by tools/edits/30_dogs2.luau).
+ {Index=209,Id="HW_BellPup",DisplayName="Bell Pup",Rank=2,Ability="EchoEar",Signature="ECHO EAR: echo points last 4 s longer and the next echo jump target pulses.",Tags={"Halloween","Underyard"},VisualAsset="HW_BellPup",LayerAffinity=1,Acquisition="Event",MuseumExcluded=true,EventDex="Underyard2026",EventIndex=9,EventCode="H09"},
+ {Index=210,Id="HW_CandleCorgi",DisplayName="Candle Corgi",Rank=3,Ability="Candlelight",Signature="CANDLELIGHT: hazard warnings reach you 0.35 s earlier and mine gas hurts 30% less.",Tags={"Halloween","Fire"},VisualAsset="HW_CandleCorgi",LayerAffinity=2,Acquisition="Event",MuseumExcluded=true,EventDex="Underyard2026",EventIndex=10,EventCode="H10"},
+ {Index=211,Id="HW_MourningShiba",DisplayName="Mourning Shiba",Rank=3,Ability="MourningVeil",Signature="MOURNING VEIL: once per fight you rise again after 8 s downed; revives on you are 40% faster.",Tags={"Halloween","Underyard","Undead"},VisualAsset="HW_MourningShiba",LayerAffinity=2,Acquisition="Event",MuseumExcluded=true,EventDex="Underyard2026",EventIndex=11,EventCode="H11"},
+ {Index=212,Id="HW_CoffinPug",DisplayName="Coffin Pug",Rank=4,Ability="CoffinSense",Signature="COFFIN SENSE: 8% chance a Black Coffin rolls a bonus showcase find; duplicate conversions give 25% more.",Tags={"Halloween","Underyard","Undead"},VisualAsset="HW_CoffinPug",LayerAffinity=3,Acquisition="Event",MuseumExcluded=true,EventDex="Underyard2026",EventIndex=12,EventCode="H12"},
+ {Index=213,Id="HW_MothHound",DisplayName="Moth Hound",Rank=4,Ability="MothSwarm",Signature="MOTH SWARM: 35% chance moths mark the reward Crooked Door; shows you the nearest choir spirit.",Tags={"Halloween","Underyard","Night"},VisualAsset="HW_MothHound",LayerAffinity=3,Acquisition="Event",MuseumExcluded=true,EventDex="Underyard2026",EventIndex=13,EventCode="H13"},
+ {Index=214,Id="HW_Bridehound",DisplayName="Bridehound",Rank=5,Ability="EternalVow",Signature="ETERNAL VOW: +15 max Event HP; you revive allies twice as fast and they rise with a 20 HP shield.",Tags={"Halloween","Underyard","Undead"},VisualAsset="HW_Bridehound",LayerAffinity=4,Acquisition="Event",MuseumExcluded=true,EventDex="Underyard2026",EventIndex=14,EventCode="H14"},
+ {Index=215,Id="HW_BellkeeperWolf",DisplayName="Bellkeeper Wolf",Rank=5,Ability="ResonantHowl",Signature="RESONANT HOWL: your Perfect hits count double for Resonance and deal 25% more to chains, bells and weak points.",Tags={"Halloween","Underyard","Arcane"},VisualAsset="HW_BellkeeperWolf",LayerAffinity=4,Acquisition="Event",MuseumExcluded=true,EventDex="Underyard2026",EventIndex=15,EventCode="H15"},
+ {Index=216,Id="HW_HollowKing",DisplayName="Hollow King",Rank=6,Ability="HollowCrown",Signature="CROWN OF THE UNDERYARD: every 20 active minutes in the Underyard your next Black Coffin rolls one extra showcase find.",Tags={"Halloween","Royal","Undead"},VisualAsset="HW_HollowKing",LayerAffinity=5,Acquisition="Event",MuseumExcluded=true,EventDex="Underyard2026",EventIndex=16,EventCode="H16"},
 }
 local Definitions = {}
 for _,d in ipairs(rows) do
@@ -142,15 +154,21 @@ local synergies={
  Glitchiba={NULL_HOUR={Recovery=.06,Duplicate=.03}},BooHound={CURSED_FOG={Protection=.07}},DemonDoggo={CURSED_FOG={EventWeightLuck=.05}},
  Necrohound={CURSED_FOG={TreasureMap=.07}},FrostHusky={BLIZZARD={DigSpeed=.08}},Firepup={METEOR={Luck=.06}}}
 for id,def in pairs(Definitions)do def.EventSynergies=synergies[id]or{}end
--- Event dogs (EventDex): only their event sources grant them (frozen-reward mints: Pumpkin Lucky Blocks, the boss, the
--- cauldron, Halloween rewards). Never on the DOG LINE, in ordinary Lucky Blocks, the DOG-O-MATIC or EventRoll; no First
--- Edition run; BasePrice stays the rank price (shelter sale = BasePrice x .25 x Rules.Bonus, trade value = BasePrice x variant).
+-- Event dogs (any EventDex): only their event sources grant them (frozen-reward mints: Pumpkin Lucky Blocks, the boss, the
+-- cauldron, Halloween rewards; in Chapter II the Black Coffin, seal clears, Crooked Doors and the finale). Never on the
+-- DOG LINE, in ordinary Lucky Blocks, the DOG-O-MATIC or EventRoll; no First Edition run; BasePrice stays the rank price
+-- (shelter sale = BasePrice x .25 x Rules.Bonus, trade value = BasePrice x variant). [WP-K1] generalised from BuriedMoon2026.
+local EVENT_DEX={
+ BuriedMoon2026={Name='NIGHT OF THE BURIED MOON',Description='Event dog · NIGHT OF THE BURIED MOON 2026'},
+ Underyard2026={Name='THE UNDERYARD',Description='Event dog · THE UNDERYARD 2026'},
+}
 for _,d in pairs(Definitions)do
- if d.EventDex=='BuriedMoon2026'then
+ if d.EventDex then
+  local event=EVENT_DEX[d.EventDex]
   d.CanSpawnOnLine=false;d.CanDropFromLuckyBlock=false;d.CanDropFromRoulette=false
   d.LineWeight=nil;d.LinePrice=nil;d.FirstEditionLimit=0;d.MinLayer=1
   d.BasePrice=C.Prices[d.Rank];d.Price=d.BasePrice
-  d.EventName='NIGHT OF THE BURIED MOON';d.AcquisitionDescription='Event dog · NIGHT OF THE BURIED MOON 2026'
+  d.EventName=event and event.Name or d.EventDex;d.AcquisitionDescription=event and event.Description or ('Event dog · '..d.EventDex)
  end
 end
 return Definitions
