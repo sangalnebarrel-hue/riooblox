@@ -234,7 +234,12 @@ function Screens.Build(c)
   -- ON: a green button; OFF: the white secondary button (the old muted blue read like ON).
   for i,row in ipairs(rows)do U.Button(settings,'Setting'..row[1],row[2],20,58+(i-1)*64,W-40,50,function()if row[4]then row[4]()else c.Options.setting(row[1])end;c.Draw()end,row[3]and P.green or P.panel)end
   local y=58+#rows*64
-  U.Button(settings,'ReplayTutorial','HOW TO PLAY',20,y,W-40,50,function()c.Close();require(script.Parent.OnboardingGuide).Replay()end,P.green)
+  -- HOW TO PLAY: the tutorial director's cards in replay mode (Modules.TutorialDirector; client only, nothing saved).
+  U.Button(settings,'ReplayTutorial','HOW TO PLAY',20,y,W-40,50,function()
+   c.Close()
+   local ok=pcall(function()require(script.Parent.TutorialDirector).Replay()end)
+   if not ok then require(script.Parent.OnboardingGuide).Replay()end
+  end,P.green)
   U.Text(settings,'Learn kennels, selling, mining and Lucky Blocks.',20,y+59,W-40,48,18,P.muted)
   U.Text(settings,'HIDE UI: press H or the eye button at the top-right for clean screenshots.',20,y+108,W-40,48,18,P.muted)
  else

@@ -421,8 +421,8 @@ function Shop.new(ctx)
   if not self.IsOpen then return end
   layout()
   self.Select(start,true)
-  -- Tutorial step 7: the first pickaxe glows gold.
-  if s.PickaxeOwned==0 and player:GetAttribute('TutorialActive')==true and player:GetAttribute('TutorialStep')==7 then
+  -- Tutorial MINE ORE step: the first pickaxe glows gold. [WP-O] tutorial v4: the quarry is step 8 (TutorialConfig).
+  if s.PickaxeOwned==0 and player:GetAttribute('TutorialActive')==true and player:GetAttribute('TutorialStep')==8 then
    local t=tiles[1];if t then t.Stroke.Color=P.gold;t.Stroke.Thickness=4 end
   end
   if spinConn then spinConn:Disconnect()end

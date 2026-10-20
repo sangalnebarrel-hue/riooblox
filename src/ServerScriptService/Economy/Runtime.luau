@@ -113,6 +113,17 @@ local function projectMining(player,p)
  end
 end
 
+-- Main tutorial (OnboardingRules v4) for Modules.TutorialDirector: step, state, when the step started (server
+-- unix time) and whether SKIP THIS STEP is open yet. A broken record never stops the rest of the projection.
+local function projectTutorial(player,p)
+ local ok,tutorial=pcall(require(script.Parent.OnboardingRules).View,p,os.time())
+ if not ok then warn('DOGROTS tutorial projection failed:',tutorial);return end
+ player:SetAttribute('TutorialVersion',tutorial.Version);player:SetAttribute('TutorialStep',tutorial.Step)
+ player:SetAttribute('TutorialActive',tutorial.Active);player:SetAttribute('TutorialStatus',tutorial.Status)
+ player:SetAttribute('TutorialReadyAt',tutorial.ReadyAt);player:SetAttribute('TutorialStepAt',tutorial.StepAt)
+ player:SetAttribute('TutorialSkippable',tutorial.Skippable)
+end
+
 function Runtime.Project(player,p)
  if not player.Parent or not p then return end
  Rules.UpdateLevel(p)
@@ -152,10 +163,7 @@ function Runtime.Project(player,p)
  player:SetAttribute('InventoryCapacity',Rules.Capacity(p));player:SetAttribute('YardLevel',1+(p.Upgrades.Plot or 0))
  require(script.Parent.Features.Titles).Project(player,p) -- TitleId / TitleCount / TitleLatest (PlayerTitles, TitlesScreen)
  player:SetAttribute('EconomyReady',true);player:SetAttribute('PreviewData',memory)
- local tutorial=require(script.Parent.OnboardingRules).View(p)
- player:SetAttribute('TutorialVersion',tutorial.Version);player:SetAttribute('TutorialStep',tutorial.Step)
- player:SetAttribute('TutorialActive',tutorial.Active);player:SetAttribute('TutorialStatus',tutorial.Status)
- player:SetAttribute('TutorialReadyAt',tutorial.ReadyAt)
+ projectTutorial(player,p)
  local value,count=0,0;for _,s in pairs(p.Loot)do value+=s.Value;count+=s.Count end
  player:SetAttribute('PendingCash',value);player:SetAttribute('LootCount',count)
  -- Dog income (HUD chip, Yard card) and storage state (HUD, kennel labels): one model, Rules.IncomeModel.
@@ -239,8 +247,7 @@ function Runtime.RefreshMining(player,fast)
  projectMining(player,p)
  local levelFloor=Config.XPForLevel(p.Level);local nextFloor=Config.XPForLevel(math.min(Config.MaxLevel,p.Level+1))
  player:SetAttribute('Level',p.Level);player:SetAttribute('XP',math.max(0,p.XP-levelFloor));player:SetAttribute('XPRequired',p.Level>=Config.MaxLevel and 0 or math.max(1,nextFloor-levelFloor))
- local tutorial=require(script.Parent.OnboardingRules).View(p)
- player:SetAttribute('TutorialVersion',tutorial.Version);player:SetAttribute('TutorialStep',tutorial.Step);player:SetAttribute('TutorialActive',tutorial.Active);player:SetAttribute('TutorialStatus',tutorial.Status)
+ projectTutorial(player,p)
  return {Cash=p.Cash,Mining=Rules.Copy(p.Mining),Level=p.Level,XP=math.max(0,p.XP-levelFloor),XPRequired=p.Level>=Config.MaxLevel and 0 or math.max(1,nextFloor-levelFloor)}
 end
 
