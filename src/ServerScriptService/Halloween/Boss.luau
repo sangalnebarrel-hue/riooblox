@@ -2,15 +2,42 @@
 -- Not a sword-clicking boss: every bit of damage comes from DOGROTS' own pickaxe timing hits (SSS.Halloween.Strike):
 -- players break its stone ARMOR PLATES, dig the real GRAVE MOUND after it burrows, smash the SKELETON DOGS that shield it,
 -- break CURSED ROCKS that fall from the sky (each hurls a shard back into the boss) and dig its WEAK POINTS while ENRAGED,
--- all while dodging telegraphed slams / sweeps / stomps (knockback + Curse).
+-- all while dodging telegraphed slams / sweeps / stomps.
+--
+-- CHAPTER II (WP-C, docs/halloween2/DESIGN.md §10.4-§10.5, §11, §23; docs/halloween2/BOSS.md):
+-- * Fighters are the alive players INSIDE the pit (Layout.InPit): only they count for the armor scaling and only they can
+--   hit plates / weak points / mounds / rocks (rim camping is gone). They are in the EventHP combat zone "Boss" (HP bar,
+--   downed / revive; the bleed-out spawn is on the north rim) while they are down there; a downed player stays in the
+--   zone until revived or bled out.
+-- * Its attacks HURT (Event HP): every telegraphed attack is an EventHP hazard (Stomp / Slam / Sweep, the eruption of an
+--   unfound mound, a fake mound's skeleton hands, falling rocks, rock explosions) and BossEvent Attack / Rocks / FakeMound
+--   carry the HazardId(s) (CombatFX draws them, BossFX only animates); the knock-back + Curse land with the hit. Skeleton
+--   bites are melee (knock() deals BossMath.AttackDamage). Targeting skips players EventHP.CanTarget refuses (downed).
+-- * Damage scaling (BossMath, Chapter2Config.Boss): armor per hit = K x raw ^ .42 (x3 weak points, the yard-dog bonus,
+--   SYNC STRIKE +50% for two players' Perfects within .5 s, WEAKENED -30%, H15 +25% on weak points), then a per-player
+--   soft cap (full value up to MaxArmorBase(d) x .0045 / s over 3 s, 20% beyond; mechanic damage — weak points, the real
+--   mound 8%, rocks 3% — bypasses 60% of it) and the timing factor on what lands (a Perfect body hit x PerfectExtra 2,
+--   a Good one x GoodMult .75: a max-gear Good-hit spammer deals ~23% of a Perfect + mechanics player, target <= 35%).
+--   Weak points take Perfect hits only on difficulty V. Difficulties below Chapter2Config.Boss.ScaleFrom (III) keep the
+--   Chapter I curve without a cap.
+-- * Endgame patterns on III / IV / V (Chapter2Config.Boss.Endgame, RS.Halloween.BossPatterns): GRAVE LINES, LANTERN
+--   WALK, BONE RAIN (BossEvent Pattern {Name, StartAt, Duration, HazardIds}); cursed rock waves are capped per phase on
+--   III / IV and unlimited on V; every pattern passes Hazards.Check + Hazards.CheckPattern (a safe spot always exists).
+-- * Team wipe (EventHP.OnWipe "Boss"): BossEvent Wiped {} then finish "Escaped" / Reason "Wiped".
+-- * Rewards: contributors who left before the end are parked in Boss.Pending and paid when they rejoin. Chapter II
+--   players with a full reward also get modules.Chapter2.BossReward(player, d, {Finale}) (Bell Shards, first-clear keys,
+--   finale rows; own receipt "hw-boss2:<fight>:<userId>") and every armor credit feeds C2.Progress(player, "BossDamage").
+-- * Difficulty V with Shared.BossFinaleEnabled(): armor 0 is a FALSE VICTORY -> modules.BossFinale.Begin(F) runs the
+--   three post-death phases on this same fight (Phase stays 5, Mode "Finale"); it calls finish(F, "Defeated") exactly
+--   once at the end (victory: finale rewards; fail: the normal difficulty V reward).
 --
 -- Summon: the Grave Bell prompt (Layout.Bell) opens the Halloween window on the BOSS tab; the tab sends Request
 -- `BossSummon {Difficulty}` (near the bell, difficulty unlocked: h.Boss.Unlocked >= d, cooldown over, one fight per server).
 -- The Server Exorcism milestone 5000 summons it too (Exorcism.SetBossHook; Exorcism.Reset() when that fight is over).
 -- API: Boss.Summon(difficulty, reason, player?) -> ok, err ; Boss.Abort(reason) ; Boss.Fight (live table, read only) ;
---      Boss.ArmorDamage(raw, weak) ; Boss.DogBonus(team) ; Boss.RockSpot(x, z) ; Boss.Status(player?) ;
---      Boss.Pending / Boss.ResumePending(player) (rewards retried on rejoin) ; Boss.Init(core, modules) + Boss.Step(dt)
---      (tests) ; Boss.Start.
+--      Boss.ArmorDamage(raw, weak, difficulty?) ; Boss.DogBonus(team) ; Boss.RockSpot(x, z) ; Boss.Status(player?) ;
+--      Boss.Pending / Boss.ResumePending(player) (rewards paid on rejoin) ; Boss.Api (used by BossFinale) ;
+--      Boss.Init(core, modules) + Boss.Step(dt) + Boss.Now / Rand / GetPlayers / Wait / Later (tests) ; Boss.Start.
 --
 -- Phases (armor fraction, Config.Boss.Phases): 1 AWAKENING (plates + attacks), 2 BURROW (6 mounds, one real: dig it ->
 -- huge damage + eruption; fakes -> skeleton hands + curse; timeout -> eruption shockwave; then a surface window, repeat),
@@ -21,31 +48,39 @@
 --
 -- Published on RS.Halloween.State.Boss (attributes): State ("Idle"|"Rising"|"Fight"|"Defeated"|"Escaped"), Difficulty,
 --   Numeral, DifficultyName, Phase (0 idle, 1..5), PhaseName, Mode (animation state: Rise|Idle|Walk|Windup|Roar|Burrow|
---   Underground|Erupt|Stagger|Enrage|Death|Escape), ModeAt, ModeUntil, Attack, Armor, MaxArmor, StartedAt, EndsAt,
+--   Underground|Erupt|Stagger|Enrage|Death|Escape|Finale), ModeAt, ModeUntil, Attack, Armor, MaxArmor, StartedAt, EndsAt,
 --   NextSummonAt, Fighters, Revision, Shield, ShieldLeft, ShieldNeed, WeakOpenUntil, WeakSlots ("Heart,Throat"), Plates
 --   ("110111" in Models.Boss.Slots.PlateOrder, 0 = shattered / regrowing), PlateWear ("003900": cracks 0..9 per plate),
---   RockWave, BurrowUntil, Reason, FightId, Enraged, BossCF (CFrame, 4 Hz).
+--   RockWave, RockWaves (cap, 0 = unlimited), BurrowUntil, Reason, FightId, Enraged, BossCF (CFrame, 4 Hz), Pattern
+--   (endgame pattern running, "" none), PatternUntil, PerfectOnly (weak points take Perfect hits only).
 -- The boss position: Workspace.HalloweenLive.Boss.BossRig.BossRoot (anchored, invisible, Persistent model; moved <= 10 Hz).
 -- Signal "BossEvent" {Kind = Rise | Phase | Attack | Knock | Burrow | MoundHit | FakeMound | Erupt | Skeletons | Shield |
 --   SkeletonDown | Bite | Rocks | RockLand | RockShard | RockExplode | Enrage | WeakPoint | PlateBreak | PlateRegrow | Hit |
---   Defeated | Escaped | Reward, ...} (fields documented at each Signal call below).
+--   Pattern | Wiped | Defeated | Escaped | Reward | RewardChapter2 | Finale (BossFinale), ...} (fields at each call below).
 -- Strike kinds registered here (SSS.Halloween.Strike, WP7): BossPlate (BREAK; HP = plate integrity in ARMOR units, each hit
--- removes exactly the armor it dealt), BossWeak (DIG; never breaks, x3 armor damage, + the digger's yard-dog bonus: their
--- best assigned dog digs with them, StrikeBegin Extra {Companion, Event, DogBonus}), BossMound / BossSkeleton / CursedRock
--- (DIG / STRIKE / BREAK; Damage = "Power": HP counts tier-normalized hits). Target parts carry attributes Slot / Index / Key.
+-- removes exactly the armor that landed), BossWeak (DIG; never breaks, x3 armor damage, + the digger's yard-dog bonus:
+-- their best assigned dog digs with them, StrikeBegin Extra {Companion, Event, DogBonus, PerfectOnly}), BossMound /
+-- BossSkeleton / CursedRock (DIG / STRIKE / BREAK; Damage = "Power": HP counts tier-normalized hits). Target parts carry
+-- attributes Slot / Index / Key.
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Halloween = RS:WaitForChild("Halloween")
 local Shared = require(Halloween:WaitForChild("Shared"))
+local BossMath = require(Halloween:WaitForChild("BossMath"))
+local Hazards = require(Halloween:WaitForChild("Hazards"))
+local Patterns = require(Halloween:WaitForChild("BossPatterns"))
+local C2Cfg = require(Halloween:WaitForChild("Chapter2Config"))
 local Config = Shared.Config
 local Layout = Shared.Layout
 local Models = Halloween:FindFirstChild("Models")
 local BossModels = Models and Models:FindFirstChild("Boss") and require(Models.Boss) or nil
 
-local B = Config.Boss
-local Boss = { Fight = nil, NextSummonAt = 0, Started = false }
+local B = Config.Boss -- Chapter I numbers (armor, phases, rewards)
+local CB = C2Cfg.Boss -- Chapter II numbers (damage scaling, Event HP attacks, endgame patterns)
+local Boss = { Fight = nil, NextSummonAt = 0, Started = false, StateRoot = nil :: Instance? }
+Boss.ZONE = "Boss" -- EventHP combat zone id
 
 -- tunables that are not in the shared Config (Config.Boss.X overrides any of them)
 local T = {
@@ -65,14 +100,15 @@ local T = {
 	WaveGap = 13,            -- seconds between rock waves
 	RockImpactRadius = 4.5, RockImpactCurse = 6, RockKnock = 40, RockExplodeRadius = 7, RockExplodeCurse = 10,
 	TerraceRockRadius = 3,   -- rocks landing on the 6-wide terrace ring: telegraph + impact radius that fits the ring
+	RockExplodeWarn = 1.2,   -- seconds of telegraph before an unbroken rock explodes (EventHP hazard)
 	RewardRetry = { 2, 5, 12, 30, 60 }, -- seconds between reward attempts (a failed BossReward transaction is retried)
 	WeakCycle = 12,          -- enraged: weak points open every N seconds
 	Stomp = { Radius = 9.5, Telegraph = 1.2, Knock = 50, Curse = 6 },
 	SweepRadius = 20, SweepAngle = 120,
 	EmptyGrace = 40, ExorcismGrace = 75, -- (40: a solo fighter who dies can respawn and walk back from the spawn)
 	EndHold = 12,            -- seconds the Defeated / Escaped state stays published (death animation, banners)
-	ArmorK = 5, ArmorExp = .55, -- armor damage = K * rawPickaxeDamage ^ Exp (compresses the 1..1500 pickaxe range)
-	ArenaRadius = 42,        -- fighters: alive players this close (horizontally) to the pit centre (incl. the bell)
+	ArmorK = 5, ArmorExp = .55, -- Chapter I curve (difficulties below Chapter2Config.Boss.ScaleFrom)
+	ArenaRadius = 42,        -- (Chapter I fighter rule, only when Chapter2Config.Boss.InPitOnly == false)
 	SkeletonScore = .012,    -- reward-share credit (share of MaxArmor) for smashing a skeleton dog / digging a fake mound
 	MoundScore = .006,
 }
@@ -122,6 +158,10 @@ local function now(): number
 	return Boss.Now()
 end
 
+local function rand01(): number
+	return Boss.Rand()
+end
+
 local function diffDef(d: number)
 	return B.Difficulties[math.clamp(math.floor(d or 1), 1, #B.Difficulties)]
 end
@@ -165,17 +205,42 @@ local function idOf(target: any): any
 	return target.Id or target.TargetId
 end
 
+local function playerOf(uid: number): Player?
+	for _, pl in ipairs(Boss.GetPlayers()) do
+		if pl.UserId == uid and pl.Parent then
+			return pl
+		end
+	end
+	return nil
+end
+
+-- the Chapter II damage scaling (curve .42, soft cap, Perfect bonus) runs from this difficulty on
+local function scaled(F): boolean
+	return (F and F.Difficulty or 1) >= (tonumber(CB.ScaleFrom) or 1)
+end
+
+local function endgame(F): boolean
+	local e = CB.Endgame
+	return type(e) == "table" and type(e.Difficulties) == "table" and e.Difficulties[F.Difficulty] == true
+end
+
+local function perfectOnly(F): boolean
+	local e = CB.Endgame
+	return type(e) == "table" and type(e.WeakPointPerfectOnly) == "table" and e.WeakPointPerfectOnly[F.Difficulty] == true
+end
+
 -- the boss's own damage scale: raw pickaxe damage (1 .. ~1500) compressed so every tier matters but nobody one-shots
-function Boss.ArmorDamage(raw: number, weak: boolean?): number
+-- (difficulty: the Chapter II curve from CB.ScaleFrom on, else the Chapter I curve K x raw ^ .55)
+function Boss.ArmorDamage(raw: number, weak: boolean?, difficulty: number?): number
 	raw = math.max(0, tonumber(raw) or 0)
 	if raw <= 0 then
 		return 0
 	end
-	local d = T.ArmorK * raw ^ T.ArmorExp
-	if weak then
-		d *= (B.WeakPoints and B.WeakPoints.Mult) or 3
+	local opts: { [string]: any } = { Weak = weak == true, WeakMult = (B.WeakPoints and B.WeakPoints.Mult) or 3 }
+	if (difficulty or 1) < (tonumber(CB.ScaleFrom) or 1) then
+		opts.K, opts.Exp = T.ArmorK, T.ArmorExp
 	end
-	return math.max(1, math.floor(d + .5))
+	return (BossMath.ArmorDamage(raw, opts))
 end
 
 -- typical normal-hit damage of a player's REAL pickaxe (target HP is expressed in "average hits")
@@ -255,6 +320,17 @@ local function weakSlots(F): string
 	return table.concat(out, ",")
 end
 
+local function rockCap(F): number
+	local rocks = type(CB.Endgame) == "table" and CB.Endgame.CursedRocks or nil
+	if type(rocks) ~= "table" then
+		return 0
+	end
+	if type(rocks.Unlimited) == "table" and rocks.Unlimited[F.Difficulty] then
+		return 0
+	end
+	return math.max(0, math.floor(tonumber(type(rocks.WavesPerPhase) == "table" and rocks.WavesPerPhase[F.Difficulty]) or 0))
+end
+
 local function publish(F)
 	if not stateFolder then
 		return
@@ -275,9 +351,13 @@ local function publish(F)
 		setAttr("Plates", "")
 		setAttr("PlateWear", "")
 		setAttr("RockWave", 0)
+		setAttr("RockWaves", 0)
 		setAttr("BurrowUntil", 0)
 		setAttr("Enraged", false)
 		setAttr("Attack", "")
+		setAttr("Pattern", "")
+		setAttr("PatternUntil", 0)
+		setAttr("PerfectOnly", false)
 		setAttr("NextSummonAt", Boss.NextSummonAt)
 		return
 	end
@@ -288,7 +368,7 @@ local function publish(F)
 	setAttr("Numeral", d.Numeral)
 	setAttr("DifficultyName", d.Name)
 	setAttr("Phase", F.Phase)
-	setAttr("PhaseName", (phaseDef(F.Phase) or {}).Name or "")
+	setAttr("PhaseName", F.PhaseName or (phaseDef(F.Phase) or {}).Name or "")
 	setAttr("Mode", F.Mode)
 	setAttr("ModeAt", F.ModeAt)
 	setAttr("ModeUntil", F.ModeUntil)
@@ -307,9 +387,13 @@ local function publish(F)
 	setAttr("Plates", plateMask(F))
 	setAttr("PlateWear", plateWear(F))
 	setAttr("RockWave", F.RockWave)
+	setAttr("RockWaves", rockCap(F))
 	setAttr("BurrowUntil", F.BurrowUntil)
 	setAttr("Reason", F.Reason)
-	setAttr("Enraged", F.Phase >= 5)
+	setAttr("Enraged", F.Phase >= 5 and F.Finale == nil)
+	setAttr("Pattern", F.Pattern and F.Pattern.Name or "")
+	setAttr("PatternUntil", F.Pattern and F.Pattern.Until or 0)
+	setAttr("PerfectOnly", perfectOnly(F))
 end
 
 local function setMode(F, mode: string, seconds: number?)
@@ -387,13 +471,146 @@ local function moveRoot(F, hidden: boolean?)
 end
 
 ---------------------------------------------------------------------------------------------------------------------
+-- Event HP (modules.EventHP, started after this module: reached lazily, hooked once)
+---------------------------------------------------------------------------------------------------------------------
+local hookedHP: any = nil
+local onWipe, onRevive -- (defined with the fight logic below)
+
+-- the bleed-out spawn: the north rim, a few studs behind the top of the north ramp, facing the pit
+local function rimSpawn(): CFrame
+	local top = Layout.Pit.Ramps[1].Top
+	local pos = Vector3.new(top.X, Layout.FloorY + 3.2, top.Z - 6)
+	return CFrame.lookAt(pos, Vector3.new(Layout.Pit.Center.X, pos.Y, Layout.Pit.Center.Z))
+end
+Boss.RimSpawn = rimSpawn
+
+local function combat(): any
+	local hp = modules and modules.EventHP
+	if type(hp) ~= "table" or type(hp.Enter) ~= "function" then
+		return nil
+	end
+	if hookedHP ~= hp then
+		hookedHP = hp
+		pcall(hp.SetZone, Boss.ZONE, { Spawn = rimSpawn(), Name = { "THE PIT", "ЯМА" } })
+		if type(hp.OnWipe) == "function" then
+			hp.OnWipe(function(zoneId, players)
+				if zoneId == Boss.ZONE then
+					onWipe(players)
+				end
+			end)
+		end
+		if type(hp.OnRevive) == "function" then
+			hp.OnRevive(function(player, zoneId, by)
+				if zoneId == Boss.ZONE then
+					onRevive(player, by)
+				end
+			end)
+		end
+	end
+	return hp
+end
+Boss.Combat = combat
+
+-- seconds of extra warning EventHP gives H10 Candle Corgi owners (the impact waits for it so everyone keeps the full
+-- telegraph and the H10 owner sees it earlier)
+local function lead(): number
+	local hp = combat()
+	local ok, v = pcall(function()
+		return hp.Rules.Config().H10Lead
+	end)
+	return (ok and tonumber(v)) or .35
+end
+Boss.Lead = lead
+
+local function hasDog(player: Player, key: string): boolean
+	local hp = combat()
+	if hp and type(hp.HasDog) == "function" then
+		local ok, v = pcall(hp.HasDog, player, key)
+		return ok and v == true
+	end
+	return false
+end
+
+-- can the boss aim at this player (in the pit's combat zone and not downed)
+local function canTarget(player: Player): boolean
+	local hp = combat()
+	if hp and type(hp.CanTarget) == "function" then
+		local ok, v = pcall(hp.CanTarget, player)
+		return ok and v == true
+	end
+	return true
+end
+Boss.CanTarget = canTarget
+
+local function cancelHazards(F, ids: { number }?)
+	local hp = combat()
+	if hp and type(hp.CancelHazards) == "function" then
+		pcall(hp.CancelHazards, Boss.ZONE, ids)
+	end
+	if F and F.Hazards then
+		if ids then
+			for _, id in ipairs(ids) do
+				F.Hazards[id] = nil
+			end
+		else
+			table.clear(F.Hazards)
+		end
+	end
+end
+Boss.CancelHazards = cancelHazards
+
+-- EventHP hazards (zone "Boss") with an OnHit that adds the Curse and tells the hit player (BossEvent Knock: the curse
+-- popup; EventHP already applied the damage and the knock-back); record = a list that collects the hit userIds -> ids
+local function hazardWave(F, defs: { any }, curse: number?, attack: string?, record: { number }?): { number }
+	local hp = combat()
+	if not hp or type(hp.HazardWave) ~= "function" or #defs == 0 then
+		return {}
+	end
+	local hit = function(player: Player, dealt: number, velocity: Vector3?, _pos: Vector3?)
+		if F.Ended or not player or not player.Parent then
+			return
+		end
+		if record and not table.find(record, player.UserId) then
+			table.insert(record, player.UserId)
+		end
+		if curse and curse > 0 and core and core.AddCurse then
+			core.AddCurse(player, curse)
+		end
+		-- BossEvent Knock {Velocity, Curse, Attack, Damage} (to the hit player)
+		signal(player, { Kind = "Knock", Velocity = velocity, Curse = curse or 0, Attack = attack, Damage = math.floor((tonumber(dealt) or 0) + .5) })
+	end
+	local list = {}
+	for _, d in ipairs(defs) do
+		local def = table.clone(d)
+		def.OnHit = hit
+		table.insert(list, def)
+	end
+	local ok, ids = pcall(hp.HazardWave, Boss.ZONE, list)
+	if not ok or type(ids) ~= "table" then
+		warn("Halloween Boss: hazard wave failed: " .. tostring(ids))
+		return {}
+	end
+	F.Hazards = F.Hazards or {}
+	for _, id in ipairs(ids) do
+		F.Hazards[id] = true
+	end
+	return ids
+end
+Boss.HazardWave = hazardWave
+
+---------------------------------------------------------------------------------------------------------------------
 -- fighters, contribution
 ---------------------------------------------------------------------------------------------------------------------
 local function isFighterPos(pos: Vector3): boolean
 	local c = Layout.Pit.Center
-	local d = flatten(pos - c).Magnitude
-	return (Layout.InPit(pos) or d <= T.ArenaRadius) and pos.Y > c.Y - 14 and pos.Y < c.Y + 22
+	if CB.InPitOnly == false then
+		local d = flatten(pos - c).Magnitude
+		return (Layout.InPit(pos) or d <= T.ArenaRadius) and pos.Y > c.Y - 14 and pos.Y < c.Y + 22
+	end
+	-- only the pit counts (DESIGN §10.4: rim camping removed); y above the floor - 14 (a player falling through is not one)
+	return Layout.InPit(pos) and pos.Y > c.Y - 14
 end
+Boss.IsFighterPos = isFighterPos
 
 local function fighterList(): { Player }
 	local out = {}
@@ -412,11 +629,53 @@ local function maxArmorFor(F, n: number): number
 	return B.BaseArmor * F.Def.Armor * (1 + B.PerFighterArmor * (n - 1))
 end
 
-local function updateFighters(F)
+-- EventHP zone membership follows the pit: fighters are entered, players who climbed out are left (a downed player stays
+-- until revived / bled out: crawling out of the pit must not cancel the downed state)
+local function syncCombat(F, list: { Player })
+	local hp = combat()
+	if not hp or F.Ended then
+		return
+	end
+	local inFight = {}
+	for _, pl in ipairs(list) do
+		inFight[pl] = true
+		local okZ, zone = pcall(hp.Zone, pl)
+		if okZ and zone ~= Boss.ZONE then
+			local ok, err = pcall(hp.Enter, pl, Boss.ZONE)
+			if not ok then
+				warn("Halloween Boss: EventHP.Enter failed: " .. tostring(err))
+			end
+		end
+	end
+	local okP, members = pcall(hp.Players, Boss.ZONE)
+	for _, pl in ipairs(okP and members or {}) do
+		if not inFight[pl] and not hp.IsDowned(pl) then
+			pcall(hp.Leave, pl, Boss.ZONE)
+		end
+	end
+end
+
+-- every member of the zone out (fight over); downed ones get up where they are
+local function leaveCombat(keepDowned: boolean?)
+	local hp = combat()
+	if not hp then
+		return
+	end
+	local okP, members = pcall(hp.Players, Boss.ZONE)
+	for _, pl in ipairs(okP and members or {}) do
+		if not (keepDowned and hp.IsDowned(pl)) then
+			pcall(hp.Leave, pl, Boss.ZONE)
+		end
+	end
+end
+
+-- fighters every step (combat zone membership), the armor scaling once a second
+local function updateFighters(F, rescale: boolean?)
 	local list = fighterList()
 	F.FighterList = list
+	syncCombat(F, list)
 	local n = #list
-	if n ~= F.Fighters then
+	if rescale and n ~= F.Fighters then
 		F.Fighters = n
 		local frac = F.MaxArmor > 0 and F.Armor / F.MaxArmor or 1
 		F.MaxArmor = maxArmorFor(F, n)
@@ -428,22 +687,30 @@ local function updateFighters(F)
 	return n
 end
 
-local function avgDamage(F): number
-	local sum, n = 0, 0
-	local list = F.FighterList or {}
-	if #list == 0 then
-		list = Boss.GetPlayers()
+-- fighters the boss may aim at (not downed)
+local function targetable(F): { Player }
+	local out = {}
+	for _, pl in ipairs(F.FighterList or {}) do
+		if canTarget(pl) then
+			table.insert(out, pl)
+		end
 	end
-	for _, pl in ipairs(list) do
-		sum += damageOf(pl)
-		n += 1
+	return out
+end
+Boss.Targetable = targetable
+
+local function targetPositions(F): { Vector3 }
+	local out = {}
+	for _, pl in ipairs(targetable(F)) do
+		local p = rootPos(pl)
+		if p then
+			table.insert(out, p)
+		end
 	end
-	return n > 0 and math.max(1, sum / n) or 1
+	return out
 end
 
-local _ = avgDamage
-
--- reward-share credit without armor damage (skeletons, fake mounds)
+-- reward-share credit without armor damage (skeletons, fake mounds, revives, finale mechanics)
 local function score(F, player: Player?, amount: number)
 	if not player or amount <= 0 then
 		return
@@ -465,10 +732,21 @@ local function credit(F, player: Player?, amount: number)
 	local frac = (F.SoulFrac[uid] or 0) + amount / per
 	local souls = math.floor(frac)
 	F.SoulFrac[uid] = frac - souls
-	local whole = math.floor(amount + .5)
-	if core and core.Queue and whole > 0 then
+	F.WholeFrac = F.WholeFrac or {}
+	local wf = (F.WholeFrac[uid] or 0) + amount
+	local whole = math.floor(wf)
+	F.WholeFrac[uid] = wf - whole
+	if core and core.Queue and (whole > 0 or souls > 0) then
 		-- (curse relief comes with every strike hit: kinds register Activity = "BossDamage")
 		core.Queue(player, { Quest = { BossDamage = whole }, Stat = { BossDamage = whole }, Souls = souls })
+	end
+	-- Chapter II contracts ("Deal 2500 damage to THE GRAVEKEEPER"), stats and resonance (queued, 1 write per second)
+	local C2 = modules and modules.Chapter2
+	if whole > 0 and type(C2) == "table" and type(C2.Progress) == "function" then
+		local ok, err = pcall(C2.Progress, player, "BossDamage", whole)
+		if not ok then
+			warn("Halloween Boss: Chapter2.Progress failed: " .. tostring(err))
+		end
 	end
 end
 
@@ -545,9 +823,9 @@ local function hitQuality(hit: any): (number, boolean, number)
 end
 
 ---------------------------------------------------------------------------------------------------------------------
--- knockback / curse
+-- knockback / curse / Event HP (melee: skeleton bites; telegraphed attacks are hazards)
 ---------------------------------------------------------------------------------------------------------------------
-local function knock(player: Player, from: Vector3, power: number, up: number?, curse: number?, attack: string?)
+local function knock(F, player: Player, from: Vector3, power: number, up: number?, curse: number?, attack: string?)
 	local root = core and core.Root(player)
 	if not root then
 		return
@@ -564,33 +842,39 @@ local function knock(player: Player, from: Vector3, power: number, up: number?, 
 	if curse and curse > 0 and core.AddCurse then
 		core.AddCurse(player, curse)
 	end
-	signal(player, { Kind = "Knock", Velocity = v, Curse = curse or 0, Attack = attack })
+	local dealt = 0
+	local hp = combat()
+	if hp and attack then
+		local ok, res = pcall(hp.Damage, player, BossMath.AttackDamage(attack, F.Difficulty), attack, { Kind = attack, Knock = v, From = from })
+		dealt = (ok and tonumber(res)) or 0
+	end
+	-- BossEvent Knock {Velocity, Curse, Attack, Damage}
+	signal(player, { Kind = "Knock", Velocity = v, Curse = curse or 0, Attack = attack, Damage = math.floor(dealt + .5) })
 end
 
--- players whose root is inside a horizontal radius (and roughly at arena height; with groundY: standing on that surface,
--- root .5 .. 6.5 above it, so a rock on the terrace ring never hits the floor below it and vice versa)
-local function playersIn(center: Vector3, radius: number, F, groundY: number?): { Player }
+-- targetable players whose root is inside a horizontal radius at arena height (melee reach)
+local function playersIn(center: Vector3, radius: number, F): { Player }
 	local out = {}
-	for _, pl in ipairs((F and F.FighterList) or fighterList()) do
+	for _, pl in ipairs(targetable(F)) do
 		local pos = rootPos(pl)
-		local level = pos ~= nil and (if groundY then pos.Y > groundY + .5 and pos.Y < groundY + 6.5 else pos.Y < floorY() + 10)
-		if pos and level and flatten(pos - center).Magnitude <= radius + 1 then
+		if pos and pos.Y < floorY() + 10 and flatten(pos - center).Magnitude <= radius + 1 then
 			table.insert(out, pl)
 		end
 	end
 	return out
 end
 
--- fighters down in the pit (not the rim spectators): the ones attacks and rocks are aimed at
-local function pitFighters(F): { Player }
-	local out = {}
-	for _, pl in ipairs(F.FighterList or {}) do
-		local pos = rootPos(pl)
-		if pos and Layout.InPit(pos) and pos.Y < floorY() + 10 then
-			table.insert(out, pl)
-		end
-	end
-	return out
+-- a telegraphed attack as an EventHP hazard (Circle / Cone on the pit floor, or on the real surface: Ground)
+local function attackHazard(F, kind: string, shape: any, tele: number, impactAt: number, knockPower: number, up: number?, curse: number?,
+	record: { number }?): number?
+	local def = { Shape = shape, Telegraph = tele, ImpactAt = impactAt, Damage = BossMath.AttackDamage(kind, F.Difficulty),
+		Knock = { Power = knockPower, Up = up or knockPower * .55 }, Kind = kind, Source = "Gravekeeper" }
+	local ids = hazardWave(F, { def }, curse, kind, record)
+	return ids[1]
+end
+
+local function teleFor(F, kind: string, base: number): number
+	return Patterns.Telegraph(base, F.Difficulty, BossMath.AttackDamage(kind, F.Difficulty))
 end
 
 ---------------------------------------------------------------------------------------------------------------------
@@ -651,15 +935,15 @@ local function openWeak(F)
 		local entry = { Slot = slot, Role = "Weak" }
 		addTarget(F, { Kind = "BossWeak", CFrame = slotCF(F, def.Pos), Radius = def.Radius, HP = 1e9, MaxHP = 1e9, Panel = false,
 			Color = Color3.fromRGB(120, 255, 110), Material = "Neon", Size = Vector3.one * def.Radius * 2, Name = "WEAK POINT",
-			NameRU = "СЛАБОЕ МЕСТО", Variant = slot, Attributes = { Slot = slot }, Data = { Slot = slot } }, entry)
+			NameRU = "СЛАБОЕ МЕСТО", Variant = slot, Attributes = { Slot = slot, PerfectOnly = perfectOnly(F) }, Data = { Slot = slot } }, entry)
 		F.Weak[slot] = entry
 		table.insert(slots, slot)
 	end
 	setAttr("WeakOpenUntil", F.WeakUntil)
 	setAttr("WeakSlots", weakSlots(F))
 	bump()
-	-- BossEvent WeakPoint {Open, Slots = {slot...}, Until}
-	signal("zone", { Kind = "WeakPoint", Open = true, Slots = slots, Until = F.WeakUntil })
+	-- BossEvent WeakPoint {Open, Slots = {slot...}, Until, PerfectOnly}
+	signal("zone", { Kind = "WeakPoint", Open = true, Slots = slots, Until = F.WeakUntil, PerfectOnly = perfectOnly(F) or nil })
 end
 
 local function closeWeak(F)
@@ -701,6 +985,9 @@ local function invulnerable(F): (boolean, string?)
 	if F.Ended then
 		return true, "The Gravekeeper has fallen"
 	end
+	if F.Finale then
+		return true, "The Gravekeeper has fallen"
+	end
 	if F.PendingPhase or F.PendingDefeat then
 		return true, "The Gravekeeper is changing form!"
 	end
@@ -718,7 +1005,7 @@ end
 
 -- all armor damage goes through here (clamped at the next phase threshold: no phase is ever skipped)
 applyDamage = function(F, player: Player?, amount: number, source: string, force: boolean?): number
-	if not F or F.Ended or amount <= 0 then
+	if not F or F.Ended or F.Finale or amount <= 0 then
 		return 0
 	end
 	if not force and invulnerable(F) then
@@ -733,6 +1020,15 @@ applyDamage = function(F, player: Player?, amount: number, source: string, force
 	F.Armor -= applied
 	credit(F, player, applied)
 	setAttr("Armor", math.max(0, math.ceil(F.Armor)))
+	-- armor by source (Plate, Weak, Mound, Shard, PlateBreak, Sync, ...), in total and per player (balance reports)
+	F.BySource = F.BySource or {}
+	F.BySource[source] = (F.BySource[source] or 0) + applied
+	if player then
+		F.Sources = F.Sources or {}
+		local mine = F.Sources[player.UserId] or {}
+		F.Sources[player.UserId] = mine
+		mine[source] = (mine[source] or 0) + applied
+	end
 	if F.Armor <= floorArmor + 1e-6 then
 		-- the transformation happens on the next Step (never inside a Strike callback)
 		F.Armor = floorArmor
@@ -742,11 +1038,46 @@ applyDamage = function(F, player: Player?, amount: number, source: string, force
 			F.PendingDefeat = true
 		end
 	end
-	local _ = source
 	return applied
 end
 Boss.ApplyDamage = function(player, amount, source, force)
 	return applyDamage(Boss.Fight, player, amount, source or "Script", force)
+end
+
+local function capOf(F, player: Player): any
+	F.Caps = F.Caps or {}
+	local c = F.Caps[player.UserId]
+	if not c then
+		c = BossMath.NewCap()
+		F.Caps[player.UserId] = c
+	end
+	return c
+end
+
+-- one player's armor damage through the soft cap (BossMath.CapApply over a rolling window; mechanic damage bypasses
+-- 60% of it), then the timing factor on what lands (a Perfect body hit x PerfectExtra, a Good one x GoodMult), then
+-- applyDamage. o = {Mechanic, Perfect, Good, Force}
+local function deal(F, player: Player?, armor: number, source: string, o: { [string]: any }?): number
+	local opts = o or {}
+	if not F or F.Ended or armor <= 0 then
+		return 0
+	end
+	if not opts.Force and invulnerable(F) then
+		return 0 -- (an immune boss never eats a player's cap window)
+	end
+	local amount = armor
+	if player and scaled(F) then
+		amount = BossMath.CapApply(capOf(F, player), now(), armor, F.CapPerSecond or 0, opts.Mechanic == true)
+		if opts.Perfect then
+			amount *= tonumber(CB.PerfectExtra) or 1
+		elseif opts.Good then
+			amount *= tonumber(CB.GoodMult) or 1
+		end
+	end
+	return applyDamage(F, player, amount, source, opts.Force)
+end
+Boss.Deal = function(player, armor, source, o)
+	return deal(Boss.Fight, player, armor, source or "Script", o)
 end
 
 local function clearMounds(F)
@@ -757,6 +1088,10 @@ local function clearMounds(F)
 	end
 	F.Mounds = {}
 	F.BurrowUntil = 0
+	if F.EruptHazard then
+		cancelHazards(F, { F.EruptHazard })
+		F.EruptHazard = nil
+	end
 	setAttr("BurrowUntil", 0)
 end
 
@@ -825,6 +1160,7 @@ local function spawnMounds(F)
 	F.RealMound = real
 	local timeout = ((B.Burrow and B.Burrow.Timeout) or 22) / (F.Def.Speed ^ .3)
 	F.BurrowUntil = now() + timeout
+	F.EruptHazard = nil
 	F.SubPhase = "Underground"
 	setMode(F, "Underground")
 	setAttr("BurrowUntil", F.BurrowUntil)
@@ -832,9 +1168,28 @@ local function spawnMounds(F)
 	signal("zone", { Kind = "Burrow", Stage = "Mounds", Mounds = list, Until = F.BurrowUntil })
 end
 
+-- the unfound mound's eruption is telegraphed (EventHP hazard) so it lands exactly at the timeout
+local function warnEruption(F)
+	local m = F.Mounds[F.RealMound]
+	if not m or F.EruptHazard then
+		return
+	end
+	local tele = teleFor(F, "Erupt", 1.3)
+	local impactAt = math.max(F.BurrowUntil, now() + tele)
+	F.BurrowUntil = impactAt
+	setAttr("BurrowUntil", impactAt)
+	F.EruptHazard = attackHazard(F, "Erupt", Hazards.Circle(Vector3.new(m.Pos.X, floorY(), m.Pos.Z), T.EruptRadius), tele, impactAt,
+		T.EruptKnock, nil, T.EruptCurse) or false
+end
+
 local function erupt(F, found: boolean, player: Player?)
 	local m = F.Mounds[F.RealMound]
 	local pos = m and m.Pos or Layout.Boss.Spawn
+	local hazardId = F.EruptHazard
+	if found and hazardId then
+		cancelHazards(F, { hazardId })
+	end
+	F.EruptHazard = nil
 	clearMounds(F)
 	-- it bursts out of the mound a few studs toward the centre (its 40-stud body must fit inside the pit)
 	local inward = Layout.Boss.Spawn + (pos - Layout.Boss.Spawn) * .75
@@ -847,20 +1202,14 @@ local function erupt(F, found: boolean, player: Player?)
 	F.SubPhase = "Erupting"
 	setMode(F, "Erupt", 2.2)
 	moveRoot(F)
-	local hits = {}
-	if not found then
-		for _, pl in ipairs(playersIn(pos, T.EruptRadius, F)) do
-			knock(pl, pos, T.EruptKnock, nil, T.EruptCurse, "Erupt")
-			table.insert(hits, pl.UserId)
-		end
-	end
 	local dealt = 0
 	if found then
 		local amount = ((B.Burrow and B.Burrow.RealDamage) or .08) * F.MaxArmor
-		dealt = applyDamage(F, player, amount, "Mound", true)
+		dealt = deal(F, player, amount, "Mound", { Mechanic = true, Force = true })
 	end
-	-- BossEvent Erupt {Position, Found, UserId, Damage, Hits}
-	signal("zone", { Kind = "Erupt", Position = pos, Found = found, UserId = player and player.UserId or 0, Damage = math.floor(dealt), Hits = hits })
+	-- BossEvent Erupt {Position, Found, UserId, Damage, Hits, HazardId}: the unfound eruption hurts through its hazard
+	signal("zone", { Kind = "Erupt", Position = pos, Found = found, UserId = player and player.UserId or 0, Damage = math.floor(dealt), Hits = {},
+		HazardId = (not found and hazardId) or nil })
 end
 
 -- PHASE 3: skeleton pack
@@ -944,11 +1293,10 @@ local function rockWave(F)
 	setAttr("RockWave", F.RockWave)
 	local n = math.min(10, (cfg.PerWave or 5) + math.floor(math.max(0, F.Fighters - 1) / 2))
 	local A = Layout.Pit.Arena
-	local rocks = {}
-	local land = now() + (cfg.LandDelay or 1.6) / (F.Def.Speed ^ .3)
+	local land = now() + math.max((cfg.LandDelay or 1.6) / (F.Def.Speed ^ .3), lead() + teleFor(F, "RockImpact", 0))
 	local placed = {}
-	-- aimed rocks go to the players down in the pit (rim spectators are never targets)
-	local fighters = pitFighters(F)
+	local fighters = targetable(F)
+	local candidates = {}
 	for i = 1, n do
 		local pos, kind
 		for _ = 1, 12 do
@@ -977,15 +1325,34 @@ local function rockWave(F)
 		end
 		if pos then
 			table.insert(placed, pos)
-			F.RockSerial = (F.RockSerial or 0) + 1
-			local key = F.RockSerial
 			local radius = kind == "Terrace" and math.min(T.RockImpactRadius, T.TerraceRockRadius) or T.RockImpactRadius
-			F.Rocks[key] = { Key = key, Pos = pos, LandAt = land + (i - 1) * .12, Role = "Rock", Radius = radius }
-			table.insert(rocks, { Key = key, Position = pos, LandAt = land + (i - 1) * .12, Radius = radius })
+			local landAt = land + (i - 1) * .12
+			local dmg = BossMath.AttackDamage("RockImpact", F.Difficulty)
+			table.insert(candidates, { Pos = pos, Radius = radius, LandAt = landAt,
+				Def = { Shape = Patterns.Ground(pos, radius), Telegraph = landAt - now() - lead(), ImpactAt = landAt, Damage = dmg,
+					Knock = { Power = T.RockKnock, Up = T.RockKnock * .55 }, Kind = "RockImpact", Source = "Gravekeeper" } })
 		end
 	end
-	-- BossEvent Rocks {Wave, Waves, Rocks = {{Key, Position (on the real surface), LandAt, Radius}}}
-	signal("zone", { Kind = "Rocks", Wave = F.RockWave, Waves = cfg.Waves or 3, Rocks = rocks })
+	-- the wave as a whole must leave a safe spot (thinned from the end otherwise)
+	local defs = {}
+	for _, c in ipairs(candidates) do
+		table.insert(defs, c.Def)
+	end
+	local fair = Patterns.Thin(defs)
+	local ids = hazardWave(F, fair, T.RockImpactCurse, "Rock")
+	local rocks = {}
+	for i = 1, #fair do
+		local c = candidates[i]
+		F.RockSerial = (F.RockSerial or 0) + 1
+		local key = F.RockSerial
+		F.Rocks[key] = { Key = key, Pos = c.Pos, LandAt = c.LandAt, Role = "Rock", Radius = c.Radius, HazardId = ids[i] }
+		table.insert(rocks, { Key = key, Position = c.Pos, LandAt = c.LandAt, Radius = c.Radius, HazardId = ids[i] })
+	end
+	local cap = rockCap(F)
+	-- BossEvent Rocks {Wave, Waves (0 = unlimited), Rocks = {{Key, Position (on the real surface), LandAt, Radius, HazardId}},
+	-- HazardIds}
+	signal("zone", { Kind = "Rocks", Wave = F.RockWave, Waves = cap > 0 and cap or (cfg.Waves or 3), Unlimited = cap == 0 or nil, Rocks = rocks,
+		HazardIds = ids })
 	F.NextWaveAt = now() + T.WaveGap / F.Def.Speed
 end
 
@@ -1050,7 +1417,7 @@ end
 
 local function nearestFighter(F, from: Vector3): (Player?, Vector3?, number)
 	local best, bestPos, bestD = nil, nil, math.huge
-	for _, pl in ipairs(F.FighterList or {}) do
+	for _, pl in ipairs(targetable(F)) do
 		local p = rootPos(pl)
 		if p then
 			local d = flatten(p - from).Magnitude
@@ -1062,18 +1429,16 @@ local function nearestFighter(F, from: Vector3): (Player?, Vector3?, number)
 	return best, bestPos, bestD
 end
 
+local function patternRunning(F): boolean
+	return F.Pattern ~= nil and now() < F.Pattern.Until
+end
+
 local function startAttack(F)
-	local list = F.FighterList or {}
-	if #list == 0 then
+	local pool = targetable(F)
+	if #pool == 0 then
 		return
 	end
-	local speed = F.Def.Speed
 	local _, closePos, closeD = nearestFighter(F, F.Pos)
-	-- aim at someone down in the pit (rim spectators cannot be hit: an attack on them would be wasted)
-	local pool = pitFighters(F)
-	if #pool == 0 then
-		pool = list
-	end
 	local target = pool[math.clamp(math.floor(Boss.Rand(1, #pool + .999)), 1, #pool)]
 	local tpos = rootPos(target) or closePos
 	if not tpos then
@@ -1088,37 +1453,48 @@ local function startAttack(F)
 	else
 		kind = "Sweep"
 	end
-	local a = { Kind = kind }
+	local a = { Kind = kind, Hits = {} }
+	local shape, knockPower, up, curse
 	if kind == "Stomp" then
 		a.Pos = F.Pos
 		a.Radius = T.Stomp.Radius
-		a.Telegraph = T.Stomp.Telegraph / speed ^ .5
+		a.Telegraph = teleFor(F, kind, T.Stomp.Telegraph)
+		shape = Hazards.Circle(Vector3.new(a.Pos.X, floorY(), a.Pos.Z), a.Radius)
+		knockPower, curse = T.Stomp.Knock, T.Stomp.Curse
 	elseif kind == "Slam" then
 		local d = flatten(tpos - F.Pos)
 		local reach = math.min(d.Magnitude, 16)
 		local dir = d.Magnitude > .1 and d.Unit or facing(F)
 		a.Pos = Vector3.new(F.Pos.X, floorY(), F.Pos.Z) + dir * math.max(6, reach)
 		a.Radius = B.Attacks.Slam.Radius
-		a.Telegraph = B.Attacks.Slam.Telegraph / speed ^ .5
+		a.Telegraph = teleFor(F, kind, B.Attacks.Slam.Telegraph)
 		F.Yaw = yawTo(F, a.Pos)
+		shape = Hazards.Circle(a.Pos, a.Radius)
+		knockPower, curse = B.Attacks.Slam.Knock or 60, B.Attacks.Slam.Curse
 	else
 		F.Yaw = yawTo(F, tpos)
 		a.Pos = F.Pos
 		a.Radius = T.SweepRadius
 		a.Angle = T.SweepAngle
 		a.Dir = facing(F)
-		a.Telegraph = B.Attacks.Sweep.Telegraph / speed ^ .5
+		a.Telegraph = teleFor(F, kind, B.Attacks.Sweep.Telegraph)
+		shape = Hazards.Cone(Vector3.new(a.Pos.X, floorY(), a.Pos.Z), a.Dir, a.Angle, a.Radius)
+		knockPower, up, curse = B.Attacks.Sweep.Knock or 48, 24, B.Attacks.Sweep.Curse
 	end
-	a.ImpactAt = now() + a.Telegraph
+	-- the impact waits for the H10 lead so everyone sees the whole telegraph (CANDLELIGHT owners see it earlier)
+	local windup = lead() + a.Telegraph
+	a.ImpactAt = now() + windup
 	a.Dir = a.Dir or facing(F)
+	a.HazardId = attackHazard(F, kind, shape, a.Telegraph, a.ImpactAt, knockPower, up, curse, a.Hits)
 	F.Attack = a
-	setMode(F, "Windup", a.Telegraph)
+	setMode(F, "Windup", windup)
 	setAttr("Attack", kind)
 	moveRoot(F)
 	syncBodyTargets(F)
-	-- BossEvent Attack {Attack, Stage = "Telegraph", Position, Radius, Angle?, Direction, Telegraph, ImpactAt}
+	-- BossEvent Attack {Attack, Stage = "Telegraph", Position, Radius, Angle?, Direction, Telegraph, ImpactAt, HazardId}
+	-- (HazardId present: CombatFX draws the telegraph, BossFX only animates the wind-up / impact)
 	signal("zone", { Kind = "Attack", Attack = kind, Stage = "Telegraph", Position = a.Pos, Radius = a.Radius, Angle = a.Angle,
-		Direction = a.Dir, Telegraph = a.Telegraph, ImpactAt = a.ImpactAt })
+		Direction = a.Dir, Telegraph = a.Telegraph, ImpactAt = a.ImpactAt, HazardId = a.HazardId })
 end
 
 local function resolveAttack(F)
@@ -1127,42 +1503,77 @@ local function resolveAttack(F)
 	if not a then
 		return
 	end
-	local hits = {}
-	local cfg
-	if a.Kind == "Slam" then
-		cfg = B.Attacks.Slam
-		for _, pl in ipairs(playersIn(a.Pos, a.Radius, F)) do
-			knock(pl, a.Pos, cfg.Knock or 60, nil, cfg.Curse, "Slam")
-			table.insert(hits, pl.UserId)
-		end
-	elseif a.Kind == "Stomp" then
-		cfg = T.Stomp
-		for _, pl in ipairs(playersIn(a.Pos, a.Radius, F)) do
-			knock(pl, a.Pos, cfg.Knock, nil, cfg.Curse, "Stomp")
-			table.insert(hits, pl.UserId)
-		end
-	else
-		cfg = B.Attacks.Sweep
-		local half = math.rad((a.Angle or 120) / 2)
-		for _, pl in ipairs(playersIn(a.Pos, a.Radius, F)) do
-			local p = rootPos(pl)
-			local d = p and flatten(p - a.Pos)
-			if d and (d.Magnitude < 4 or math.acos(math.clamp(d.Unit:Dot(a.Dir), -1, 1)) <= half) then
-				-- swept sideways (away from the swing side) and back
-				local side = a.Dir:Cross(Vector3.new(0, 1, 0))
-				local s = (d:Dot(side) >= 0) and 1 or -1
-				knock(pl, p - side * s * 4 - a.Dir * 2, cfg.Knock or 48, 24, cfg.Curse, "Sweep")
-				table.insert(hits, pl.UserId)
-			end
-		end
-	end
 	setMode(F, "Idle")
 	setAttr("Attack", "")
-	-- BossEvent Attack {Attack, Stage = "Impact", Position, Radius, Angle?, Direction, Hits = {userId...}}
+	-- BossEvent Attack {Attack, Stage = "Impact", Position, Radius, Angle?, Direction, HazardId} (the hazard deals the damage)
 	signal("zone", { Kind = "Attack", Attack = a.Kind, Stage = "Impact", Position = a.Pos, Radius = a.Radius, Angle = a.Angle,
-		Direction = a.Dir, Hits = hits })
+		Direction = a.Dir, Hits = a.Hits, HazardId = a.HazardId })
 	local iv = F.Phase >= 5 and B.Attacks.EnrageInterval or B.Attacks.Interval
 	F.NextAttackAt = now() + Boss.Rand(iv[1], iv[2]) / F.Def.Speed
+end
+
+---------------------------------------------------------------------------------------------------------------------
+-- endgame patterns (difficulties III-V): GRAVE LINES, LANTERN WALK, BONE RAIN
+---------------------------------------------------------------------------------------------------------------------
+local PATTERN_NAMES = { "GraveLines", "BoneRain", "LanternWalk" }
+
+local function startPattern(F): boolean
+	local e = CB.Endgame
+	local positions = targetPositions(F)
+	if #positions == 0 then
+		return false
+	end
+	local pool = {}
+	for _, name in ipairs(PATTERN_NAMES) do
+		if name ~= F.LastPattern then
+			table.insert(pool, name)
+		end
+	end
+	local name = pool[math.clamp(math.floor(Boss.Rand(1, #pool + .999)), 1, #pool)]
+	local centre = Vector3.zero
+	for _, p in ipairs(positions) do
+		centre += p
+	end
+	centre /= #positions
+	local t = now()
+	local gen = Patterns[name]
+	local defs, info = gen(F.Difficulty, t, lead(), rand01, { Targets = positions, Toward = centre })
+	if #defs == 0 then
+		return false
+	end
+	local ids = hazardWave(F, defs, tonumber(e.Curse) or 4, name)
+	F.LastPattern = name
+	F.Pattern = { Name = name, StartAt = t, Until = info.Ends, Ids = ids }
+	F.Patterns = (F.Patterns or 0) + 1
+	-- no melee swing and no rock wave on top of a pattern
+	F.NextAttackAt = math.max(F.NextAttackAt or 0, info.Ends + .8)
+	if F.Phase == 4 and (F.NextWaveAt or 0) < info.Ends + .5 then
+		F.NextWaveAt = info.Ends + .5
+	end
+	local every = e.Every or { 18, 26 }
+	F.NextPatternAt = info.Ends + Boss.Rand(every[1], every[2]) / math.sqrt(F.Def.Speed)
+	setAttr("Pattern", name)
+	setAttr("PatternUntil", info.Ends)
+	bump()
+	-- BossEvent Pattern {Name = "GraveLines"|"LanternWalk"|"BoneRain", StartAt, Duration, HazardIds} (banner + boss pose;
+	-- the hazards do the rest)
+	signal("zone", { Kind = "Pattern", Name = name, StartAt = t, Duration = info.Duration, HazardIds = ids })
+	return true
+end
+Boss.StartPattern = function(name: string?)
+	local F = Boss.Fight
+	if not F then
+		return false
+	end
+	if name then
+		F.LastPattern = nil
+		local saved = PATTERN_NAMES
+		PATTERN_NAMES = { name }
+		local ok = startPattern(F)
+		PATTERN_NAMES = saved
+		return ok
+	end
+	return startPattern(F)
 end
 
 ---------------------------------------------------------------------------------------------------------------------
@@ -1205,19 +1616,12 @@ local function stepSkeletons(F, dt: number)
 		if s.Target then
 			moveTarget(s.Target, CFrame.new(np + Vector3.new(0, 1.9, 0)) * CFrame.Angles(0, s.Yaw, 0))
 		end
-		-- bite
+		-- bite (melee: knock() deals the Event HP damage)
 		if ppos and d <= T.BiteRange and math.abs(ppos.Y - (floorY() + 3)) < 5 and t >= s.NextBite then
 			s.NextBite = t + T.BiteCooldown / F.Def.Speed
-			local pl = nil
-			for _, cand in ipairs(F.FighterList or {}) do
-				local cp = rootPos(cand)
-				if cp and flatten(cp - s.Pos).Magnitude <= T.BiteRange + .5 then
-					pl = cand
-					break
-				end
-			end
+			local pl = playersIn(s.Pos, T.BiteRange - .5, F)[1]
 			if pl then
-				knock(pl, s.Pos, T.BiteKnock, 10, T.BiteCurse, "Bite")
+				knock(F, pl, s.Pos, T.BiteKnock, 10, T.BiteCurse, "Bite")
 				-- BossEvent Bite {TargetId, UserId, Position}
 				signal("zone", { Kind = "Bite", TargetId = idOf(s.Target), UserId = pl.UserId, Position = s.Pos })
 			end
@@ -1230,34 +1634,37 @@ local function stepRocks(F)
 	local cfg = B.Rocks
 	for key, r in pairs(F.Rocks) do
 		if r.Removed then
+			if r.ExplodeHazard then
+				cancelHazards(F, { r.ExplodeHazard })
+			end
 			F.Rocks[key] = nil
 		elseif not r.Landed and t >= r.LandAt then
 			r.Landed = true
 			r.ExplodeAt = t + (cfg.ExplodeAfter or 9)
-			local hits = {}
-			for _, pl in ipairs(playersIn(r.Pos, r.Radius or T.RockImpactRadius, F, r.Pos.Y)) do
-				knock(pl, r.Pos, T.RockKnock, nil, T.RockImpactCurse, "Rock")
-				table.insert(hits, pl.UserId)
-			end
 			local hp = cfg.HP or 3 -- tier-normalized hits
 			addTarget(F, { Kind = "CursedRock", Position = r.Pos + Vector3.new(0, 2.3, 0), Radius = 2.8, HP = hp, MaxHP = hp, Unit = 1,
 				Color = Color3.fromRGB(70, 50, 90), Material = "Basalt", Size = Vector3.new(5, 4.6, 5), Name = "CURSED ROCK", NameRU = "ПРОКЛЯТЫЙ КАМЕНЬ",
 				Seed = key, Ground = r.Pos, Attributes = { Key = key }, Data = { Key = key } }, r)
-			-- BossEvent RockLand {Key, Position, TargetId, Hits, ExplodeAt}
-			signal("zone", { Kind = "RockLand", Key = key, Position = r.Pos, TargetId = idOf(r.Target), Hits = hits, ExplodeAt = r.ExplodeAt })
+			-- BossEvent RockLand {Key, Position, TargetId, Hits, ExplodeAt, HazardId} (the landing hurts through its hazard)
+			signal("zone", { Kind = "RockLand", Key = key, Position = r.Pos, TargetId = idOf(r.Target), Hits = {}, ExplodeAt = r.ExplodeAt,
+				HazardId = r.HazardId })
+		elseif r.Landed and r.ExplodeAt and not r.ExplodeHazard and t >= r.ExplodeAt - lead() - T.RockExplodeWarn then
+			-- the explosion is telegraphed: an EventHP hazard that lands exactly at ExplodeAt (cancelled if it breaks first)
+			local tele = teleFor(F, "RockExplode", T.RockExplodeWarn)
+			local at = math.max(r.ExplodeAt, t + tele)
+			r.ExplodeAt = at
+			local ids = hazardWave(F, { { Shape = Patterns.Ground(r.Pos, T.RockExplodeRadius), Telegraph = tele, ImpactAt = at,
+				Damage = BossMath.AttackDamage("RockExplode", F.Difficulty), Knock = { Power = T.RockKnock, Up = T.RockKnock * .55 }, Kind = "RockExplode",
+				Source = "Gravekeeper" } }, T.RockExplodeCurse, "RockExplode")
+			r.ExplodeHazard = ids[1] or false
 		elseif r.Landed and r.ExplodeAt and t >= r.ExplodeAt then
 			local tid = idOf(r.Target)
 			if r.Target then
 				removeTarget(F, r.Target, "Explode")
 			end
 			F.Rocks[key] = nil
-			local hits = {}
-			for _, pl in ipairs(playersIn(r.Pos, T.RockExplodeRadius, F, r.Pos.Y)) do
-				knock(pl, r.Pos, T.RockKnock, nil, T.RockExplodeCurse, "RockExplode")
-				table.insert(hits, pl.UserId)
-			end
-			-- BossEvent RockExplode {Key, TargetId, Position, Hits}
-			signal("zone", { Kind = "RockExplode", Key = key, TargetId = tid, Position = r.Pos, Hits = hits })
+			-- BossEvent RockExplode {Key, TargetId, Position, Hits, HazardId}
+			signal("zone", { Kind = "RockExplode", Key = key, TargetId = tid, Position = r.Pos, Hits = {}, HazardId = r.ExplodeHazard or nil })
 		end
 	end
 end
@@ -1269,19 +1676,27 @@ local function stepMove(F, dt: number)
 	if F.Mode ~= "Idle" and F.Mode ~= "Walk" then
 		return
 	end
-	local list = F.FighterList or {}
+	local list = targetable(F)
+	if #list == 0 then
+		list = F.FighterList or {}
+	end
 	if #list == 0 then
 		return
 	end
 	-- head for the middle of the fighters, inside the leash
 	local sum = Vector3.zero
+	local n = 0
 	for _, pl in ipairs(list) do
 		local p = rootPos(pl)
 		if p then
 			sum += flatten(p)
+			n += 1
 		end
 	end
-	local centroid = sum / #list
+	if n == 0 then
+		return
+	end
+	local centroid = sum / n
 	local home = flatten(Layout.Boss.Spawn)
 	local off = centroid - home
 	if off.Magnitude > T.MoveRadius then
@@ -1332,7 +1747,8 @@ local function pickDog(): any
 	return out
 end
 
--- one reward plan per contributor (pure: also used by the tests)
+-- one reward plan per contributor (pure: also used by the tests). Finale = this full-reward fighter won the difficulty V
+-- finale (finale extras of Chapter II); a failed finale pays the normal difficulty V reward.
 function Boss.RewardPlan(F, outcome: string)
 	local total = 0
 	local contributors = 0
@@ -1363,7 +1779,7 @@ function Boss.RewardPlan(F, outcome: string)
 		local perf = math.clamp((R.PerfBase or .35) + (R.PerfSlope or .65) * rel, 0, 1)
 		local full = outcome == "Defeated" and share >= (B.MinContribution or .03)
 		local plan = { UserId = row.UserId, Damage = row.Damage, Share = share, Rank = rank, Full = full, Outcome = outcome, Perf = perf,
-			Difficulty = F.Difficulty }
+			Difficulty = F.Difficulty, Finale = full and F.FinaleWon == true, FinaleRun = F.Finale ~= nil or nil }
 		if full then
 			plan.Candy = math.floor(d.Candy[1] + (d.Candy[2] - d.Candy[1]) * perf + .5)
 			plan.Bones = math.floor((R.Bones or 40) * d.Reward * (.5 + .5 * perf) + .5)
@@ -1401,8 +1817,11 @@ end
 --     try of this plan was ever "pending", move on to a fresh receipt suffix ("#n"); a failing event-dog supply (or a
 --     third such failure) then pays the dog as its candy value; any other error keeps the receipt (a profile still
 --     loading never reached the transaction).
+-- The Chapter II part (Chapter2.BossReward) follows the Chapter I part under its own fixed receipt
+-- ("hw-boss2:<fight>:<userId>"), so a retry never pays it twice either.
 -- Unpaid rewards are parked in Boss.Pending[userId][fightId] (one slot per fight) and retried when the player (re)joins
 -- (PlayerAdded), or, while they are in the server (also under a new Player object after a quick rejoin), after a delay.
+-- Contributors who already left when the fight ends are parked straight away.
 Boss.Pending = {} -- [userId] = {[fightId] = {Plan, Busy}}
 Boss.Wait = function(seconds: number)
 	task.wait(seconds)
@@ -1419,12 +1838,7 @@ local function beforeWrite(err: string): boolean
 end
 
 local function livePlayer(uid: number): Player?
-	for _, pl in ipairs(Boss.GetPlayers()) do
-		if pl.UserId == uid and pl.Parent then
-			return pl
-		end
-	end
-	return nil
+	return playerOf(uid)
 end
 
 local function unpark(uid: number, fightId: string)
@@ -1437,7 +1851,7 @@ local function unpark(uid: number, fightId: string)
 	end
 end
 
-local function park(uid: number, fightId: string, plan, from: Player)
+local function park(uid: number, fightId: string, plan, from: Player?)
 	local list = Boss.Pending[uid] or {}
 	Boss.Pending[uid] = list
 	list[fightId] = { Plan = plan }
@@ -1448,6 +1862,7 @@ local function park(uid: number, fightId: string, plan, from: Player)
 		Boss.Later(live == from and PARK_DELAY or PARK_REJOIN_DELAY, Boss.ResumePending, live)
 	end
 end
+Boss.Park = park
 
 local function tryGrant(player: Player, plan, receipt: string)
 	local rows = {}
@@ -1486,23 +1901,98 @@ local function tryGrant(player: Player, plan, receipt: string)
 	end, { Receipt = receipt, Rows = rows, Refresh = true })
 end
 
+-- does this plan carry a Chapter II part (Bell Shards / first-clear keys of III-V, the finale rows)?
+local function needsChapter2(plan): boolean
+	if not plan.Full then
+		return false
+	end
+	local br = C2Cfg.BossRewards or {}
+	local d = plan.Difficulty
+	return plan.Finale == true or (br.Shards and br.Shards[d] ~= nil) or (br.FirstClearKeys and br.FirstClearKeys[d] ~= nil) or false
+end
+
+-- server-wide banners of a Chapter II boss reward (§24.4): the player's first finale clear, a Mythic / the Secret dog
+local function announce(player: Player, res: any)
+	if not core or type(res) ~= "table" then
+		return
+	end
+	if res.FinaleFirst == true then
+		core.Signal("all", "C2Announce", { Kind = "FinaleClear", Name = player.DisplayName, UserId = player.UserId })
+	end
+	for _, row in ipairs(type(res.Rewards) == "table" and res.Rewards or {}) do
+		if type(row) == "table" and row.Kind == "Dog" and not row.Converted and type(row.Id) == "string" then
+			local def = C2Cfg.Dogs and C2Cfg.Dogs.Defs and C2Cfg.Dogs.Defs[row.Id]
+			local rank = def and def.Rank or 0
+			if rank >= 6 then
+				core.Signal("all", "C2Announce", { Kind = "HollowKing", Name = player.DisplayName, UserId = player.UserId, DogId = row.Id })
+			elseif rank >= 5 then
+				core.Signal("all", "C2Announce", { Kind = "Mythic", Name = player.DisplayName, UserId = player.UserId, DogId = row.Id })
+			end
+		end
+	end
+end
+
+-- the Chapter II part -> true when done (paid, or this player is not a Chapter II player), false = park and retry later
+local function grantChapter2(fightId: string, player: Player, plan): boolean
+	local C2 = modules and modules.Chapter2
+	if type(C2) ~= "table" or type(C2.BossReward) ~= "function" then
+		return true
+	end
+	if type(C2.Enabled) == "function" and not C2.Enabled() then
+		return true -- Chapter II switched off: nothing to pay (the player data waits)
+	end
+	local receipt = "hw-boss2:" .. tostring(fightId) .. ":" .. player.UserId
+	local delays = T.RewardRetry or {}
+	plan.C2Tries = 0
+	while true do
+		local latched = player:GetAttribute("HalloweenChapter1Complete")
+		if latched == false then
+			return true -- Chapter I not finished: no Chapter II reward (not an error)
+		end
+		local err = "Chapter I state still loading"
+		if latched == true then
+			local okCall, ok, res = pcall(C2.BossReward, player, plan.Difficulty, { Finale = plan.Finale == true, Receipt = receipt })
+			if okCall and ok then
+				res = type(res) == "table" and res or {}
+				-- BossEvent RewardChapter2 {Difficulty, Finale, FinaleFirst, Rewards = {ctx.C2Reward outs}}
+				signal(player, { Kind = "RewardChapter2", Difficulty = plan.Difficulty, Finale = plan.Finale == true, FinaleFirst = res.FinaleFirst == true,
+					Rewards = res.Rewards })
+				announce(player, res)
+				return true
+			end
+			err = tostring(if okCall then res else ok)
+			if err == "Finish Chapter I first" or err == "Chapter II is closed" then
+				return true
+			end
+		end
+		plan.C2Tries += 1
+		warn(string.format("Halloween Boss: Chapter II reward for %s failed (try %d): %s", player.Name, plan.C2Tries, err))
+		local delay = delays[plan.C2Tries]
+		if not delay or not player.Parent then
+			return false
+		end
+		Boss.Wait(delay)
+	end
+end
+
 local function grant(fightId: string, player: Player, plan): boolean
 	local uid = player.UserId
 	local base = "hw-boss:" .. tostring(fightId) .. ":" .. uid
 	local delays = T.RewardRetry or {}
 	plan.Tries, plan.Fresh = 0, plan.Fresh or 0
-	while true do
+	while not plan.Paid do
 		plan.Tries += 1
 		local receipt = plan.Fresh > 0 and (base .. "#" .. plan.Fresh) or base
 		local okCall, ok, res = pcall(tryGrant, player, plan, receipt)
 		if okCall and ok then
-			unpark(uid, fightId)
+			plan.Paid = true
 			res = type(res) == "table" and res or {}
-			-- BossEvent Reward {Outcome, Difficulty, Candy, Bones, XP, Rewards = {rows}, Share, Rank, Damage, Full, Unlocked}
+			-- BossEvent Reward {Outcome, Difficulty, Candy, Bones, XP, Rewards = {rows}, Share, Rank, Damage, Full, Unlocked, Finale,
+			-- Chapter2 (a Chapter II reward follows: RewardChapter2)}
 			signal(player, { Kind = "Reward", Outcome = plan.Outcome, Difficulty = plan.Difficulty, Candy = res.Candy, Bones = res.Bones,
 				XP = res.XP, Rewards = res.Rewards, Share = plan.Share, Rank = plan.Rank, Damage = math.floor(plan.Damage), Full = plan.Full,
-				Unlocked = res.Unlocked })
-			return true
+				Unlocked = res.Unlocked, Finale = plan.Finale or nil, FinaleRun = plan.FinaleRun, Chapter2 = needsChapter2(plan) or nil })
+			break
 		end
 		local err = tostring(if okCall then res else ok)
 		warn(string.format("Halloween Boss: reward for %s failed (try %d): %s", player.Name, plan.Tries, err))
@@ -1530,6 +2020,18 @@ local function grant(fightId: string, player: Player, plan): boolean
 			return false
 		end
 	end
+	if needsChapter2(plan) and not plan.C2Done then
+		if not grantChapter2(fightId, player, plan) then
+			if player.Parent then
+				warn("Halloween Boss: Chapter II reward for " .. player.Name .. " parked")
+			end
+			park(uid, fightId, plan, player)
+			return false
+		end
+		plan.C2Done = true
+	end
+	unpark(uid, fightId)
+	return true
 end
 Boss.Grant = grant
 
@@ -1551,14 +2053,12 @@ end
 
 local function grantAll(F, outcome: string)
 	for _, plan in ipairs(Boss.RewardPlan(F, outcome)) do
-		local player = nil
-		for _, pl in ipairs(Boss.GetPlayers()) do
-			if pl.UserId == plan.UserId then
-				player = pl
-			end
-		end
-		if player and player.Parent then
+		local player = playerOf(plan.UserId)
+		if player then
 			task.spawn(grant, F.Id, player, plan)
+		else
+			-- left before the end: kept for their rejoin (PlayerAdded -> ResumePending)
+			park(plan.UserId, F.Id, plan, nil)
 		end
 	end
 end
@@ -1576,6 +2076,7 @@ local function topList(F, n: number)
 	end
 	return list
 end
+Boss.TopList = topList
 
 local function cleanupTargets(F)
 	closeWeak(F)
@@ -1591,24 +2092,51 @@ local function cleanupTargets(F)
 	end
 end
 
+local function finaleModule(): any
+	local m = modules and modules.BossFinale
+	if type(m) == "table" and type(m.Begin) == "function" then
+		return m
+	end
+	return nil
+end
+
 finish = function(F, outcome: string, reason: string?)
 	if F.Ended then
 		return
 	end
 	F.Ended = true
 	F.Outcome = outcome
+	F.EndReason = reason
 	cleanupTargets(F)
+	cancelHazards(F)
+	-- out of the combat zone: a wipe's downed players are bled out to the rim by EventHP first (zone cleanup at the end of
+	-- the hold); everyone else gets up now
+	leaveCombat(reason == "Wiped")
+	F.Pattern = nil
+	F.Attack = nil
 	Boss.NextSummonAt = now() + (B.SummonCooldown or 240)
 	F.State = outcome
 	F.EndHoldUntil = now() + T.EndHold
+	local fin = F.Finale and finaleModule()
+	if fin and type(fin.OnFinish) == "function" then
+		local ok, err = pcall(fin.OnFinish, F, outcome, reason)
+		if not ok then
+			warn("Halloween Boss: BossFinale.OnFinish failed: " .. tostring(err))
+		end
+	end
 	if outcome == "Defeated" then
-		setMode(F, "Death", 6)
-		-- BossEvent Defeated {Difficulty, Numeral, Top = {{UserId, Name, Damage}}, Position, Duration}
+		if F.Finale then
+			setMode(F, "Finale", T.EndHold)
+		else
+			setMode(F, "Death", 6)
+		end
+		-- BossEvent Defeated {Difficulty, Numeral, Top = {{UserId, Name, Damage}}, Position, Duration, Finale ("Victory" |
+		-- "Fail": the difficulty V finale already played the boss's death)}
 		signal("all", { Kind = "Defeated", Difficulty = F.Difficulty, Numeral = F.Def.Numeral, Top = topList(F, 5), Position = F.Pos,
-			Duration = 6 })
+			Duration = 6, Finale = F.Finale and (F.FinaleWon and "Victory" or "Fail") or nil, FinaleReason = F.Finale and reason or nil })
 	else
 		setMode(F, "Escape", 4)
-		-- BossEvent Escaped {Reason = "Time"|"Empty"|"Disabled", Position}
+		-- BossEvent Escaped {Reason = "Time"|"Empty"|"Disabled"|"Wiped", Position}
 		signal("all", { Kind = "Escaped", Reason = reason or "Time", Position = F.Pos, Difficulty = F.Difficulty })
 	end
 	publish(F)
@@ -1625,17 +2153,45 @@ defeat = function(F, _player: Player?)
 	finish(F, "Defeated")
 end
 
+-- the fight is over and its hold ran out: forget it
+local function release(F)
+	if Boss.Fight == F then
+		Boss.Fight = nil
+	end
+	leaveCombat(false)
+	local fin = finaleModule()
+	if fin and type(fin.Reset) == "function" then
+		pcall(fin.Reset)
+	end
+	publish(nil)
+	bump()
+	if rigRoot and rigRoot.Parent then
+		rigRoot.CFrame = CFrame.new(Layout.Boss.Spawn + Vector3.new(0, -60, 0))
+	end
+end
+
 function Boss.Abort(reason: string?)
 	local F = Boss.Fight
 	if not F then
 		return
 	end
 	finish(F, "Escaped", reason or "Disabled")
-	Boss.Fight = nil
-	publish(nil)
-	bump()
-	if rigRoot and rigRoot.Parent then
-		rigRoot.CFrame = CFrame.new(Layout.Boss.Spawn + Vector3.new(0, -60, 0))
+	release(F)
+end
+
+-- EventHP: every fighter in the pit is downed. Handled on the next Step (never inside a listener).
+onWipe = function(_players)
+	local F = Boss.Fight
+	if F and not F.Ended and F.State == "Fight" then
+		F.WipePending = true
+	end
+end
+
+-- reviving an ally in the pit counts as contribution
+onRevive = function(_player: Player, by: Player?)
+	local F = Boss.Fight
+	if F and not F.Ended and by and by ~= _player then
+		score(F, by, (tonumber(CB.ReviveScore) or .01) * F.MaxArmor)
 	end
 end
 
@@ -1683,33 +2239,47 @@ local function onWeakBegin(player: Player, target: any)
 		return nil
 	end
 	local team = dogTeam(F, player, true)
-	-- StrikeBegin Extra (to the digger): Companion = {Id, Asset, Variant, Rank} | nil, Event, DogBonus (0 .. DogMax)
-	return { Companion = team.Best, Event = team.HasEvent, DogBonus = team.Bonus }
+	-- StrikeBegin Extra (to the digger): Companion = {Id, Asset, Variant, Rank} | nil, Event, DogBonus (0 .. DogMax),
+	-- PerfectOnly (difficulty V: only Perfect hits land)
+	return { Companion = team.Best, Event = team.HasEvent, DogBonus = team.Bonus, PerfectOnly = perfectOnly(F) or nil }
 end
 
--- expected armor damage of a hit (Strike "Damage" function: what the HP panel / hit number shows)
+-- armor of one body hit before the soft cap (BossMath: curve, x3 weak, dog bonus, sync, WEAKENED, H15 on weak points)
+local function hitArmor(F, player: Player, entry: any, hit: any, sync: number?): (number, any)
+	local q, crit, raw = hitQuality(hit)
+	if raw <= 0 then
+		raw = damageOf(player) * (q == 2 and 1.5 or 1) * (crit and 2 or 1)
+	end
+	local weak = entry.Role == "Weak"
+	local opts: { [string]: any } = { Weak = weak, WeakMult = (B.WeakPoints and B.WeakPoints.Mult) or CB.WeakMult or 3, Mechanic = weak,
+		Weakened = (tonumber(type(hit) == "table" and hit.EventMult) or 1) < 1 - 1e-6, Sync = sync }
+	if weak then
+		opts.DogBonus = dogTeam(F, player).Bonus
+		opts.H15 = hasDog(player, "Wolf")
+	end
+	if not scaled(F) then
+		opts.K, opts.Exp = T.ArmorK, T.ArmorExp
+	end
+	return BossMath.ArmorDamage(raw, opts)
+end
+Boss.HitArmor = function(player, entry, hit, sync)
+	return hitArmor(Boss.Fight, player, entry, hit, sync)
+end
+
+-- expected armor damage of a hit (Strike "Damage" function: what the HP panel / hit number shows, before the cap)
 local function bodyDamage(player: Player, target: any, hit: any): number
 	local F = Boss.Fight
 	local entry = entryOf(F, target)
 	if not entry then
 		return 0
 	end
-	local q, crit, raw = hitQuality(hit)
-	local weak = entry.Role == "Weak"
-	local dmg = Boss.ArmorDamage(raw > 0 and raw or damageOf(player) * (q == 2 and 1.5 or 1) * (crit and 2 or 1), weak)
-	if weak and dmg > 0 then
-		local bonus = dogTeam(F, player).Bonus
-		if bonus > 0 then
-			dmg = math.floor(dmg * (1 + bonus) + .5)
-		end
-	end
-	return dmg
+	return (hitArmor(F, player, entry, hit))
 end
 
 local function onPlateHit(player: Player, target: any, hit: any)
 	local F = Boss.Fight
 	local entry = entryOf(F, target)
-	if not entry or entry.Removed then
+	if not F or not entry or entry.Removed then
 		if type(hit) == "table" then
 			hit.Applied = 0
 		end
@@ -1717,19 +2287,51 @@ local function onPlateHit(player: Player, target: any, hit: any)
 	end
 	local q, crit = hitQuality(hit)
 	local weak = entry.Role == "Weak"
-	local amount = bodyDamage(player, target, hit)
-	local applied = applyDamage(F, player, amount, weak and "Weak" or "Plate")
-	-- the plate loses exactly the armor it absorbed (weak points have 1e9 HP: the number still shows the x3 damage)
+	local dogBonus = weak and dogTeam(F, player).Bonus or 0
+	-- difficulty V: the weak points only take Perfect hits
+	if weak and perfectOnly(F) and q ~= 2 then
+		if type(hit) == "table" then
+			hit.Applied = 0
+		end
+		-- BossEvent Hit {Damage = 0, Weak, NeedPerfect} (to the hitter: "PERFECT ONLY")
+		signal(player, { Kind = "Hit", Damage = 0, Weak = true, Slot = entry.Slot, Crit = crit, Quality = q, NeedPerfect = true,
+			Armor = math.max(0, math.ceil(F.Armor)), TargetId = idOf(target) })
+		return { BossDamage = 0, Weak = true, NeedPerfect = true, Armor = math.max(0, math.ceil(F.Armor)) }
+	end
+	local armor = hitArmor(F, player, entry, hit)
+	local synced = false
+	if q == 2 and not invulnerable(F) then
+		-- SYNC STRIKE: two players' Perfects on the boss within .5 s -> +50% for both (the partner's earlier hit gets its
+		-- bonus now)
+		F.Sync = F.Sync or BossMath.NewSync()
+		local mult, retro = BossMath.SyncHit(F.Sync, player.UserId, now(), armor)
+		if mult > 1 then
+			synced = true
+			armor = hitArmor(F, player, entry, hit, mult)
+		end
+		for _, r in ipairs(retro) do
+			local partner = playerOf(r.UserId)
+			if partner and r.Bonus > 0 then
+				local got = deal(F, partner, r.Bonus, "Sync", {})
+				if got > 0 then
+					-- BossEvent Hit {Damage, Sync = true, Retro = true} (to the partner)
+					signal(partner, { Kind = "Hit", Damage = math.floor(got + .5), Sync = true, Retro = true, Armor = math.max(0, math.ceil(F.Armor)) })
+				end
+			end
+		end
+	end
+	local applied = deal(F, player, armor, weak and "Weak" or "Plate", { Mechanic = weak, Perfect = q == 2, Good = q ~= 2 })
+	entry.LastPerfect = q == 2 -- (the shatter bonus follows the quality of the breaking hit)
+	-- the plate loses exactly the armor that landed (weak points have 1e9 HP)
 	if type(hit) == "table" then
 		hit.Applied = applied
 	end
-	local dogBonus = (weak and F) and dogTeam(F, player).Bonus or 0
-	-- BossEvent Hit {Damage, Weak, Slot, Crit, Quality, Armor, DogBonus} (to the hitter: big armor-damage number; DogBonus
+	-- BossEvent Hit {Damage, Weak, Slot, Crit, Quality, Armor, DogBonus, Sync} (to the hitter: big armor-damage number; DogBonus
 	-- > 0 = their dog dug with them)
 	signal(player, { Kind = "Hit", Damage = math.floor(applied + .5), Weak = weak, Slot = entry.Slot, Crit = crit, Quality = q,
-		Armor = math.max(0, math.ceil(F and F.Armor or 0)), TargetId = idOf(target), DogBonus = dogBonus > 0 and dogBonus or nil })
-	return { BossDamage = math.floor(applied + .5), Weak = weak, Armor = F and math.max(0, math.ceil(F.Armor)) or 0,
-		DogBonus = dogBonus > 0 and dogBonus or nil }
+		Armor = math.max(0, math.ceil(F.Armor)), TargetId = idOf(target), DogBonus = dogBonus > 0 and dogBonus or nil, Sync = synced or nil })
+	return { BossDamage = math.floor(applied + .5), Weak = weak, Armor = math.max(0, math.ceil(F.Armor)),
+		DogBonus = dogBonus > 0 and dogBonus or nil, Sync = synced or nil }
 end
 
 -- a plate whose integrity ran out shatters (called from Step, outside Strike callbacks)
@@ -1747,7 +2349,9 @@ local function breakPlate(F, slot: string, player: Player?)
 	entry.Removed = nil
 	entry.Target = nil
 	entry.RegrowAt = now() + T.PlateRegrow
-	local bonus = applyDamage(F, player, T.PlateBreakBonus * F.MaxArmor, "PlateBreak")
+	-- the shatter bonus is plate damage (soft-capped like the hits); a Perfect breaking hit keeps its Perfect bonus
+	local bonus = deal(F, player, T.PlateBreakBonus * F.MaxArmor, "PlateBreak", { Perfect = entry.LastPerfect == true,
+		Good = entry.LastPerfect == false })
 	setAttr("Plates", plateMask(F))
 	setAttr("PlateWear", plateWear(F))
 	bump()
@@ -1769,10 +2373,25 @@ local function onPlateBreak(player: Player?, target: any, _info: any)
 	F.BreakQueue[entry.Slot] = player or false
 end
 
-local function canHitBody(_player: Player, target: any)
+-- fighters only: a player outside the pit (the rim, the bell) cannot hit anything of the boss
+local function inPit(player: Player): boolean
+	if CB.InPitOnly == false then
+		return true
+	end
+	local pos = rootPos(player)
+	return pos ~= nil and isFighterPos(pos)
+end
+Boss.InPit = inPit
+
+local OUTSIDE = "Climb down into the pit to fight the Gravekeeper"
+
+local function canHitBody(player: Player, target: any)
 	local F = Boss.Fight
 	if not F or not entryOf(F, target) then
 		return false, "Too late!"
+	end
+	if not inPit(player) then
+		return false, OUTSIDE
 	end
 	local inv, why = invulnerable(F)
 	if inv then
@@ -1812,15 +2431,16 @@ local function onMoundBreak(player: Player?, target: any, info: any)
 	if entry.Real then
 		erupt(F, true, player)
 	else
-		local hits = {}
-		for _, pl in ipairs(playersIn(entry.Pos, T.FakeRadius, F)) do
-			knock(pl, entry.Pos, T.FakeKnock, 26, (B.Burrow and B.Burrow.FakeCurse) or 12, "FakeMound")
-			table.insert(hits, pl.UserId)
-		end
+		-- skeleton hands burst out of the fake mound: a short telegraphed hazard around it
+		local tele = teleFor(F, "FakeMound", .9)
+		local at = now() + lead() + tele
+		local hazardId = attackHazard(F, "FakeMound", Hazards.Circle(Vector3.new(entry.Pos.X, floorY(), entry.Pos.Z), T.FakeRadius), tele, at,
+			T.FakeKnock, 26, (B.Burrow and B.Burrow.FakeCurse) or 12)
 		F.Mounds[entry.Index] = nil
 		score(F, player, T.MoundScore * F.MaxArmor)
-		-- BossEvent FakeMound {TargetId, Position, UserId, Hits}
-		signal("zone", { Kind = "FakeMound", TargetId = idOf(target), Position = entry.Pos, UserId = player and player.UserId or 0, Hits = hits })
+		-- BossEvent FakeMound {TargetId, Position, UserId, Hits, HazardId, ImpactAt}
+		signal("zone", { Kind = "FakeMound", TargetId = idOf(target), Position = entry.Pos, UserId = player and player.UserId or 0, Hits = {},
+			HazardId = hazardId, ImpactAt = at })
 	end
 end
 
@@ -1859,17 +2479,23 @@ local function onRockBreak(player: Player?, target: any, _info: any)
 	F.Targets[target] = nil
 	entry.Removed = true
 	F.Rocks[entry.Key] = nil
+	if entry.ExplodeHazard then
+		cancelHazards(F, { entry.ExplodeHazard })
+	end
 	local amount = ((B.Rocks and B.Rocks.Damage) or .03) * F.MaxArmor
-	local applied = applyDamage(F, player, amount, "Shard", true)
+	local applied = deal(F, player, amount, "Shard", { Mechanic = true, Force = true })
 	-- BossEvent RockShard {TargetId, Key, From, UserId, Damage}
 	signal("zone", { Kind = "RockShard", TargetId = idOf(target), Key = entry.Key, From = entry.Pos, UserId = player and player.UserId or 0,
 		Damage = math.floor(applied) })
 end
 
-local function canHitAlways(_player: Player, target: any)
+local function canHitAlways(player: Player, target: any)
 	local F = Boss.Fight
 	if not F or not entryOf(F, target) then
 		return false, "Too late!"
+	end
+	if not inPit(player) then
+		return false, OUTSIDE
 	end
 	return true
 end
@@ -1881,12 +2507,15 @@ function Boss.RegisterStrike()
 	end
 	local ok, err = pcall(function()
 		Strike.Register("BossPlate", { Range = 24, Verb = "BREAK", Damage = bodyDamage, OnHit = onPlateHit, OnBreak = onPlateBreak,
-			CanHit = canHitBody, Activity = "BossDamage" })
+			CanHit = canHitBody, Activity = "BossDamage", EventMult = true })
 		Strike.Register("BossWeak", { Range = 22, Verb = "DIG", Damage = bodyDamage, OnBegin = onWeakBegin, OnHit = onPlateHit, CanHit = canHitBody,
-			Activity = "BossDamage" })
-		Strike.Register("BossMound", { Range = 14, Verb = "DIG", Damage = "Power", OnHit = onMoundHit, OnBreak = onMoundBreak, CanHit = canHitAlways })
-		Strike.Register("BossSkeleton", { Range = 13, Verb = "STRIKE", Damage = "Power", OnBreak = onSkeletonBreak, CanHit = canHitAlways })
-		Strike.Register("CursedRock", { Range = 14, Verb = "BREAK", Damage = "Power", OnBreak = onRockBreak, CanHit = canHitAlways })
+			Activity = "BossDamage", EventMult = true })
+		Strike.Register("BossMound", { Range = 14, Verb = "DIG", Damage = "Power", OnHit = onMoundHit, OnBreak = onMoundBreak, CanHit = canHitAlways,
+			EventMult = "Apply" })
+		Strike.Register("BossSkeleton", { Range = 13, Verb = "STRIKE", Damage = "Power", OnBreak = onSkeletonBreak, CanHit = canHitAlways,
+			EventMult = "Apply" })
+		Strike.Register("CursedRock", { Range = 14, Verb = "BREAK", Damage = "Power", OnBreak = onRockBreak, CanHit = canHitAlways,
+			EventMult = "Apply" })
 	end)
 	if not ok then
 		warn("Halloween Boss: Strike.Register failed: " .. tostring(err))
@@ -1896,7 +2525,8 @@ function Boss.RegisterStrike()
 	return true
 end
 Boss.Handlers = { PlateHit = onPlateHit, PlateBreak = onPlateBreak, MoundHit = onMoundHit, MoundBreak = onMoundBreak,
-	SkeletonBreak = onSkeletonBreak, RockBreak = onRockBreak, CanHitBody = canHitBody, WeakBegin = onWeakBegin }
+	SkeletonBreak = onSkeletonBreak, RockBreak = onRockBreak, CanHitBody = canHitBody, CanHitAlways = canHitAlways, WeakBegin = onWeakBegin,
+	BodyDamage = bodyDamage }
 
 ---------------------------------------------------------------------------------------------------------------------
 -- summon
@@ -1941,21 +2571,57 @@ function Boss.Summon(difficulty: number, reason: string?, player: Player?): (boo
 		Mounds = {}, Skeletons = {}, Rocks = {}, RockWave = 0, BurrowUntil = 0, Shield = false, ShieldNeed = 0, ShieldKills = 0,
 		Targets = {}, TargetIds = {}, Damage = {}, Score = {}, Names = {}, SoulFrac = {}, NextAttackAt = t + T.RiseSeconds + 3,
 		EmptyGrace = reason == "Exorcism" and T.ExorcismGrace or T.EmptyGrace, EmptySince = nil, SubPhase = "Rise",
+		Caps = {}, Sync = BossMath.NewSync(), CapPerSecond = BossMath.CapPerSecond(BossMath.MaxArmorBase(d)), Hazards = {},
+		NextPatternAt = t + T.RiseSeconds + ((type(CB.Endgame) == "table" and tonumber(CB.Endgame.First)) or 16),
 	}
 	local facingYaw = math.atan2(-Layout.Boss.Facing.X, -Layout.Boss.Facing.Z)
 	F.Yaw = facingYaw
 	F.MaxArmor = maxArmorFor(F, 1)
 	F.Armor = F.MaxArmor
 	Boss.Fight = F
-	updateFighters(F)
+	updateFighters(F, true)
 	F.Armor = F.MaxArmor
 	publish(F)
 	moveRoot(F)
 	bump()
-	-- BossEvent Rise {Difficulty, Numeral, Name, Reason, SummonerId, SummonerName, Position, Duration, FightId}
+	-- BossEvent Rise {Difficulty, Numeral, Name, Reason, SummonerId, SummonerName, Position, Duration, FightId, Endgame,
+	-- PerfectOnly, Finale (difficulty V with the finale on)}
 	signal("all", { Kind = "Rise", Difficulty = d, Numeral = def.Numeral, Name = def.Name, Reason = reason, SummonerId = F.SummonerId,
-		SummonerName = player and player.Name or "", Position = F.Pos, Duration = T.RiseSeconds, FightId = F.Id })
+		SummonerName = player and player.Name or "", Position = F.Pos, Duration = T.RiseSeconds, FightId = F.Id, Endgame = endgame(F) or nil,
+		PerfectOnly = perfectOnly(F) or nil,
+		Finale = (d == 5 and reason ~= "Exorcism" and Shared.BossFinaleEnabled() and finaleModule() ~= nil) or nil })
 	return true
+end
+
+---------------------------------------------------------------------------------------------------------------------
+-- the difficulty V finale handoff (DESIGN §11: keep F alive, never append Config.Boss.Phases)
+---------------------------------------------------------------------------------------------------------------------
+local function finaleOn(F): boolean
+	return F.Difficulty == 5 and F.Reason ~= "Exorcism" and Shared.BossFinaleEnabled() and finaleModule() ~= nil
+end
+
+local function beginFinale(F): boolean
+	local fin = finaleModule()
+	if not fin then
+		return false
+	end
+	-- the fight below the finale stops: every target, hazard, attack and pattern goes (the boss "dies")
+	cleanupTargets(F)
+	cancelHazards(F)
+	F.Attack, F.Pattern = nil, nil
+	F.Armor = 0
+	setAttr("Armor", 0)
+	setAttr("Attack", "")
+	setAttr("Enraged", false)
+	setMode(F, "Finale")
+	local ok, err = pcall(fin.Begin, F)
+	if not ok then
+		warn("Halloween Boss: BossFinale.Begin failed: " .. tostring(err))
+		F.Finale = nil
+		return false
+	end
+	publish(F)
+	return F.Finale ~= nil
 end
 
 ---------------------------------------------------------------------------------------------------------------------
@@ -1973,17 +2639,12 @@ function Boss.Step(dt: number)
 	end
 	if F.Ended then
 		if t >= (F.EndHoldUntil or 0) then
-			Boss.Fight = nil
-			publish(nil)
-			bump()
-			if rigRoot and rigRoot.Parent then
-				rigRoot.CFrame = CFrame.new(Layout.Boss.Spawn + Vector3.new(0, -60, 0))
-			end
+			release(F)
 		end
 		return
 	end
 	-- deferred transformations (set by damage inside Strike callbacks)
-	if F.BreakQueue then
+	if F.BreakQueue and not F.Finale then
 		local q = F.BreakQueue
 		F.BreakQueue = nil
 		for slot, pl in pairs(q) do
@@ -1992,6 +2653,9 @@ function Boss.Step(dt: number)
 	end
 	if F.PendingDefeat then
 		F.PendingDefeat = nil
+		if finaleOn(F) and beginFinale(F) then
+			return
+		end
 		defeat(F, nil)
 		return
 	end
@@ -2000,16 +2664,42 @@ function Boss.Step(dt: number)
 		F.PendingPhase = nil
 		enterPhase(F, p)
 	end
-	-- fighters (live armor scaling) every second
-	if t - (F.FightersAt or 0) >= 1 then
+	-- fighters: combat zone every step, the live armor scaling every second
+	local rescale = t - (F.FightersAt or 0) >= 1
+	if rescale then
 		F.FightersAt = t
-		updateFighters(F)
+	end
+	updateFighters(F, rescale and not F.Finale)
+	if F.Finale then
+		F.Fighters = #(F.FighterList or {})
+		setAttr("Fighters", F.Fighters)
+	end
+	-- the whole team downed (EventHP OnWipe)
+	if F.WipePending then
+		F.WipePending = nil
+		local fin = F.Finale and finaleModule()
+		if fin then
+			pcall(fin.Fail, F, "Wipe")
+		else
+			-- BossEvent Wiped {} (then the usual Escaped {Reason = "Wiped"})
+			signal("all", { Kind = "Wiped", Difficulty = F.Difficulty, Position = F.Pos })
+			finish(F, "Escaped", "Wiped")
+		end
+		if F.Ended then
+			return
+		end
 	end
 	-- nobody left in the arena -> it leaves
 	if F.Fighters == 0 then
 		F.EmptySince = F.EmptySince or t
 		if t - F.EmptySince >= F.EmptyGrace then
-			finish(F, "Escaped", "Empty")
+			local fin = F.Finale and finaleModule()
+			if fin then
+				pcall(fin.Fail, F, "Empty")
+			end
+			if not F.Ended then
+				finish(F, "Escaped", "Empty")
+			end
 			return
 		end
 	else
@@ -2017,6 +2707,26 @@ function Boss.Step(dt: number)
 			F.EmptyGrace = T.EmptyGrace -- the long exorcism grace only covers the walk to the pit
 		end
 		F.EmptySince = nil
+	end
+	-- the finale owns the fight from the false victory on (its own timers and time limit)
+	if F.Finale then
+		local fin = finaleModule()
+		if fin then
+			local ok, err = pcall(fin.Step, F, dt)
+			if not ok then
+				warn("Halloween Boss: BossFinale.Step failed: " .. tostring(err))
+			end
+		end
+		if not F.Ended and (not fin or t >= F.EndsAt) then
+			-- backstop (module gone / its clock stuck): the normal difficulty V reward
+			if fin then
+				pcall(fin.Fail, F, "Time")
+			end
+			if not F.Ended then
+				finish(F, "Defeated", "FinaleFail")
+			end
+		end
+		return
 	end
 	-- time limit -> escape
 	if t >= F.EndsAt then
@@ -2068,8 +2778,11 @@ function Boss.Step(dt: number)
 		end
 	end
 
-	-- phase 2: underground timeout / surface window
+	-- phase 2: underground timeout (telegraphed eruption) / surface window
 	if F.Phase == 2 then
+		if F.SubPhase == "Underground" and F.EruptHazard == nil and t >= F.BurrowUntil - lead() - teleFor(F, "Erupt", 1.3) then
+			warnEruption(F)
+		end
 		if F.SubPhase == "Underground" and t >= F.BurrowUntil then
 			erupt(F, false, nil)
 		elseif F.SubPhase == "Surface" and F.SurfaceUntil and t >= F.SurfaceUntil and F.Mode ~= "Windup" then
@@ -2082,9 +2795,14 @@ function Boss.Step(dt: number)
 		F.SubPhase = "Summoning"
 		setMode(F, "Roar", 2.2)
 	end
-	-- phase 4: rock waves
-	if F.Phase == 4 and F.Mode ~= "Roar" and t >= (F.NextWaveAt or math.huge) then
-		rockWave(F)
+	-- phase 4: rock waves (capped per phase on III / IV, unlimited on V; never on top of a pattern)
+	if F.Phase == 4 and F.Mode ~= "Roar" and t >= (F.NextWaveAt or math.huge) and not patternRunning(F) then
+		local cap = rockCap(F)
+		if cap > 0 and F.RockWave >= cap then
+			F.NextWaveAt = math.huge
+		else
+			rockWave(F)
+		end
 	end
 	-- phase 5: weak points
 	if F.Phase == 5 then
@@ -2109,9 +2827,20 @@ function Boss.Step(dt: number)
 		end
 	end
 
-	-- attacks + movement while on the surface
+	-- the endgame pattern ended
+	if F.Pattern and t >= F.Pattern.Until then
+		F.Pattern = nil
+		setAttr("Pattern", "")
+		setAttr("PatternUntil", 0)
+	end
+	-- attacks + endgame patterns + movement while on the surface
 	local surfaced = F.SubPhase ~= "Underground" and F.Mode ~= "Burrow"
-	if surfaced and (F.Mode == "Idle" or F.Mode == "Walk") and t >= (F.NextAttackAt or 0) and F.Fighters > 0 then
+	local ready = surfaced and (F.Mode == "Idle" or F.Mode == "Walk") and F.Fighters > 0 and not patternRunning(F)
+	if ready and endgame(F) and t >= (F.NextPatternAt or math.huge) and not (F.Phase == 4 and (F.NextWaveAt or 0) - t < 2.5) then
+		if not startPattern(F) then
+			F.NextPatternAt = t + 3
+		end
+	elseif ready and t >= (F.NextAttackAt or 0) then
 		startAttack(F)
 	end
 	if surfaced then
@@ -2141,8 +2870,19 @@ function Boss.Status(player: Player?)
 		end
 	end
 	return { Active = not F.Ended, State = F.State, Phase = F.Phase, Difficulty = F.Difficulty, Armor = math.ceil(F.Armor),
-		MaxArmor = math.ceil(F.MaxArmor), Damage = math.floor(mine), Rank = rank, Fighters = F.Fighters, EndsAt = F.EndsAt }
+		MaxArmor = math.ceil(F.MaxArmor), Damage = math.floor(mine), Rank = rank, Fighters = F.Fighters, EndsAt = F.EndsAt,
+		Finale = F.Finale and F.Finale.State or nil, InPit = player ~= nil and inPit(player) or nil }
 end
+
+---------------------------------------------------------------------------------------------------------------------
+-- the API BossFinale works through (it never touches the fight table's internals beyond F.Finale / F.FinaleWon / F.EndsAt)
+---------------------------------------------------------------------------------------------------------------------
+Boss.Api = {
+	Signal = signal, Score = score, Finish = finish, AddTarget = addTarget, RemoveTarget = removeTarget, MoveTarget = moveTarget,
+	EntryOf = entryOf, SetAttr = setAttr, Bump = bump, SetMode = setMode, Publish = publish, Combat = combat, Lead = lead,
+	HazardWave = hazardWave, CancelHazards = cancelHazards, Targetable = targetable, TargetPositions = targetPositions, InPit = inPit,
+	RootPos = rootPos, HasDog = hasDog, PlayerOf = playerOf, Outside = OUTSIDE,
+}
 
 ---------------------------------------------------------------------------------------------------------------------
 -- lifecycle
@@ -2151,7 +2891,8 @@ end
 function Boss.Init(c, m)
 	core = c
 	modules = m or {}
-	local st = Halloween:FindFirstChild("State")
+	hookedHP = nil
+	local st = Boss.StateRoot or Halloween:FindFirstChild("State") -- (tests: Boss.StateRoot = a Folder)
 	stateFolder = st and st:FindFirstChild("Boss")
 	if st and not stateFolder then
 		stateFolder = Instance.new("Folder")

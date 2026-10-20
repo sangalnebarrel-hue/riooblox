@@ -806,7 +806,7 @@ function C2.TrialCleared(player: Player, trialId: string, _info: any?)
 end
 
 -- THE GRAVEKEEPER for Chapter II players (call once per full-reward fighter, after the Chapter I reward):
--- info = {Finale = bool (difficulty V finale won)}. Shards per difficulty (DR "Boss"), first full clear key per
+-- info = {Finale = bool (difficulty V finale won), Receipt? [WP-C]}. Shards per difficulty (DR "Boss"), first full clear key per
 -- difficulty III-V, finale first / repeat rewards with the dog and skin rolls (§11.1). -> ok, result {Rewards}
 function C2.BossReward(player: Player, difficulty: number, info: { [string]: any }?): (boolean, any)
 	local inf: { [string]: any } = info or {}
@@ -881,7 +881,8 @@ function C2.BossReward(player: Player, difficulty: number, info: { [string]: any
 			ctx.Journal("finale")
 		end
 		return out
-	end, { Dogs = dogIds })
+		-- [WP-C] info.Receipt (server-made "hw-boss2:<fight>:<userId>"): Boss retries this grant without ever paying it twice
+	end, { Dogs = dogIds, Receipt = type(inf.Receipt) == "string" and inf.Receipt or nil })
 end
 
 ---------------------------------------------------------------------------------------------------------------------

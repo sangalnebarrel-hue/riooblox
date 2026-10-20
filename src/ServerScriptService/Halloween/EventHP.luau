@@ -21,7 +21,8 @@
 --   EventHP.HP(player) -> hp, maxHP, shield ; EventHP.DamageMult(player) (WEAKENED .7) ; EventHP.TakenMult(player) (1.25)
 --   EventHP.Hazard(zoneId, def) -> id ; EventHP.HazardWave(zoneId, defs) -> {id} ; EventHP.CancelHazards(zoneId, ids?)
 --       def: RS.Halloween.Hazards (Shape, Telegraph, ImpactAt?, Damage, Knock?, Linger?, DPS?, Color?, Kind, Source,
---       Delay?). ImpactAt nil = now + H10 lead + Telegraph (+ Delay), so CANDLELIGHT owners always see it .35 s early.
+--       Delay?, OnHit? [WP-C]: fn(player, dealt, knockVelocity?, pos) after each impact hit that landed).
+--       ImpactAt nil = now + H10 lead + Telegraph (+ Delay), so CANDLELIGHT owners always see it .35 s early.
 --       Unfair defs are made fair (Hazards.Sanitize: longer telegraph, capped damage, slower path, a ring gap) and an
 --       impact never lands before its full telegraph has shown.
 --   EventHP.OnDown(fn(player, zoneId, source)) / OnRevive(fn(player, zoneId, by?)) / OnBleedOut(fn(player, zoneId,
@@ -1108,8 +1109,17 @@ local function impact(zone: any, h: any)
 		end
 	end
 	for _, hit in ipairs(hits) do
-		EventHP.Damage(hit.Player, dmg, d.Source or d.Kind, { Kind = d.Kind, Hazard = d.Id, Knock = knockOf(d, hit.Pos),
+		local knock = knockOf(d, hit.Pos) -- [WP-C] kept for OnHit
+		local dealt = EventHP.Damage(hit.Player, dmg, d.Source or d.Kind, { Kind = d.Kind, Hazard = d.Id, Knock = knock,
 			From = Hazards.Center(Hazards.At(d.Shape, 0)) })
+		-- [WP-C] def.OnHit(player, dealt, knockVelocity?, pos): the hazard's owner learns who it really hit (the Gravekeeper's
+		-- Curse + knock signal); only for hits that landed (not i-frames)
+		if dealt > 0 and type(d.OnHit) == "function" then
+			local ok, err = pcall(d.OnHit, hit.Player, dealt, knock, hit.Pos)
+			if not ok then
+				warn("EventHP hazard OnHit failed: " .. tostring(err))
+			end
+		end
 	end
 end
 

@@ -226,7 +226,8 @@ requireNode = function(target)
 		typeof = typeof,
 		warn = function(...) if L.Verbose then print("warn:", ...) end end,
 		print = function(...) if L.Verbose then print(...) end end,
-		task = { wait = function() end, spawn = function() end, defer = function() end, delay = function() end },
+		-- [WP-C] a test may set L.Task (before the first require) to run spawned / delayed functions itself
+		task = L.Task or { wait = function() end, spawn = function() end, defer = function() end, delay = function() end },
 		Random = L.Random,
 		tick = os.clock,
 		os = setmetatable({ time = function() return L.Time end }, { __index = os }),
