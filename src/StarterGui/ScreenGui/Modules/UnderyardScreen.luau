@@ -1666,7 +1666,11 @@ pages.contracts = function(page: Frame)
 		amount.Text = F("+%d BELL SHARDS", n > 0 and n or shown)
 		price.Text = F("%d Candy · you have %s", (n > 0 and n or shown) * per, num(candy()))
 		local full = used >= maxDay
-		if not inZone() then
+		if not eligible() then
+			buy:SetText(T("FINISH CHAPTER I"))
+			buy:SetStyle("secondary")
+			buy:SetDisabled(true)
+		elseif not inZone() then
 			buy:SetText(T("DESCEND"))
 			buy:SetStyle("primary", VIOLET)
 			buy:SetDisabled(false)
@@ -2600,8 +2604,8 @@ pages.journal = function(page: Frame)
 	local headIcon = icon(head, "Icon", "Eye", { Size = 52 })
 	local headTitle = sectionTitle(head, T("EVENT JOURNAL"), MOON_HI)
 	local headCount = txt(head, { Name = "Count", Text = "", TextSize = 20, Scaled = true, MinTextSize = 9, AlignX = "Right", Color = SICKLY, Font = "numeric" })
-	local headInfo = txt(head, { Name = "Info", Text = T("Every story beat of both chapters. Replays never change your progress."), TextSize = 13, Scaled = true,
-		MinTextSize = 8, Color = MUTED })
+	local headInfo = txt(head, { Name = "Info", Text = T("Every story beat of both chapters. Replays never change your progress."), TextSize = 13, Wrap = true,
+		AlignY = "Top", Color = MUTED })
 	local journal = Cfg.Journal or { Order = {}, Entries = {} }
 	for i, key in ipairs(journal.Order) do
 		local def = journal.Entries[key] or {}
@@ -2676,9 +2680,11 @@ pages.journal = function(page: Frame)
 		place(headIcon, 14, 12, 48, 48)
 		place(headTitle, 72, 12, w - 88 - 90, 26)
 		place(headCount, w - 100, 12, 86, 26)
-		place(headInfo, 72, 40, w - 88, 18)
-		place(head, 2, y, w, 72)
-		y += 82
+		local ih = textH(headInfo.Text, 13, w - 88)
+		place(headInfo, 72, 42, w - 88, ih)
+		local headH = math.max(72, 42 + ih + 12)
+		place(head, 2, y, w, headH)
+		y += headH + 10
 		local narrow = w < 560
 		for _, e in ipairs(P.Entries) do
 			place(e.Icon, 14, 14, 40, 40)
