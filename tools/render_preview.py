@@ -2,22 +2,27 @@
 """Render exported parts (tools/export_parts.luau JSON) to PNG previews for visual QA of offline-built geometry.
 
 usage: python3 -I tools/render_preview.py <parts.json> <out_prefix> [--views top,iso_ne,iso_sw,front] [--size 1600]
-       [--box x0,z0,x1,z1] [--hide-transparent 0.95] [--label]
+       [--box x0,z0,x1,z1] [--hide-transparent 0.95] [--label] [--exclude REGEX] [--ymax Y] [--ymin Y] [--margin 20]
 
 Views: top (orthographic from above, height-shaded), iso_ne / iso_sw / iso_nw / iso_se (30 deg isometric from that
 corner), front (from -Z looking +Z), side (from +X looking -X). Faces are flat-shaded with a fixed light; Neon
 parts are drawn bright; transparent parts are blended. Blocks, wedges, corner wedges, cylinders and balls are
-approximated by their polygons. Writes <out_prefix>_<view>.png.
+approximated by their polygons; big faces are split into tiles so the painter's sort stays correct for large floors
+and walls. --exclude drops parts whose name matches the regex, --ymax / --ymin drop parts centred above / below a
+height (cut away walls or ceilings to look inside), --margin widens the --box part filter (default 20 studs; 0 for
+tight close-ups). Writes <out_prefix>_<view>.png.
 """
 import json
 import math
+import re
 import sys
 
 from PIL import Image, ImageDraw, ImageFont
 
 
 def parse_args(argv):
-    opts = {"views": "top,iso_ne,iso_sw", "size": 1600, "box": None, "hide": 0.95, "label": False}
+    opts = {"views": "top,iso_ne,iso_sw", "size": 1600, "box": None, "hide": 0.95, "label": False, "exclude": None,
+            "ymax": None, "ymin": None, "margin": 20.0}
     pos = []
     i = 0
     while i < len(argv):
@@ -32,6 +37,14 @@ def parse_args(argv):
             opts["hide"] = float(argv[i + 1]); i += 2
         elif a == "--label":
             opts["label"] = True; i += 1
+        elif a == "--exclude":
+            opts["exclude"] = re.compile(argv[i + 1]); i += 2
+        elif a == "--ymax":
+            opts["ymax"] = float(argv[i + 1]); i += 2
+        elif a == "--ymin":
+            opts["ymin"] = float(argv[i + 1]); i += 2
+        elif a == "--margin":
+            opts["margin"] = float(argv[i + 1]); i += 2
         else:
             pos.append(a); i += 1
     return pos, opts
@@ -108,13 +121,15 @@ def polys_for(part):
             faces.append(([c[i] for i in q], mat_apply(r, n)))
         return faces
     if shape == "Wedge":
-        # Roblox wedge: slope from (top, -Z) ... full height at -Z? WedgePart: high side at -Z? The slope faces +Z/up:
-        # vertices: bottom rectangle, top edge at z = -sz (back)
+        # Roblox WedgePart: the vertical rectangular face is the BACK (+Z), the slope descends to the front edge
+        # (bottom, -Z) and faces front/up (that is how Kit roofs and YardKit.GableTri use it: a wedge in the front half
+        # of a gable has its tall side on the ridge at +Z).
         b = [w((x, -sy, z)) for x in (-sx, sx) for z in (-sz, sz)]  # 0:(-,-) 1:(-,+) 2:(+,-) 3:(+,+)
-        t0 = w((-sx, sy, -sz)); t1 = w((sx, sy, -sz))
+        t0 = w((-sx, sy, sz)); t1 = w((sx, sy, sz))
+        nrm = math.sqrt(sz * sz + sy * sy) or 1
         faces.append(([b[0], b[2], b[3], b[1]], mat_apply(r, (0, -1, 0))))
-        faces.append(([b[0], t0, t1, b[2]], mat_apply(r, (0, 0, -1))))
-        faces.append(([t0, b[1], b[3], t1], mat_apply(r, (0, .7071, .7071))))
+        faces.append(([b[1], b[3], t1, t0], mat_apply(r, (0, 0, 1))))
+        faces.append(([b[0], t0, t1, b[2]], mat_apply(r, (0, sz / nrm, -sy / nrm))))
         faces.append(([b[0], b[1], t0], mat_apply(r, (-1, 0, 0))))
         faces.append(([b[2], t1, b[3]], mat_apply(r, (1, 0, 0))))
         return faces
@@ -167,6 +182,32 @@ def project(pt, setup):
     return (x, -y2), depth
 
 
+TILE = 18.0
+
+
+def tiles(poly):
+    """Split a big quad into a grid of smaller quads (painter's sort works per tile)."""
+    if len(poly) != 4:
+        return [poly]
+    a, b, c, d = poly
+    def dist(p, q):
+        return math.sqrt(sum((p[i] - q[i]) ** 2 for i in range(3)))
+    nu = max(1, min(24, int(max(dist(a, b), dist(d, c)) / TILE + .999)))
+    nv = max(1, min(24, int(max(dist(a, d), dist(b, c)) / TILE + .999)))
+    if nu == 1 and nv == 1:
+        return [poly]
+    def lerp(p, q, t):
+        return tuple(p[i] + (q[i] - p[i]) * t for i in range(3))
+    def at(u, v):
+        return lerp(lerp(a, b, u), lerp(d, c, u), v)
+    out = []
+    for i in range(nu):
+        for j in range(nv):
+            u0, u1, v0, v1 = i / nu, (i + 1) / nu, j / nv, (j + 1) / nv
+            out.append([at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)])
+    return out
+
+
 def render(parts, view, size, box, label):
     setup = view_setup(view)
     faces = []
@@ -175,7 +216,12 @@ def render(parts, view, size, box, label):
         if alpha <= 0.02:
             continue
         neon = part["m"] == "Neon"
+        split = []
         for poly, normal in polys_for(part):
+            tl = tiles(poly)
+            for tile in tl:
+                split.append((tile, normal, len(tl) > 1))
+        for poly, normal, tiled in split:
             if setup is None and normal[1] <= 0.05:
                 continue  # top view: only upward faces
             proj = [project(v, setup) for v in poly]
@@ -184,7 +230,7 @@ def render(parts, view, size, box, label):
                 depth = sum(v[1] for v in poly) / len(poly)
             else:
                 depth = -sum(q[1] for q in proj) / len(proj)
-            faces.append((depth, pts2, shade(part["c"], normal, neon, alpha)))
+            faces.append((depth, pts2, shade(part["c"], normal, neon, alpha), tiled))
     if not faces:
         return None
     xs = [p[0] for f in faces for p in f[1]]
@@ -199,11 +245,18 @@ def render(parts, view, size, box, label):
     img = Image.new("RGBA", (W, H), (22, 20, 30, 255))
     layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer, "RGBA")
-    faces.sort(key=lambda f: f[0])
-    for _, pts2, col in faces:
+    # painter's order: far to near; nearly coplanar faces (a pane on a wall, a dial on a tower) draw the bigger one first
+    def area(pts):
+        a = 0.0
+        for i in range(len(pts)):
+            x0, y0 = pts[i]; x1, y1 = pts[(i + 1) % len(pts)]
+            a += x0 * y1 - x1 * y0
+        return abs(a) / 2
+    faces.sort(key=lambda f: (round(f[0] / 0.6), -area(f[1])))
+    for _, pts2, col, tiled in faces:
         pts = [((p[0] - x0) * scale + 20, (p[1] - z0) * scale + 20) for p in pts2]
         if len(pts) >= 3:
-            draw.polygon(pts, fill=col, outline=(0, 0, 0, min(90, col[3])))
+            draw.polygon(pts, fill=col, outline=col if tiled else (0, 0, 0, min(90, col[3])))
     img = Image.alpha_composite(img, layer)
     d2 = ImageDraw.Draw(img)
     # scale bar + axis note
@@ -229,9 +282,16 @@ def main():
         sys.exit(1)
     parts = json.load(open(pos[0]))
     parts = [p for p in parts if p["t"] < opts["hide"]]
+    if opts["exclude"] is not None:
+        parts = [p for p in parts if not opts["exclude"].search(p["n"])]
+    if opts["ymax"] is not None:
+        parts = [p for p in parts if p["p"][1] <= opts["ymax"]]
+    if opts["ymin"] is not None:
+        parts = [p for p in parts if p["p"][1] >= opts["ymin"]]
     if opts["box"]:
         x0, z0, x1, z1 = opts["box"]
-        parts = [p for p in parts if x0 - 20 <= p["p"][0] <= x1 + 20 and z0 - 20 <= p["p"][2] <= z1 + 20]
+        mg = opts["margin"]
+        parts = [p for p in parts if x0 - mg <= p["p"][0] <= x1 + mg and z0 - mg <= p["p"][2] <= z1 + mg]
     for view in opts["views"].split(","):
         img = render(parts, view, opts["size"], opts["box"], opts["label"])
         if img is None:
