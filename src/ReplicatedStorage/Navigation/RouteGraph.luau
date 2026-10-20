@@ -15,16 +15,15 @@
 --     the player goes round its corner or along the yard's service walk (Sidestep). Smooth(points)
 --     fillets the corners, Resample(dense) gives evenly spaced samples with tangents, Locate()
 --     projects the player on the sampled route, PointAt() interpolates.
+--   * [WP-F] Event places switch at call time (Navigation.Live): the Dead Yard nodes (and the gate dock FutureDock) are
+--     always in the graph but sealed while the Halloween event does not run, the Dead Yard fences / houses / crypts
+--     block only while it runs and the COMING SOON cube only while it does not (Refresh(), cached 1 s). Targets may
+--     carry Sealed = function() -> bool (DeadYard, Church).
+--   * [WP-F] UnderyardEscape(from, UnderyardLayout): inside THE UNDERYARD (a teleport zone far off the island, no
+--     streets) every route first leads to the ASCEND arch: out of the mine, through the district gate, round the bell
+--     tower along the ring road.
 local RouteGraph = {}
--- NIGHT OF THE BURIED MOON (Halloween event, WP9): read once at module load (DistrictGuide caches destinations).
-local HALLOWEEN = (function()
-	local ok, on = pcall(function()
-		local folder = game:GetService("ReplicatedStorage"):FindFirstChild("Halloween")
-		local cfg = folder and folder:FindFirstChild("Config")
-		return cfg ~= nil and require(cfg :: any).HalloweenEventEnabled == true
-	end)
-	return ok and on == true
-end)()
+local Live = require(script.Parent:WaitForChild("Live"))
 
 RouteGraph.Spacing = 2 -- studs between route samples
 RouteGraph.FilletRadius = 5 -- corner radius (clamped to the segment lengths)
@@ -154,7 +153,7 @@ local NODE_LIST: { any } = {
 	{ "Market335", 92, 0.5, 335 }, -- ... COSMETICS door (Paw market anchor)
 	{ "Market395", 92, 0.5, 395 }, -- ... SUPPLIES door
 	{ "LabDock", 62, 0.5, 477 }, -- laboratory approach, before the entry steps
-	{ "FutureDock", 31, 0.5, 575, not HALLOWEEN }, -- global dig site (sealed: COMING SOON) / THE DEAD YARD gate (Halloween)
+	{ "FutureDock", 31, 0.5, 575, false, "Halloween" }, -- global dig site (sealed: COMING SOON) / THE DEAD YARD gate (Halloween)
 	-- West spurs.
 	{ "ParkGate", -56, 0.5, 207 }, -- leaderboard plaza east gate
 	{ "ParkInner", -86, 0.5, 216 }, -- inside the plaza, south of the pavilions
@@ -233,57 +232,69 @@ local EDGE_LIST: { any } = {
 -- Yard gates: one node per yard on its entry walk, joined to the promenade at the yard's centre line.
 local PROMENADE_OF = { [1] = "PWm117", [2] = "PWm39", [3] = "PW39", [4] = "PW117", [5] = "PEm117", [6] = "PEm39", [7] = "PE39", [8] = "PE117" }
 
-export type Node = { Id: string, Index: number, Pos: Vector3, Sealed: boolean, Links: { any } }
+export type Node = { Id: string, Index: number, Pos: Vector3, Sealed: boolean, BaseSealed: boolean, Event: string?, Links: { any } }
 
 RouteGraph.Nodes = {} :: { Node }
 RouteGraph.ById = {} :: { [string]: Node }
-RouteGraph.Edges = {} :: { any } -- {A = Node, B = Node, Length}
+RouteGraph.Edges = {} :: { any } -- {A = Node, B = Node, Length, Cost}
 
-local function addNode(id: string, pos: Vector3, sealed: boolean?)
+-- event = "Halloween": the node is sealed while the event does not run (Refresh)
+local function addNode(id: string, pos: Vector3, sealed: boolean?, event: string?)
 	assert(RouteGraph.ById[id] == nil, "duplicate node " .. id)
-	local node = { Id = id, Index = #RouteGraph.Nodes + 1, Pos = pos, Sealed = sealed == true, Links = {} }
+	local node = { Id = id, Index = #RouteGraph.Nodes + 1, Pos = pos, Sealed = sealed == true, BaseSealed = sealed == true, Event = event,
+		Links = {} }
 	table.insert(RouteGraph.Nodes, node)
 	RouteGraph.ById[id] = node
 end
-local function addEdge(a: string, b: string)
+-- mult: the A* cost of the edge is its length x mult (a detour the route only takes when nothing shorter exists)
+local function addEdge(a: string, b: string, mult: number?)
 	local na, nb = RouteGraph.ById[a], RouteGraph.ById[b]
 	assert(na and nb, "edge with unknown node " .. a .. "-" .. b)
 	local length = (na.Pos - nb.Pos).Magnitude
-	local edge = { A = na, B = nb, Length = length }
+	local cost = length * (mult or 1)
+	local edge = { A = na, B = nb, Length = length, Cost = cost }
 	table.insert(RouteGraph.Edges, edge)
-	table.insert(na.Links, { Node = nb, Cost = length })
-	table.insert(nb.Links, { Node = na, Cost = length })
+	table.insert(na.Links, { Node = nb, Cost = cost })
+	table.insert(nb.Links, { Node = na, Cost = cost })
 end
 
-if HALLOWEEN then
-	-- THE DEAD YARD (Halloween): in through the gate, along Hollow Lane, the cauldron, round it to the pit's north ramp.
-	for _, row in ipairs({
-		{ "DeadYardGate", 42, 0.5, 575 }, -- just inside the gate (opening z 566..584)
-		{ "DeadYardLane", 128, 0.5, 575 }, -- Hollow Lane x the cauldron walk
-		{ "DeadYardCauldron", 128, 0.5, 598 }, -- north edge of the cauldron plaza
-		{ "DeadYardLaneEast", 196, 0.5, 575 }, -- east end of the lane (broken lab / ore field)
-		{ "DeadYardPlazaE", 140, 0.2, 612 }, -- east of the cauldron
-		{ "DeadYardPitN", 128, 0.2, 640 }, -- pit rim, top of the north ramp
-		{ "DeadYardPitFloor", 128, -8, 662 }, -- arena floor, foot of the north ramp
-	}) do
-		table.insert(NODE_LIST, row)
-	end
-	for _, row in ipairs({
-		{ "FutureDock", "DeadYardGate" }, { "DeadYardGate", "DeadYardLane" }, { "DeadYardLane", "DeadYardCauldron" },
-		{ "DeadYardLane", "DeadYardLaneEast" }, { "DeadYardCauldron", "DeadYardPlazaE" }, { "DeadYardPlazaE", "DeadYardPitN" },
-		{ "DeadYardPitN", "DeadYardPitFloor" },
-	}) do
-		table.insert(EDGE_LIST, row)
-	end
+-- THE DEAD YARD (Halloween): in through the gate, along Hollow Lane, the cauldron, round it to the pit's north ramp.
+-- [WP-F] Always in the graph, sealed while the event does not run (Refresh). THE CHURCH (Grand Crypt + Moon Tower, south
+-- of the pit): round the pit's east rim (outside its parapet, x 158) to the south rim walk and up the crypt walk; the
+-- pit floor's south ramp is a costly edge (an arena: a route only takes it from inside the pit).
+for _, row in ipairs({
+	{ "DeadYardGate", 42, 0.5, 575 }, -- just inside the gate (opening z 566..584)
+	{ "DeadYardLane", 128, 0.5, 575 }, -- Hollow Lane x the cauldron walk
+	{ "DeadYardCauldron", 128, 0.5, 598 }, -- north edge of the cauldron plaza
+	{ "DeadYardLaneEast", 196, 0.5, 575 }, -- east end of the lane (broken lab / ore field)
+	{ "DeadYardPlazaE", 140, 0.2, 612 }, -- east of the cauldron
+	{ "DeadYardPitN", 128, 0.2, 640 }, -- pit rim, top of the north ramp
+	{ "DeadYardPitFloor", 128, -8, 662 }, -- arena floor, foot of the north ramp
+	{ "DeadYardRimNE", 162, 0.2, 640 }, -- [WP-F] north-east of the pit, outside the parapet
+	{ "DeadYardRimSE", 162, 0.2, 705 }, -- [WP-F] south-east of the pit, at the end of the south rim walk
+	{ "DeadYardPitS", 128, 0.2, 705 }, -- [WP-F] south rim walk, top of the south ramp
+	{ "DeadYardCrypt", 128, 0.5, 712 }, -- [WP-F] the crypt walk, below the church forecourt
+}) do
+	table.insert(NODE_LIST, { row[1], row[2], row[3], row[4], false, "Halloween" })
+end
+for _, row in ipairs({
+	{ "FutureDock", "DeadYardGate" }, { "DeadYardGate", "DeadYardLane" }, { "DeadYardLane", "DeadYardCauldron" },
+	{ "DeadYardLane", "DeadYardLaneEast" }, { "DeadYardCauldron", "DeadYardPlazaE" }, { "DeadYardPlazaE", "DeadYardPitN" },
+	{ "DeadYardPitN", "DeadYardPitFloor" },
+	-- [WP-F] the church
+	{ "DeadYardPlazaE", "DeadYardRimNE" }, { "DeadYardRimNE", "DeadYardRimSE" },
+	{ "DeadYardRimSE", "DeadYardPitS" }, { "DeadYardPitS", "DeadYardCrypt" }, { "DeadYardPitFloor", "DeadYardPitS", 3 },
+}) do
+	table.insert(EDGE_LIST, row)
 end
 for _, row in ipairs(NODE_LIST) do
-	addNode(row[1], v(row[2], row[3], row[4]), row[5])
+	addNode(row[1], v(row[2], row[3], row[4]), row[5], row[6])
 end
 for _, yard in ipairs(RouteGraph.Yards) do
 	addNode("YG" .. yard.Id, RouteGraph.YardPoint(yard.Id, 0, RouteGraph.GateZ, 1.2) :: Vector3)
 end
 for _, row in ipairs(EDGE_LIST) do
-	addEdge(row[1], row[2])
+	addEdge(row[1], row[2], row[3])
 end
 for id, promenade in pairs(PROMENADE_OF) do
 	addEdge(promenade, "YG" .. id)
@@ -299,11 +310,13 @@ end
 -- facades, counters, the sealed cube, fences). Interiors with an entrance are modelled by their
 -- walls so the route can walk in through the door.
 ------------------------------------------------------------------------------------------------
-export type Box = { Name: string, X0: number, X1: number, Z0: number, Z1: number }
+export type Box = { Name: string, X0: number, X1: number, Z0: number, Z1: number, Event: string?, Off: boolean? }
 RouteGraph.Blockers = {} :: { Box }
 
-local function box(name: string, x0: number, x1: number, z0: number, z1: number)
-	table.insert(RouteGraph.Blockers, { Name = name, X0 = math.min(x0, x1), X1 = math.max(x0, x1), Z0 = math.min(z0, z1), Z1 = math.max(z0, z1) })
+-- event = "Halloween" (blocks only while the event runs) | "NoHalloween" (only while it does not); Refresh sets Off
+local function box(name: string, x0: number, x1: number, z0: number, z1: number, event: string?)
+	table.insert(RouteGraph.Blockers, { Name = name, X0 = math.min(x0, x1), X1 = math.max(x0, x1), Z0 = math.min(z0, z1), Z1 = math.max(z0, z1),
+		Event = event, Off = false })
 end
 
 -- THE DOG head, its mouth walls and the tongue belt (dogs walk there).
@@ -402,30 +415,29 @@ do
 	box(row[1], row[2], row[3], row[4], row[5])
 end
 -- Global dig site: the sealed COMING SOON cube. During the Halloween event THE DEAD YARD stands there instead: its fence
--- (gate gap z 566..584), the houses, the cauldron, the broken lab and the crypts.
-if HALLOWEEN then
-	box("DeadYardFenceWN", 32.5, 38.5, 531, 566)
-	box("DeadYardFenceWS", 32.5, 38.5, 584, 745.3)
-	box("DeadYardFenceN", 33, 210, 530.5, 532.5)
-	box("DeadYardFenceE", 209, 210.5, 531, 745.3)
-	box("DeadYardFenceS", 33, 210, 744.3, 745.8)
-	box("DeadYardHouses", 50, 204, 543, 557)
-	box("DeadYardCauldron", 123, 133, 607, 617)
-	box("DeadYardBrokenLab", 184, 208, 604, 634)
-	box("DeadYardGrandCrypt", 114, 142, 724, 742)
-	box("DeadYardCryptB", 176, 196, 724, 742)
-	-- the boss pit's arena wall (floor x 104..152, z 648..696), open at its four 8-wide ramps
-	box("DeadYardPitWallNW", 103.5, 124, 647.5, 648.5)
-	box("DeadYardPitWallNE", 132, 152.5, 647.5, 648.5)
-	box("DeadYardPitWallSW", 103.5, 124, 695.5, 696.5)
-	box("DeadYardPitWallSE", 132, 152.5, 695.5, 696.5)
-	box("DeadYardPitWallWN", 103.5, 104.5, 648.5, 668)
-	box("DeadYardPitWallWS", 103.5, 104.5, 676, 695.5)
-	box("DeadYardPitWallEN", 151.5, 152.5, 648.5, 668)
-	box("DeadYardPitWallES", 151.5, 152.5, 676, 695.5)
-else
-	box("GlobalDigCube", 33, 214.5, 531, 745.3)
-end
+-- (gate gap z 566..584), the houses, the cauldron, the broken lab and the crypts. [WP-F] Both sets are listed; Refresh
+-- switches them with the live event state.
+box("DeadYardFenceWN", 32.5, 38.5, 531, 566, "Halloween")
+box("DeadYardFenceWS", 32.5, 38.5, 584, 745.3, "Halloween")
+box("DeadYardFenceN", 33, 210, 530.5, 532.5, "Halloween")
+box("DeadYardFenceE", 209, 210.5, 531, 745.3, "Halloween")
+box("DeadYardFenceS", 33, 210, 744.3, 745.8, "Halloween")
+box("DeadYardHouses", 50, 204, 543, 557, "Halloween")
+box("DeadYardCauldron", 123, 133, 607, 617, "Halloween")
+box("DeadYardBrokenLab", 184, 208, 604, 634, "Halloween")
+box("DeadYardGrandCrypt", 114, 142, 724, 742, "Halloween")
+box("DeadYardCryptB", 176, 196, 724, 742, "Halloween")
+box("DeadYardGraveBell", 140, 152, 631, 641, "Halloween") -- [WP-F] the Grave Bell, beside the east rim route
+-- the boss pit's arena wall (floor x 104..152, z 648..696), open at its four 8-wide ramps
+box("DeadYardPitWallNW", 103.5, 124, 647.5, 648.5, "Halloween")
+box("DeadYardPitWallNE", 132, 152.5, 647.5, 648.5, "Halloween")
+box("DeadYardPitWallSW", 103.5, 124, 695.5, 696.5, "Halloween")
+box("DeadYardPitWallSE", 132, 152.5, 695.5, 696.5, "Halloween")
+box("DeadYardPitWallWN", 103.5, 104.5, 648.5, 668, "Halloween")
+box("DeadYardPitWallWS", 103.5, 104.5, 676, 695.5, "Halloween")
+box("DeadYardPitWallEN", 151.5, 152.5, 648.5, 668, "Halloween")
+box("DeadYardPitWallES", 151.5, 152.5, 676, 695.5, "Halloween")
+box("GlobalDigCube", 33, 214.5, 531, 745.3, "NoHalloween")
 -- DOG-O-MATIC machine.
 box("RewardMachine", -172, -140, 573, 685)
 -- Leaderboard plaza pavilions.
@@ -468,11 +480,33 @@ local function insideBox(b: Box, x: number, z: number, margin: number): boolean
 	return x > b.X0 - margin and x < b.X1 + margin and z > b.Z0 - margin and z < b.Z1 + margin
 end
 
+------------------------------------------------------------------------------------------------
+-- [WP-F] Live event state (Navigation.Live, read at call time, at most once a second): Dead Yard nodes sealed and the
+-- yard / cube blockers switched to match. Refresh(true) forces a re-read (tests, a switch the caller just saw).
+------------------------------------------------------------------------------------------------
+local refreshedAt = -math.huge
+function RouteGraph.Refresh(force: boolean?)
+	local now = os.clock()
+	if not force and now - refreshedAt < 1 then
+		return
+	end
+	refreshedAt = now
+	local on = Live.Halloween()
+	for _, node in ipairs(RouteGraph.Nodes) do
+		node.Sealed = node.BaseSealed or (node.Event == "Halloween" and not on)
+	end
+	for _, b in ipairs(RouteGraph.Blockers) do
+		b.Off = (b.Event == "Halloween" and not on) or (b.Event == "NoHalloween" and on)
+	end
+end
+RouteGraph.Refresh(true)
+
 -- First blocker containing the point (XZ), or nil.
 function RouteGraph.BlockerAt(point: Vector3, margin: number?): Box?
+	RouteGraph.Refresh()
 	local m = margin or 0
 	for _, b in ipairs(RouteGraph.Blockers) do
-		if insideBox(b, point.X, point.Z, m) then
+		if not b.Off and insideBox(b, point.X, point.Z, m) then
 			return b
 		end
 	end
@@ -521,6 +555,9 @@ end
 -- can still walk away from it or along it (with the full margin every leg from there would start
 -- "inside" the box and be blocked, whatever its direction).
 local function blocks(blocker: Box, a: Vector3, b: Vector3, m: number, skipInside: boolean?): boolean
+	if blocker.Off then
+		return false
+	end
 	local bm = m
 	if skipInside and insideBox(blocker, a.X, a.Z, m) then
 		if insideBox(blocker, a.X, a.Z, 0) then
@@ -534,6 +571,7 @@ end
 
 -- First blocker the XZ segment a-b crosses, or nil (skipInside: see blocks()).
 function RouteGraph.SegmentBlocker(a: Vector3, b: Vector3, margin: number?, skipInside: boolean?): Box?
+	RouteGraph.Refresh()
 	local m = margin or 0
 	for _, blocker in ipairs(RouteGraph.Blockers) do
 		if blocks(blocker, a, b, m, skipInside) then
@@ -596,7 +634,22 @@ RouteGraph.Targets = {
 	RewardMachine = { Docks = { { Node = "MachineDock", Goal = v(-103, 0.8, 630) } }, Pointer = v(-106, 1.2, 630) },
 	GlobalDigSite = { Sealed = true, Docks = { { Node = "FutureDock", Goal = v(36, 0.5, 575) } }, Pointer = v(38, 3, 575) },
 	-- THE DEAD YARD (Halloween): the Haunted Cauldron, the hub on the gate's sightline
-	DeadYard = { Sealed = not HALLOWEEN, Docks = { { Node = "DeadYardCauldron", Goal = v(128, 0.5, 600) } }, Pointer = v(128, 9, 612) },
+	DeadYard = {
+		Sealed = function()
+			return not Live.Halloween()
+		end,
+		Docks = { { Node = "DeadYardCauldron", Goal = v(128, 0.5, 600) } },
+		Pointer = v(128, 9, 612),
+	},
+	-- [WP-F] THE CHURCH (Grand Crypt + Moon Tower; CHAPTER II): up the crypt walk to the forecourt in front of the
+	-- stairs, the pointer over the door (the DESCEND portal waits behind it)
+	Church = {
+		Sealed = function()
+			return not Live.Chapter2()
+		end,
+		Docks = { { Node = "DeadYardCrypt", Goal = v(128, 0.5, 720) } },
+		Pointer = v(128, 12, 728),
+	},
 	TheVoid = { Sealed = true, Docks = {}, Pointer = v(700.7, 117, -633.3) },
 }
 
@@ -612,6 +665,7 @@ function RouteGraph.Target(key: string, ctx: any?): any
 	if not spec then
 		return nil
 	end
+	RouteGraph.Refresh()
 	local c = ctx or {}
 	local overrides = c.Overrides or {}
 	if spec.Yard then
@@ -642,7 +696,12 @@ function RouteGraph.Target(key: string, ctx: any?): any
 	for _, dock in ipairs(spec.Docks) do
 		table.insert(docks, { Node = dock.Node, Via = dock.Via or {}, Goal = overrides.Goal or dock.Goal })
 	end
-	return { Key = key, Docks = docks, Pointer = overrides.Pointer or spec.Pointer, Sealed = spec.Sealed == true }
+	local sealed = spec.Sealed
+	if type(sealed) == "function" then
+		local ok, value = pcall(sealed)
+		sealed = ok and value == true
+	end
+	return { Key = key, Docks = docks, Pointer = overrides.Pointer or spec.Pointer, Sealed = sealed == true }
 end
 
 ------------------------------------------------------------------------------------------------
@@ -719,6 +778,7 @@ end
 RouteGraph.ClosestOnSegment = closestOnSegment
 
 function RouteGraph.Entries(from: Vector3, limit: number?): { any }
+	RouteGraph.Refresh()
 	local list = {}
 	for _, edge in ipairs(RouteGraph.Edges) do
 		if not edge.A.Sealed and not edge.B.Sealed then
@@ -829,6 +889,7 @@ function RouteGraph.Plan(from: Vector3, target: any, opts: any?): (any?, string?
 	if not target then
 		return nil, "unknown"
 	end
+	RouteGraph.Refresh()
 	if target.Sealed then
 		return nil, "sealed"
 	end
@@ -1171,6 +1232,110 @@ function RouteGraph.Locate(samples: any, pos: Vector3, hint: number?, window: nu
 		end
 	end
 	return scan(1, n - 1)
+end
+
+------------------------------------------------------------------------------------------------
+-- [WP-F] UnderyardEscape(from, U) -> route {Points, Goal, Pointer, InUnderyard = true, District} | nil
+-- THE UNDERYARD (U = ReplicatedStorage.Halloween.UnderyardLayout) is a teleport zone 1 400 studs off the island: no
+-- street of this graph reaches it. A player inside it is first led to the ASCEND arch on the north edge of Bell
+-- Square (the mineEscape pattern of PathGuide): up the Undercrypt ramp from the sunken mine floor, out of the arena
+-- along its approach, through the district's gate (district side -> square side), round the broken bell tower along
+-- the ring road (never through the tower or the seal altars), then up to the arch. nil when `from` is not in the zone.
+------------------------------------------------------------------------------------------------
+RouteGraph.EscapeRing = 74 -- the ring road's centre line (UnderyardLayout.Square.RingRoad 66..82)
+RouteGraph.EscapeInner = 47 -- the walk round the tower inside the plaza (outside the altar ring r 34)
+RouteGraph.EscapeTowerClear = 40 -- a straight leg closer than this to the tower axis (altar ring r 34) goes round it
+RouteGraph.EscapeArcStep = math.rad(24)
+
+-- angle of a point round the square centre: 0 = north (-Z), clockwise seen from above (UnderyardLayout.Ring)
+local function squareAngle(centre: Vector3, p: Vector3): number
+	return math.atan2(p.X - centre.X, -(p.Z - centre.Z))
+end
+local function onCircle(centre: Vector3, r: number, a: number, y: number): Vector3
+	return Vector3.new(centre.X + math.sin(a) * r, y, centre.Z - math.cos(a) * r)
+end
+-- distance from point c to the XZ segment a-b
+local function segmentDistance(c: Vector3, a: Vector3, b: Vector3): number
+	local q = closestOnSegment(c, a, b)
+	return flat(c, q)
+end
+-- waypoints along a circle from angle a0 to a1 (the shorter way), excluding a0, including a1
+local function arc(centre: Vector3, r: number, a0: number, a1: number, y: number, out: { Vector3 })
+	local d = a1 - a0
+	while d > math.pi do
+		d -= 2 * math.pi
+	end
+	while d < -math.pi do
+		d += 2 * math.pi
+	end
+	local steps = math.max(1, math.ceil(math.abs(d) / RouteGraph.EscapeArcStep))
+	for k = 1, steps do
+		table.insert(out, onCircle(centre, r, a0 + d * k / steps, y))
+	end
+end
+
+function RouteGraph.UnderyardEscape(from: Vector3, U: any): any?
+	if type(U) ~= "table" or type(U.InZone) ~= "function" or not U.InZone(from, 2) then
+		return nil
+	end
+	local floor = U.Floor or 0
+	local centre = Vector3.new(U.Centre.X, floor, U.Centre.Z)
+	local prompt: Vector3 = U.ReturnPrompt
+	-- stand in front of the arch, inside its prompt range, on the arrival side (south of it)
+	local goal = Vector3.new(prompt.X, floor + 0.2, prompt.Z + 3)
+	local pointer = Vector3.new(U.ArrivalArch.X, floor + 9, U.ArrivalArch.Z)
+	local points: { Vector3 } = { from }
+	local here = from
+	local district = U.District(from) or "BellSquare"
+	local function go(p: Vector3)
+		if flat(here, p) > 0.75 then
+			table.insert(points, p)
+			here = p
+		end
+	end
+	-- 1. the sunken Undercrypt mine floor: up its ramp to the catacomb mouth
+	if district == "Undercrypt" and U.Undercrypt and from.Y < floor - 6 then
+		go(U.Undercrypt.RampBottom)
+		go(U.Undercrypt.RampTop)
+		go(U.Undercrypt.Entrance)
+	end
+	-- 2. the arena ring: out along its approach first
+	if district == "BlackBellArena" and U.Arena then
+		local ac = U.Arena.Centre
+		if flat(from, ac) < U.Arena.Radius + 4 then
+			go(Vector3.new(U.Arena.Approach.To.X, floor, U.Arena.Approach.To.Z))
+		end
+	end
+	-- 3. through the district's gate onto the ring road
+	local gate = U.Gates and U.Gates[district]
+	if gate then
+		local facing: Vector3 = gate.Facing
+		go(gate.Position + facing * 8)
+		go(gate.Position - facing * 8)
+	end
+	-- 4. Bell Square: to the arch, round the tower when it stands in the way
+	local r = flat(here, centre)
+	local plaza = U.Square and U.Square.Plaza and U.Square.Plaza.Radius or 62
+	if segmentDistance(centre, here, goal) >= RouteGraph.EscapeTowerClear then
+		go(goal)
+	else
+		local a0 = squareAngle(centre, here)
+		local aGoal = squareAngle(centre, goal)
+		local radius = r > plaza and RouteGraph.EscapeRing or RouteGraph.EscapeInner
+		local start = onCircle(centre, radius, a0, floor)
+		go(start)
+		local around: { Vector3 } = {}
+		arc(centre, radius, a0, aGoal, floor, around)
+		for _, p in ipairs(around) do
+			go(p)
+		end
+		go(goal)
+	end
+	if #points < 2 then
+		points[2] = goal
+	end
+	local last = points[#points]
+	return { Points = points, Goal = last, Pointer = pointer, InUnderyard = true, District = district }
 end
 
 return RouteGraph

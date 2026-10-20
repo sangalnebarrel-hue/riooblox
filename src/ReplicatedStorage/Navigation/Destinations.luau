@@ -5,19 +5,17 @@
 --   Name/Ru   display name, Short/ShortRu  HUD chip, Detail/DetailRu  one-line subtitle
 --   Icon      emoji glyph, Color  optional override of the category colour
 --   Aliases   other names callers pass to NavigateDistrict (old display names keep working)
---   Sealed    closed area: never routed, shown disabled with its Detail
+--   Sealed    closed area: never routed, shown disabled with its Detail. Event places (THE DEAD YARD, the church) carry a
+--             live Sealed: reading entry.Sealed asks Navigation.Live at that moment (Destinations.Sealed(entry) too)
+--   PriorityAliases  names this entry takes over from other entries' plain aliases ("Portal" -> the church while the
+--             Halloween event runs)
 local Destinations = {}
+local Live = require(script.Parent:WaitForChild("Live"))
 
 local C = Color3.fromRGB
--- NIGHT OF THE BURIED MOON (Halloween event, WP9): read once at module load (DistrictGuide caches destinations).
-local HALLOWEEN = (function()
-	local ok, on = pcall(function()
-		local folder = game:GetService("ReplicatedStorage"):FindFirstChild("Halloween")
-		local cfg = folder and folder:FindFirstChild("Config")
-		return cfg ~= nil and require(cfg :: any).HalloweenEventEnabled == true
-	end)
-	return ok and on == true
-end)()
+-- NIGHT OF THE BURIED MOON (Halloween event, WP9): the event's places are in the list when the place ships the event
+-- (config flag, read once: DistrictGuide caches its rows); whether they are open is read at call time ([WP-F] Live).
+local HALLOWEEN = Live.Configured()
 
 Destinations.Categories = {
 	{ Id = "Plot", Text = "MY PLOT", Ru = "МОЙ УЧАСТОК", Color = C(105, 232, 120) },
@@ -287,11 +285,25 @@ Destinations.List = {
 	},
 }
 
--- While the Halloween event is on THE DEAD YARD takes the place of the sealed global event site (same map slot).
+-- An entry whose Sealed is decided when it is read (entry.Sealed, Destinations.Sealed): fn() -> sealed?
+local function liveSealed(entry: any, fn: () -> boolean): any
+	entry.Sealed = nil
+	return setmetatable(entry, {
+		__index = function(_, key)
+			if key == "Sealed" then
+				return fn()
+			end
+			return nil
+		end,
+	})
+end
+
+-- While the Halloween event is on THE DEAD YARD takes the place of the sealed global event site (same map slot), and
+-- THE CHURCH (the Grand Crypt + Moon Tower, the way down to CHAPTER II · THE UNDERYARD) follows it.
 if HALLOWEEN then
 	for i, entry in ipairs(Destinations.List) do
 		if entry.Key == "GlobalDigSite" then
-			Destinations.List[i] = {
+			Destinations.List[i] = liveSealed({
 				Key = "DeadYard",
 				Category = "Attractions",
 				Icon = "🎃",
@@ -304,7 +316,27 @@ if HALLOWEEN then
 				Color = C(255, 140, 40),
 				Aliases = { "Dead Yard", "Halloween", "Buried Moon", "Night of the Buried Moon", "Cauldron", "Haunted cauldron", "Graveyard",
 					"Global event", "Event headquarters", "Global dig", "Global dig site" },
-			}
+			}, function()
+				return not Live.Halloween()
+			end)
+			-- [WP-F] THE CHURCH: open while CHAPTER II is (the reveal, the cinematic and the DESCEND portal live there)
+			table.insert(Destinations.List, i + 1, liveSealed({
+				Key = "Church",
+				Category = "Attractions",
+				Icon = "⛪",
+				Name = "The Church",
+				Ru = "Церковь",
+				Short = "CHURCH",
+				ShortRu = "ЦЕРКОВЬ",
+				Detail = "The Grand Crypt under the Moon Tower: something is waiting below",
+				DetailRu = "Большой склеп под Лунной башней: внизу что-то ждёт",
+				Color = C(150, 80, 230),
+				PriorityAliases = { "Portal", "Underyard", "The Underyard", "Underyard portal" },
+				Aliases = { "Church", "Crypt", "Grand Crypt", "Moon Tower", "Underyard gate", "Церковь", "Склеп", "Большой склеп",
+					"Портал", "Поддворье", "Лунная башня" },
+			}, function()
+				return not Live.Chapter2()
+			end))
 			break
 		end
 	end
@@ -320,12 +352,40 @@ for _, category in ipairs(Destinations.Categories) do
 	categoryById[category.Id] = category
 end
 
--- Lower-case, letters and digits only ("DOG-O-MATIC PLAZA" == "dogomatic plaza").
+-- Lower-case, letters and digits only ("DOG-O-MATIC PLAZA" == "dogomatic plaza"). [WP-F] Cyrillic letters count as
+-- letters too (lower-cased, Ё = Е), so the Russian aliases ("Церковь", "СКЛЕП") resolve; other symbols are dropped.
 function Destinations.Normalize(name: any): string
 	if type(name) ~= "string" then
 		return ""
 	end
+	local ok, out = pcall(function()
+		local parts = {}
+		for _, code in utf8.codes(name) do
+			if code < 128 then
+				local ch = string.char(code)
+				if string.find(ch, "%w") then
+					table.insert(parts, string.lower(ch))
+				end
+			elseif code >= 0x400 and code <= 0x4FF then
+				if code >= 0x410 and code <= 0x42F then
+					code += 0x20
+				elseif code == 0x401 or code == 0x451 then
+					code = 0x435
+				end
+				table.insert(parts, utf8.char(code))
+			end
+		end
+		return table.concat(parts)
+	end)
+	if ok then
+		return out
+	end
 	return (string.gsub(string.lower(name), "[^%w]", ""))
+end
+
+-- Is the entry closed right now? (event places ask Navigation.Live)
+function Destinations.Sealed(entry: any): boolean
+	return type(entry) == "table" and entry.Sealed == true
 end
 
 local index: { [string]: string } = {}
@@ -335,10 +395,15 @@ local function remember(name: any, key: string)
 		index[n] = key
 	end
 end
--- Keys and display names first (exact meaning), then the aliases.
+-- Keys and display names first (exact meaning), then the aliases an entry takes over, then every other alias.
 for _, entry in ipairs(Destinations.List) do
 	remember(entry.Key, entry.Key)
 	remember(entry.Name, entry.Key)
+end
+for _, entry in ipairs(Destinations.List) do
+	for _, alias in ipairs(entry.PriorityAliases or {}) do
+		remember(alias, entry.Key)
+	end
 end
 for _, entry in ipairs(Destinations.List) do
 	remember(entry.Short, entry.Key)
