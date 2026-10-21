@@ -773,3 +773,6 @@ test("a strike session (MiningActive, no controls of its own) does not hold the 
 end)
 
 print(string.format("cinema: %d passed, %d failed", passed, failed))
+if failed > 0 then
+	error("cinema tests failed")
+end

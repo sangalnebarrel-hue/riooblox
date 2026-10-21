@@ -93,7 +93,7 @@ CE.OnInvoke = function(_, action)
 end
 
 local gui = CE.MainGui()
-local toasts = {}
+local toasts, sounds = {}, {}
 local function noop() end
 local ctx = {
 	Player = CE.Player,
@@ -117,7 +117,9 @@ local ctx = {
 			return code
 		end,
 	},
-	Audio = { Play = noop, Pickaxe = noop },
+	Audio = { Play = function(name)
+		table.insert(sounds, name)
+	end, Pickaxe = noop },
 	U = { Colors = { red = roblox.Color3.new(1, 0, 0), gold = roblox.Color3.new(1, 1, 0) } },
 	World = {},
 	FX = { ReducedMotion = function()
@@ -161,8 +163,23 @@ local function reset()
 	calls.StrikeBegin, calls.StrikeEnd = 0, 0
 	during = nil
 	beginOk = false
+	-- whatever a failed case left behind
+	CE.Player:SetAttribute("HwDowned", nil)
+	gui:SetAttribute("OpenMenu", nil)
+	target:SetAttribute("EndReason", nil)
+	local hum = CE.Player.Character and CE.Player.Character:FindFirstChildOfClass("Humanoid")
+	if not hum or hum.Health <= 0 then
+		CE.Spawn(Vector3.new(0, 3, 0))
+	end
+	CE.MoveTo(Vector3.new(0, 3, 0))
 	shot(false)
 	CE.Advance(2.5)
+	table.clear(toasts)
+	table.clear(sounds)
+end
+local function silent(label)
+	eq(#toasts, 0, label .. ": no toast (" .. table.concat(toasts, ", ") .. ")")
+	eq(#sounds, 0, label .. ": no sound (" .. table.concat(sounds, ", ") .. ")")
 end
 
 ---------------------------------------------------------------------------------------------------------------------
@@ -229,14 +246,69 @@ test("a cinematic that begins during the StrikeBegin round trip: refused, closed
 	eq(calls.StrikeBegin, 2, "asked again once the shot is over")
 end)
 
-test("a menu opened while waiting: the kept press is refused like any press", function()
+test("a menu opened while waiting (it ends the shot): the kept press is dropped without a word", function()
 	reset()
 	shot(true)
 	press()
 	gui:SetAttribute("OpenMenu", "Shop")
 	shot(false)
 	eq(calls.StrikeBegin, 0, "no strike while a menu is open")
+	silent("menu")
 	gui:SetAttribute("OpenMenu", nil)
+	CE.Advance(.1)
+end)
+
+test("downed while waiting (the finale stops its shot): dropped without 'You are downed' or Deny", function()
+	reset()
+	shot(true)
+	press()
+	CE.Player:SetAttribute("HwDowned", true)
+	shot(false)
+	eq(calls.StrikeBegin, 0)
+	silent("downed")
+	CE.Player:SetAttribute("HwDowned", nil)
+	CE.Advance(.1)
+end)
+
+test("died or respawned while waiting: the kept press belongs to the old character and is dropped", function()
+	reset()
+	shot(true)
+	press()
+	CE.Player.Character:FindFirstChildOfClass("Humanoid").Health = 0
+	shot(false)
+	eq(calls.StrikeBegin, 0, "no strike from a dead character")
+	silent("died")
+	reset()
+	shot(true)
+	press()
+	CE.Spawn(Vector3.new(0, 3, 0)) -- a new character at the same spot
+	shot(false)
+	eq(calls.StrikeBegin, 0, "no strike for the press of the previous character")
+	silent("respawned")
+	press()
+	eq(calls.StrikeBegin, 1, "a fresh press of the new character works")
+end)
+
+test("walked out of range while waiting: dropped (no server 'Move closer')", function()
+	reset()
+	shot(true)
+	press()
+	CE.MoveTo(Vector3.new(60, 3, 0))
+	shot(false)
+	eq(calls.StrikeBegin, 0)
+	silent("far")
+	CE.MoveTo(Vector3.new(0, 3, 0))
+end)
+
+test("the target ended while waiting: dropped", function()
+	reset()
+	shot(true)
+	press()
+	target:SetAttribute("EndReason", "Broken")
+	shot(false)
+	eq(calls.StrikeBegin, 0)
+	silent("ended")
+	target:SetAttribute("EndReason", nil)
 	CE.Advance(.1)
 end)
 

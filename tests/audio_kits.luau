@@ -325,3 +325,6 @@ test("boss cues play in the Boss bus, dig thuds in the Pickaxe bus with the impa
 end)
 
 print(string.format("audio_kits: %d passed, %d failed", passed, failed))
+if failed > 0 then
+	error("audio_kits tests failed")
+end

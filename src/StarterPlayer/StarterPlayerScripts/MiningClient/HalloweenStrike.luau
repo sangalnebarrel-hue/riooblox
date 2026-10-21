@@ -742,18 +742,31 @@ function Strike.new(ctx)
    Color=typeof(col)=='Color3'and col or C3(180,160,140),Material=okM and mat or Enum.Material.Slate}
  end
  -- a cinematic owns the camera and the controls: a press under it is kept and starts the strike once the shot is over
- -- (within 2 s), so the click / tap that skipped the shot is not lost
+ -- (within 2 s), so the click / tap that skipped the shot is not lost. The kept press only starts when a fresh press
+ -- could (same live character in range, prompt allowed, no menu): otherwise it is dropped without a word, since the
+ -- shot often ends for the very reason that should cancel it (downed, a menu, death, a respawn).
+ local promptAllowed -- PROMPTS below
  local function cinema()return ctx.Main~=nil and ctx.Main:GetAttribute('CinemaActive')==true end
+ local function stillWanted(d)
+  if os.clock()>d.Until or ctx.MenuOpen()then return false end
+  local part=d.Part
+  if not(part and part.Parent and promptAllowed(part))then return false end
+  local character=player.Character
+  local hum=character and character:FindFirstChildOfClass('Humanoid')
+  local root=character and character:FindFirstChild('HumanoidRootPart')
+  if character~=d.Character or not(hum and hum.Health>0 and root)then return false end
+  return(part.CFrame.Position-root.Position).Magnitude<=(part:GetAttribute('Range')or 14)
+ end
  local function afterShot(part)
   local waiting=self.Deferred~=nil
-  self.Deferred={Part=part,Until=os.clock()+2}
+  self.Deferred={Part=part,Until=os.clock()+2,Character=player.Character}
   if waiting then return end
   local conn
   conn=ctx.Main:GetAttributeChangedSignal('CinemaActive'):Connect(function()
    if cinema()then return end
    conn:Disconnect()
    local d=self.Deferred;self.Deferred=nil
-   if d and os.clock()<=d.Until and not self.Active then self.Enter(d.Part)end
+   if d and stillWanted(d)then self.Enter(d.Part)end
   end)
  end
  function self.Enter(part)
@@ -854,7 +867,7 @@ function Strike.new(ctx)
 
  -- PROMPTS ------------------------------------------------------------------------------------
  local prompts={} -- part -> ProximityPrompt
- local function promptAllowed(part)
+ function promptAllowed(part)
   if self.Active or not enabled()or part:GetAttribute('EndReason')then return false end
   if player:GetAttribute('HwDowned')==true then return false end -- [WP-B] downed: target prompts hidden
   if ctx.Mine and ctx.Mine.Active then return false end

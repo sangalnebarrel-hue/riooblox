@@ -673,4 +673,7 @@ test("IV: every mine node sits on the mine floor, clear above, under the ceiling
 end)
 
 print(string.format("seals_1_4 (world): %d passed, %d failed", passed, failed))
+if failed > 0 then
+	error("seals_1_4_world tests failed")
+end
 return { Passed = passed, Failed = failed }

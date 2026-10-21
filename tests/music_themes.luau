@@ -134,3 +134,6 @@ test("the pad swells in and sustains (attack + looped voice); the kick and celes
 end)
 
 print(string.format("music_themes: %d passed, %d failed", passed, failed))
+if failed > 0 then
+	error("music_themes tests failed")
+end

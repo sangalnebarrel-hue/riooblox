@@ -1361,4 +1361,7 @@ test("localization: every server message of the four activities has Russian, no 
 end)
 
 print(string.format("seals_1_4 (server): %d passed, %d failed", passed, failed))
+if failed > 0 then
+	error("seals_1_4 tests failed")
+end
 return { Passed = passed, Failed = failed }

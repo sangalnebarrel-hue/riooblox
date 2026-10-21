@@ -242,3 +242,6 @@ test("Ensure builds §16.1 exactly, keeps existing volumes, moves the stray mini
 end)
 
 print(string.format("audio_mixer: %d passed, %d failed", passed, failed))
+if failed > 0 then
+	error("audio_mixer tests failed")
+end
