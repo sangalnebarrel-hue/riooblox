@@ -106,18 +106,18 @@ D.Items = {
 	-- THE UNDERYARD (Halloween Chapter II rewards; ids are saved data, never rename). Black Coffin rows, the Tailor of
 	-- the Dead (fragments), Seal VII (Crooked Bell Tower) and the Dex II milestone 5 (Spirit Fence). Hint / HintRU
 	-- override the event's default source line (D.RewardHint). Every piece has a client idle animation.
-	{ Id = "uy_crooked_bell_tower", Category = "UnderyardLarge", Name = "CROOKED BELL TOWER", RU = "КРИВАЯ КОЛОКОЛЬНЯ", Stage = 1, Cash = 0, Stone = 0, Rarity = "Mythic", Reward = "Underyard2026",
+	{ Id = "uy_crooked_bell_tower", Category = "UnderyardLarge", Name = "CROOKED BELL TOWER", RU = "КРИВАЯ КОЛОКОЛЬНЯ", Stage = 1, Cash = 0, Stone = 0, Rarity = "Legendary", Reward = "Underyard2026",
 		Hint = "Clear Bell Seal VII, open Black Coffins or ask the Tailor of the Dead", HintRU = "Пройди VII печать колокола, открывай Чёрные гробы или закажи у Портного мертвецов" },
-	{ Id = "uy_whispering_tree", Category = "UnderyardLarge", Name = "WHISPERING TREE", RU = "ШЕПЧУЩЕЕ ДЕРЕВО", Stage = 1, Cash = 0, Stone = 0, Rarity = "Legendary", Reward = "Underyard2026" },
-	{ Id = "uy_moon_statue", Category = "UnderyardLarge", Name = "MOON STATUE", RU = "ЛУННАЯ СТАТУЯ", Stage = 1, Cash = 0, Stone = 0, Rarity = "Legendary", Reward = "Underyard2026" },
+	{ Id = "uy_whispering_tree", Category = "UnderyardLarge", Name = "WHISPERING TREE", RU = "ШЕПЧУЩЕЕ ДЕРЕВО", Stage = 1, Cash = 0, Stone = 0, Rarity = "Epic", Reward = "Underyard2026" },
+	{ Id = "uy_moon_statue", Category = "UnderyardLarge", Name = "MOON STATUE", RU = "ЛУННАЯ СТАТУЯ", Stage = 1, Cash = 0, Stone = 0, Rarity = "Mythic", Reward = "Underyard2026" },
 	{ Id = "uy_ghost_fountain", Category = "UnderyardLarge", Name = "GHOST FOUNTAIN", RU = "ПРИЗРАЧНЫЙ ФОНТАН", Stage = 1, Cash = 0, Stone = 0, Rarity = "Legendary", Reward = "Underyard2026" },
-	{ Id = "uy_grave_gate", Category = "UnderyardLarge", Name = "GRAVE GATE", RU = "КЛАДБИЩЕНСКИЕ ВРАТА", Stage = 1, Cash = 0, Stone = 0, Rarity = "Epic", Reward = "Underyard2026" },
-	{ Id = "uy_haunted_kennel", Category = "UnderyardSmall", Name = "HAUNTED KENNEL", RU = "ПРОКЛЯТАЯ БУДКА", Stage = 1, Cash = 0, Stone = 0, Rarity = "Epic", Reward = "Underyard2026" },
-	{ Id = "uy_spirit_fence", Category = "UnderyardSmall", Name = "SPIRIT FENCE", RU = "ПРИЗРАЧНАЯ ОГРАДА", Stage = 1, Cash = 0, Stone = 0, Rarity = "Epic", Reward = "Underyard2026",
+	{ Id = "uy_grave_gate", Category = "UnderyardLarge", Name = "GRAVE GATE", RU = "КЛАДБИЩЕНСКИЕ ВРАТА", Stage = 1, Cash = 0, Stone = 0, Rarity = "Legendary", Reward = "Underyard2026" },
+	{ Id = "uy_haunted_kennel", Category = "UnderyardSmall", Name = "HAUNTED KENNEL", RU = "ПРОКЛЯТАЯ БУДКА", Stage = 1, Cash = 0, Stone = 0, Rarity = "Rare", Reward = "Underyard2026" },
+	{ Id = "uy_spirit_fence", Category = "UnderyardSmall", Name = "SPIRIT FENCE", RU = "ПРИЗРАЧНАЯ ОГРАДА", Stage = 1, Cash = 0, Stone = 0, Rarity = "Rare", Reward = "Underyard2026",
 		Hint = "Find 5 Underyard dogs (Dex II), open Black Coffins or ask the Tailor of the Dead", HintRU = "Найди 5 собак Поддворья (Декс II), открывай Чёрные гробы или закажи у Портного мертвецов" },
 	{ Id = "uy_coffin_flowerbed", Category = "UnderyardSmall", Name = "COFFIN FLOWERBED", RU = "КЛУМБА-ГРОБ", Stage = 1, Cash = 0, Stone = 0, Rarity = "Rare", Reward = "Underyard2026" },
-	{ Id = "uy_floating_tombstones", Category = "UnderyardSmall", Name = "FLOATING TOMBSTONES", RU = "ПАРЯЩИЕ НАДГРОБИЯ", Stage = 1, Cash = 0, Stone = 0, Rarity = "Rare", Reward = "Underyard2026" },
-	{ Id = "uy_funeral_lanterns", Category = "UnderyardSmall", Name = "FUNERAL LANTERN SET", RU = "ПОХОРОННЫЕ ФОНАРИ", Stage = 1, Cash = 0, Stone = 0, Rarity = "Rare", Reward = "Underyard2026" },
+	{ Id = "uy_floating_tombstones", Category = "UnderyardSmall", Name = "FLOATING TOMBSTONES", RU = "ПАРЯЩИЕ НАДГРОБИЯ", Stage = 1, Cash = 0, Stone = 0, Rarity = "Epic", Reward = "Underyard2026" },
+	{ Id = "uy_funeral_lanterns", Category = "UnderyardSmall", Name = "FUNERAL LANTERN SET", RU = "ПОХОРОННЫЕ ФОНАРИ", Stage = 1, Cash = 0, Stone = 0, Rarity = "Epic", Reward = "Underyard2026" },
 }
 -- Where an event reward comes from (the window's info line), per Item.Reward: { English, Russian }.
 D.RewardSources = {

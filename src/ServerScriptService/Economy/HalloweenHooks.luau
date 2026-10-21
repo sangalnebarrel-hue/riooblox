@@ -58,7 +58,8 @@ end
 
 -- {{Name, Chance}} natural event rows for this moment, or nil when the event is off.
 function H.Rows(now: number): any
-	if not Bonus or not Bonus.EventEnabled() then
+	-- natural event mutations are a Dead Yard (Chapter I) activity
+	if not Bonus or not (Bonus.Chapter1Enabled or Bonus.EventEnabled)() then
 		return nil
 	end
 	local cfg = Bonus.Config()

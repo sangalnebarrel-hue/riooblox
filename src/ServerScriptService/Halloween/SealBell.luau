@@ -210,6 +210,21 @@ local function members(run: any): string
 	return "," .. table.concat(ids, ",") .. ","
 end
 
+-- Activity.ObjectiveShards to every member for a survived ring wave and each broken chain (Chapter2.QueueShards, daily DR),
+-- like the rounds of the other seals
+local function objective(run: any)
+	local c2 = C2()
+	local n = tonumber(ACT.ObjectiveShards) or 0
+	if not c2 or not c2.QueueShards or n <= 0 then
+		return
+	end
+	for _, pl in ipairs(run.Players) do
+		if pl.Parent then
+			pcall(c2.QueueShards, pl, n, "Objective")
+		end
+	end
+end
+
 local function startWave(run: any, wave: number)
 	local d = run.Data
 	d.Wave = wave
@@ -228,6 +243,7 @@ local function startWave(run: any, wave: number)
 		if seals then
 			seals.AddScore(run, nil, 1)
 		end
+		objective(run)
 		d.ChainIndex = 0
 		d.Chains = {}
 		d.NextToll = clock + 4
@@ -286,6 +302,7 @@ local function breakChain(run: any, key: string)
 	run.Public.ChainsLeft = math.max(0, #BC.Chains.Order - #d.Broken)
 	Bell.Stage({ Broken = d.Broken, Chain = "" })
 	signal(run, "ChainBreak", { Key = key, Left = run.Public.ChainsLeft })
+	objective(run)
 	d.Chain = nil
 	if run.Public.ChainsLeft <= 0 then
 		local seals = SealsM()

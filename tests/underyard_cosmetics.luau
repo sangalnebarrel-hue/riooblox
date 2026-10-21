@@ -165,6 +165,13 @@ test("catalog: the 10 Underyard decorations with their fixed ids, sizes and even
 	end
 	-- the Chapter I rewards keep their own hint
 	check(string.find(Catalog.RewardHint(Catalog.Get("hw_bone_arch"), false), "Pumpkin") ~= nil, "Chapter I hint")
+	-- one rarity everywhere: the plot decor screen (catalog) and the Black Coffin / Underyard window (Chapter2Config)
+	local C2Cfg = L.Require("ReplicatedStorage.Halloween.Chapter2Config")
+	for id in DECOR do
+		local def = C2Cfg.Decor.Defs[id]
+		check(def ~= nil, id .. " missing in Chapter2Config.Decor")
+		check(Catalog.Get(id).Rarity == def.Rarity, id .. " rarity: catalog " .. tostring(Catalog.Get(id).Rarity) .. ", Chapter II " .. tostring(def.Rarity))
+	end
 end)
 
 test("decor recipes exist, build at both levels of detail and stay within the part budget", function()

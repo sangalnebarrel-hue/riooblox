@@ -40,7 +40,8 @@ contracts against the real Luau modules.
 | Cauldron brew time | StartedAt + 7 days flat (a brew started after Oct 24 could never be claimed) | ready at `min(StartedAt + 7 d, 2026-10-31 18:00 UTC)` for every brew started before the deadline (none is stranded); a brew started after it takes 1 day; Studio fast timers unchanged | `Rebalance.BrewDeadline`; `Chapter1Rules.BrewReadyAt`; `Shared.BrewSeconds(startedAt)` (marked `[WP-E]`); `Actions` CauldronClaim; view `Cauldron.ReadyAt` |
 
 Brew catch-up examples (UTC): started Oct 20 09:00 → ready Oct 27 09:00 (7 days, as before) · Oct 24 18:00 → Oct 31
-18:00 · Oct 27 → Oct 31 18:00 · Oct 30 23:00 → Oct 31 23:00 (the 1-day minimum) · Nov 2 → Nov 3. A brew started
+18:00 · Oct 27 → Oct 31 18:00 · Oct 30 23:00 → Oct 31 18:00 (ready by the deadline, never stranded) · Nov 2 → Nov 3
+(after the deadline: 1 day). A brew started
 before the rebalance shipped keeps its StartedAt; only its ready time can move earlier, never later.
 
 Unchanged on purpose: TREAT brew tables and level costs, event DogDex rewards, rare-find candy, Candy Rush, curse, the

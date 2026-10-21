@@ -782,7 +782,9 @@ function H.Start(ctx)
 		local moon = Shared and Shared.BloodMoonState(t) or { State = "NORMAL" }
 		local serverRush = tonumber(stateFolder:GetAttribute("ServerRushUntil")) or 0
 		local b = attrs("Boss")
-		local fighting = bossActive(b)
+		-- the difficulty V finale (BossFinale) keeps the fight at 0 armor: FinaleFX's own panel replaces the Gravekeeper bar
+		local finale = tostring(b.Mode or "") == "Finale" or tostring(attrs("Finale").State or "") ~= ""
+		local fighting = bossActive(b) and not finale
 		-- Defeated: the emptied bar holds ~3 s so the killing blow and the death's first beat land on it
 		if fighting then
 			bossWasOn = true
@@ -1606,7 +1608,7 @@ function H.Start(ctx)
 		updateStrip()
 		tileBadge()
 	end
-	for _, name in ipairs({ "Exorcism", "Boss", "BloodMoon" }) do
+	for _, name in ipairs({ "Exorcism", "Boss", "BloodMoon", "Finale" }) do
 		local f = folder(name)
 		if f then
 			f.AttributeChanged:Connect(onBoss)

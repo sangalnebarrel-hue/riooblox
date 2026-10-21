@@ -9,6 +9,7 @@
 local L = {}
 
 L.Exact = {
+	["THE DEAD YARD is closed for now"] = "МЁРТВЫЙ ДВОР пока закрыт",
 	["The cauldron grew hungrier: the TRICK price changed"] = "Котёл проголодался: цена гадости выросла",
 	["Only exorcists active in the Dead Yard got the RARE PUMPKIN LUCKY BLOCK. Play there to share the next one!"] =
 		"Редкий тыквенный счастливый блок получили только экзорцисты, игравшие на Мёртвом дворе. Играй там, чтобы получить следующий!",

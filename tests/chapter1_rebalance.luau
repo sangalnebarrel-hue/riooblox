@@ -470,6 +470,30 @@ test("EarnCandy counts earned candy only (never quest claims, reward rows or con
 	Core.Players[pl3] = nil
 end)
 
+test("HalloweenChapter1Enabled = false: Dead Yard activities refuse and earn no candy, payouts and claims stay", function()
+	local pl = fakePlayer(108, IN_YARD)
+	local p = newProfile(108)
+	Core.Players[pl] = nil
+	local ctx = ctxFor(pl, p)
+	C.HalloweenChapter1Enabled = false
+	local okRun, err = pcall(function()
+		eq(ctx.Candy(7, "Ore"), 0, "an ore earns nothing")
+		eq(ctx.Candy(5, "Treat", { NoCap = true }), 0, "a TREAT earns nothing")
+		eq(ctx.Candy(18, "Quest", { NoMult = true, NoCap = true }), 18, "a payout is still paid")
+		for action in pairs(Core.Chapter1Actions) do
+			local ok, msg = Core.Dispatch(pl, action, {})
+			eq(ok, false, action)
+			eq(msg, "THE DEAD YARD is closed for now", action)
+		end
+		truthy(not Core.Chapter1Actions.CauldronClaim and not Core.Chapter1Actions.QuestClaim and not Core.Chapter1Actions.DexClaim,
+			"claims of what players earned stay open")
+	end)
+	C.HalloweenChapter1Enabled = true
+	Core.Players[pl] = nil
+	truthy(okRun, tostring(err))
+	eq(ctx.Candy(7, "Ore"), 7, "back on: earned again")
+end)
+
 test("Dust reward rows pay Lucky Dust through Resources", function()
 	local pl = fakePlayer(104, IN_YARD)
 	local p = newProfile(104)

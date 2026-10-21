@@ -36,7 +36,7 @@ end
 
 -- World roots built by tools/edits. Budgets keep phones playable (see docs/HALLOWEEN_PART2.md, Performance).
 local ROOTS = {
-	{ path = { "Workspace", "DOGROTS_District", "40_Underyard" }, parts = 26000, lights = 260 },
+	{ path = { "Workspace", "DOGROTS_District", "40_Underyard" }, parts = 26000, lights = 250 },
 	-- [WP-M] the calendar's stage folders are saved in ServerStorage (the server moves them into
 	-- Workspace.DOGROTS_District.41_HalloweenCalendar at runtime), so the budget covers all eight stages there
 	{ path = { "ServerStorage", "HalloweenCalendar" }, parts = 9000, lights = 90 },

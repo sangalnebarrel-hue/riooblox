@@ -1,7 +1,7 @@
 -- Studio-only test commands for NIGHT OF THE BURIED MOON (ServerScriptService.Halloween.Debug).
 -- Client panel: F7 in Studio (HalloweenClient.HUD) or the command bar:
 --   game.ReplicatedStorage.Halloween.Remotes.Request:InvokeServer("Debug", {Cmd = "Candy", N = 500})
--- Commands: Candy {N}, Curse {N}, BloodMoon, BloodMoonNow, BloodMoonStop, Souls {N}, ResetDaily, Skins, Dog {Id},
+-- Commands: Candy {N}, Curse {N}, BloodMoon, BloodMoonNow, BloodMoonStop, Souls {N}, ResetDaily, Skins, Dog {Id} (H01-H16),
 --           Block {Tier}, Boss {Difficulty}, Brew (cauldron ready now), Onboarding (show the guide again), Rush.
 -- CHAPTER II (request "C2Debug", Studio places only: RunService:IsStudio() and game.GameId == 0):
 --   Shards {N}, Keys {N}, Fragments {N}, Dust {N}, Seal {N} (seals 1..N offered + cleared, 0 = reset), Offer {N},
@@ -65,9 +65,15 @@ function D.Start(core, modules)
 	end
 	cmd.Dog = function(player, a)
 		local id = type(a.Id) == "string" and a.Id or Config.Dogs.Order[1]
-		R.Check(Config.Dogs.Defs[id] ~= nil, "Unknown event dog")
-		return core.Transact(player, "Debug", function(_p, _h, ctx)
-			ctx.Dog(id)
+		-- Chapter I event dogs (H01-H08, Config.Dogs) and the Underyard dogs (H09-H16, Chapter2Config.Dogs)
+		local c2ok, C2Cfg = pcall(require, game:GetService("ReplicatedStorage").Halloween.Chapter2Config)
+		local chapter2 = c2ok and type(C2Cfg) == "table" and C2Cfg.Dogs and C2Cfg.Dogs.Defs and C2Cfg.Dogs.Defs[id] ~= nil
+		R.Check(Config.Dogs.Defs[id] ~= nil or chapter2, "Unknown event dog")
+		return core.Transact(player, "Debug", function(p, _h, ctx)
+			local dog = ctx.Dog(id)
+			if chapter2 and dog and type(p.Dogs) == "table" and p.Dogs[dog.DogUid] then
+				p.Dogs[dog.DogUid].Origin = "Underyard"
+			end
 			return { Message = id .. " granted" }
 		end, { Dogs = { id } })
 	end

@@ -237,6 +237,10 @@ local function makeCtx(player: Player, p: any, h: any, v: any, now: number, dogs
 		if n <= 0 then
 			return 0
 		end
+		-- THE DEAD YARD switched off: activities earn no candy (fixed payouts and reward rows still pay)
+		if not Shared.Chapter1Enabled() and Rules1.Earned(source, o, Config) then
+			return 0
+		end
 		if not o.NoCap and st then
 			local clock = os.clock()
 			if clock - st.MinuteStart >= 60 then
@@ -879,9 +883,18 @@ local function clean(value: any, depth: number): boolean
 	return false
 end
 
+-- THE DEAD YARD activities switched by Config.HalloweenChapter1Enabled (DESIGN §2): off = they refuse. Claims of what a
+-- player already earned (CauldronClaim, QuestClaim, QuestBonus, DexClaim) and cosmetics stay open.
+local CHAPTER1_ACTIONS = { RushStart = true, CauldronTrick = true, CauldronInvest = true, CauldronBrew = true, HouseKnock = true,
+	BossSummon = true }
+Core.Chapter1Actions = CHAPTER1_ACTIONS
+
 local function dispatch(player: Player, action: any, args: any)
 	if type(action) ~= "string" or #action > 40 then
 		return false, "Invalid request"
+	end
+	if CHAPTER1_ACTIONS[action] and Shared.Enabled() and not Shared.Chapter1Enabled() then
+		return false, "THE DEAD YARD is closed for now"
 	end
 	local h = handlers[action]
 	if not h then

@@ -63,11 +63,22 @@ end
 
 World.Start(Core)
 Core.Start()
-start("BloodMoon", Core)
-start("Exorcism", Core)
+-- THE DEAD YARD activities (Config.HalloweenChapter1Enabled, DESIGN §2): off = the Blood Moon, exorcism, ores, dig spots,
+-- houses and the Gravekeeper do not start and their requests refuse (Core.Chapter1Actions); the zone stays visible and
+-- Strike keeps serving Chapter II. Claims of what players already earned stay open (Actions).
+local chapter1 = Config.HalloweenChapter1Enabled ~= false
+if chapter1 then
+	start("BloodMoon", Core)
+	start("Exorcism", Core)
+end
 start("Actions", Core)
 for _, name in ipairs({ "Strike", "Ores", "DigSpots", "Boss", "Houses" }) do
-	start(name, Core, modules)
+	if chapter1 or name == "Strike" then
+		start(name, Core, modules)
+	end
+end
+if not chapter1 then
+	print("DOGROTS_HALLOWEEN_CHAPTER1_OFF (Dead Yard activities closed, player data kept)")
 end
 -- CHAPTER II · THE UNDERYARD (docs/halloween2/DESIGN.md §4.1) + the calendar. Modules that are not in the place yet
 -- are reported and skipped like any other.

@@ -40,6 +40,20 @@ function S.EventEnabled(): boolean
 	return v == nil or v == true
 end
 
+-- THE DEAD YARD activities on? (the event, Config.HalloweenChapter1Enabled and the server's replicated switch)
+function S.Chapter1Enabled(): boolean
+	if not S.EventEnabled() then
+		return false
+	end
+	local c = config()
+	if c and c.HalloweenChapter1Enabled == false then
+		return false
+	end
+	local folder = RS:FindFirstChild("Halloween")
+	local state = folder and folder:FindFirstChild("State")
+	return not (state and state:GetAttribute("HalloweenChapter1Enabled") == false)
+end
+
 -- Do event-dog abilities apply right now?
 function S.Active(): boolean
 	if not config() then
