@@ -93,6 +93,9 @@ local function stateOf(player: Player): any
 	return st
 end
 D.StateOf = stateOf
+D.HasState = function(player: Player): boolean
+	return ram[player] ~= nil
+end
 
 local function toast(player: Player, text: string)
 	local c2 = C2()
@@ -540,8 +543,8 @@ local function announceKing(player: Player, visit: any, rows: any)
 end
 
 local function exitRare(player: Player, visit: any)
-	local st = stateOf(player)
-	if st.Rare ~= visit then
+	local st = ram[player] -- not stateOf: the visit timer may fire after the player left
+	if not st or st.Rare ~= visit then
 		return
 	end
 	for _, rows in ipairs(visit.Chests) do
@@ -1134,6 +1137,15 @@ function D.Start(c: any, m: any)
 		end)
 	end
 	Players.PlayerRemoving:Connect(function(player)
+		-- a hidden-room visit cut short by a disconnect still announces a HOLLOW KING left in a closed chest
+		local st = ram[player]
+		local visit = st and st.Rare
+		if visit then
+			for _, rows in ipairs(visit.Chests) do
+				announceKing(player, visit, rows)
+			end
+			st.Rare = nil
+		end
 		ram[player] = nil
 		pending[player] = nil
 	end)

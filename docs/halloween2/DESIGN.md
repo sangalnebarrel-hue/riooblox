@@ -834,7 +834,8 @@ A ghost-dog guide (spectral Bell Pup with a lantern) floats ahead; camera focus 
   cosmetics / showcase finds owned/unowned, fragments + TAILOR craft), **JOURNAL** (§9.6). Opened from: the HALLOWEEN
   window event tab (CHAPTER II card), a rail tile shown when eligible, prompts in Bell Square (`DogEconomyOpen`).
 * HALLOWEEN window: event tab hero gets the CHAPTER II card (locked checklist or "DESCEND"/"OPEN UNDERYARD"); dex tab
-  gets a "CHAPTER II" switch to the second page; cosmetics tab lists Chapter I skins only (filter `Chapter ~= 2`).
+  gets a "CHAPTER II" switch to the second page; the cosmetics tab lists every skin, a Chapter II skin once it is owned
+  or Chapter I is complete (equipped there, in the COLLECTION skin card, and after the event in the SKINS rail window).
 * `DogdexScreen`: second event tab (EVENT_DEX list) for `Underyard2026`; claims via `C2DexClaim`; reply View → Bus.
 * HUD: Bell Shards pill (visible in Underyard or when > 0), Coffin Key chip in the Underyard, Lucky Dust pill when > 0,
   objective strip line for Chapter II (current seal / tutorial step), CombatHUD (§10.3).

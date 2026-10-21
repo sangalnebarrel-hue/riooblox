@@ -859,7 +859,9 @@ local function makeCircle(t)
    or corner:GetAttribute('OwnerUserId')~=player.UserId then
    if current then
     self.Active=false;self.Corner=nil;self.Token=nil;view=nil;World.RefreshPrompts()
-    setControls(true) -- after Active=false: an unlock that saw this entry as busy must still happen
+    -- after Active=false: an unlock that saw this entry as busy must still happen; a cinematic that started during the
+    -- round trip holds the controls itself and gives them back when it ends
+    if not cinema()then setControls(true)end
     if not ok then Hud.Toast(msg,U.Colors.red);Audio.Play('Deny')end
    end
    -- Close the server session we just opened unless a newer entry already owns it.
@@ -871,6 +873,7 @@ local function makeCircle(t)
   if ctx.Tool and ctx.Tool.Equip then pcall(ctx.Tool.Equip)end
   if not reducedMotion()then focus.Enabled=true end
   setControls(false)
+  ctx.Main:SetAttribute('MiningControls',true) -- HalloweenClient Cinema never re-enables the controls under this
   CAS:BindActionAtPriority('DOGROTS_MiningHit',function(_,inputState)
    if inputState==Enum.UserInputState.Begin then hitBest()end
    return Enum.ContextActionResult.Sink
@@ -928,6 +931,7 @@ local function makeCircle(t)
   focus.Enabled=false;blurAmount=0;blur.Size=0;blur.Enabled=false;fovKick=0
   Anim.SetReady(false)
   if Combo then Combo.Reset()end
+  ctx.Main:SetAttribute('MiningControls',nil)
   setControls(true)
   ctx.Main:SetAttribute('MiningActive',nil)
   self.Corner=nil;view=nil

@@ -747,13 +747,16 @@ function Strike.new(ctx)
   if not(part and part.Parent and part:GetAttribute('TargetId'))or part:GetAttribute('EndReason')then return end
   if ctx.Mine and ctx.Mine.Active then return end
   if ctx.MenuOpen()then Hud.Toast(L('Close the menu first','Сначала закрой меню'),U.Colors.gold);return end
+  -- a cinematic owns the camera and the controls (like Mine.Enter: a session started under it would fight its teardown)
+  local function cinema()return ctx.Main and ctx.Main:GetAttribute('CinemaActive')==true end
+  if cinema()then return end
   if (player:GetAttribute('MiningPickaxe')or 0)<1 then needPickaxe();return end
   local token={};self.Token=token
   self.Active=true;self.Target=part;view=viewOf(part);lastActivity=os.clock();breakPlayed=false
   self.RefreshPrompts()
   local ok,res=invoke('StrikeBegin',{Target=view.Id})
   local current=self.Token==token and self.Active
-  if not ok or not current or ctx.MenuOpen()or not part.Parent then
+  if not ok or not current or ctx.MenuOpen()or cinema()or not part.Parent then
    if current then
     self.Active=false;self.Target=nil;self.Token=nil;view=nil;self.RefreshPrompts()
     if not ok then

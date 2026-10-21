@@ -148,6 +148,12 @@ local function miningActive(): boolean
 	local g = mainGui()
 	return g ~= nil and g:GetAttribute("MiningActive") == true
 end
+-- the quarry session (MiningClient Mine) disables the PlayerModule controls itself; a Halloween strike shares MiningActive
+-- but owns no controls, so only this one holds back the release
+local function miningControls(): boolean
+	local g = mainGui()
+	return g ~= nil and g:GetAttribute("MiningControls") == true
+end
 local function humanoid(): Humanoid?
 	local c = player and player.Character
 	return c and c:FindFirstChildOfClass("Humanoid") or nil
@@ -246,10 +252,11 @@ local function watchMenus()
 	local function changed()
 		pcall(syncControls)
 	end
-	-- a single combined watcher: OpenMenu / ModalOwnerCount mean "a menu owns the controls", MiningActive "a mining session
-	-- does"; ControlLocks changes when another GUIIntegration lock owner re-enables the PlayerModule controls under us
+	-- a single combined watcher: OpenMenu / ModalOwnerCount mean "a menu owns the controls", MiningControls "a quarry
+	-- session does"; ControlLocks changes when another GUIIntegration lock owner re-enables the PlayerModule controls under us
 	menuWatch = g.AttributeChanged:Connect(function(name)
-		if name == "OpenMenu" or name == "ModalOwnerCount" or name == "MiningActive" or name == "ControlLocks" then
+		if name == "OpenMenu" or name == "ModalOwnerCount" or name == "MiningActive" or name == "MiningControls"
+			or name == "ControlLocks" then
 			task.defer(changed)
 		end
 	end)
@@ -278,8 +285,8 @@ syncControls = function()
 			sinkBound = false
 			ContextActionService:UnbindAction(SINK)
 		end
-		-- give back only what we took, and never while a menu or a mining session holds them (their end re-runs this)
-		if ownDisable and c and not menuOpen() and not miningActive() then
+		-- give back only what we took, and never while a menu or a quarry session holds them (their end re-runs this)
+		if ownDisable and c and not menuOpen() and not miningControls() then
 			ownDisable = false
 			c:Enable()
 		end

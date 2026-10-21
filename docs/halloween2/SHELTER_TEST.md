@@ -33,8 +33,10 @@ non-HUD owner whose surface has been invisible for 2 s back to the HUD. The Hall
 
 ## 2. Setup
 
-1. Open `place/DOGROTS_HALLOWEEN_NIGHT_OF_THE_BURIED_MOON.rbxl` built with `tools/place_build.luau` (unpublished →
-   `GameId == 0` → memory store, "LOCAL STUDIO PREVIEW" warning).
+1. Open `build/DOGROTS_HALLOWEEN_PART2_THE_UNDERYARD.rbxl` (made by `tools/check.sh` or
+   `lune run tools/place_build.luau <BASE> src <OUT> tools/edits`; `place/` holds the unmodified source place, which has
+   none of these fixes). Do not publish it: unpublished → `GameId == 0` → memory store, "LOCAL STUDIO PREVIEW" warning.
+   The memory store lives as long as the Studio server: **Stop wipes it**, so every Play starts with fresh profiles.
 2. **Test → Clients and Servers**: 1 server + 2 players (real replication; the second player is for trades).
 3. Studio Settings → Network → **Incoming Replication Lag 0.25** (reproduces the old "sometimes does not open").
 4. Seed dogs: paste into a **temporary Script** in ServerScriptService (not the command bar: command-bar `require`
@@ -69,12 +71,20 @@ end)
 
 ## 3. The invariant probe (run on every client, keep it running for the whole session)
 
-Paste into the **client** command bar. It prints a line whenever the navigation state is inconsistent and once a
-second confirms the state while it changes. With nothing open it must read `HUD nil true -`:
+Paste into a **temporary LocalScript** in StarterPlayer → StarterPlayerScripts before Play (not the client command
+bar: a command-bar `require` gets its own GUIIntegration instance that no window uses, so it would always read the
+idle state). Every client runs it; delete it after the session. It prints a line whenever the navigation state is
+inconsistent and once a second confirms the state while it changes. With nothing open it must read `HUD nil true -`.
+Pressing **G** makes the stale owner of §4.3 step 6:
 
 ```lua
-local g = game.Players.LocalPlayer.PlayerGui.ScreenGui
-local N = require(g.Modules.GUIIntegration)
+local g = game.Players.LocalPlayer:WaitForChild("PlayerGui"):WaitForChild("ScreenGui")
+local N = require(g:WaitForChild("Modules"):WaitForChild("GUIIntegration"))
+game:GetService("UserInputService").InputBegan:Connect(function(input, processed)
+	if not processed and input.KeyCode == Enum.KeyCode.G then
+		N.Acquire("Kit", "Ghost") -- an owner with no window (§4.3 step 6)
+	end
+end)
 local PPS = game:GetService("ProximityPromptService")
 local last
 task.spawn(function()
@@ -106,7 +116,10 @@ prints `nav: HUD nil true -` within 2 s (the watchdog) — **without pressing Es
 4. REVIEW SALE → CONFIRM SALE + CANCEL, hint "Price held for 00:44" counting down.
 5. CONFIRM → toast "<dog> found a new home! +N Coins", NEW HOME FOUND banner, `leaderstats.Coins` +N, the next dog
    selected, the list refreshed (count −1). `Players.<p>.DogInventory.<uid>` is gone; MY DOGS no longer lists it.
-6. Server command bar: `print(_G.ShelterRT.Tx.Dirty["p:<userId>"])` → `true`; after ≤ 60 s autosave → `nil`.
+6. Unsaved state: the temporary seeding Script of §2 step 4 can also print it (a command-bar `require` would read
+   its own, empty Runtime). Add before Play:
+   `task.spawn(function() while task.wait(5) do for _, p in game.Players:GetPlayers() do print(p.Name, "dirty:", rt.Tx.Dirty["p:" .. p.UserId]) end end end)`
+   → `true` right after the sale; after ≤ 60 s autosave → `nil`.
 7. Close with X → probe back to `HUD nil true -`.
 
 ### 4.2 Protections and confirmations
@@ -135,8 +148,8 @@ Run each, then check the probe and that E / tap opens the shelter at once:
    window mid-card → camera back, controls stay locked by the menu (`ControlLocks = Menu`); close it → the card
    resumes. Walk out of the Dead Yard mid-guide → the card disappears and the camera is yours; walk back → it resumes
    at the same card.
-6. **Stale owner**: client command bar `require(game.Players.LocalPlayer.PlayerGui.ScreenGui.Modules.GUIIntegration).Acquire("Kit", "Ghost")`
-   (an owner with no window) → within 2-3 s the watchdog warns "Kit has no visible surface" and the probe returns to
+6. **Stale owner**: press **G** (the probe LocalScript of §3 calls `N.Acquire("Kit", "Ghost")`, an owner with no
+   window) → within 2-3 s the watchdog warns "Kit has no visible surface" and the probe returns to
    `HUD nil true -`; the shelter prompt works again.
 7. HALLOWEEN window open/close incl. the DogDex tab; Lucky Block opening (reward owner) → probe returns to HUD.
 
@@ -156,10 +169,16 @@ Run each, then check the probe and that E / tap opens the shelter at once:
 4. Hold ButtonA on a gold CONFIRM SALE for 1.2 s to sell a hold-to-confirm dog.
 
 ### 4.6 Persistence
-1. Sell a dog, wait for the autosave (or leave): rejoin (Stop / Play) → the dog is still gone, the coins are kept,
-   `Stats.TotalSellValue` and `LastSaleAt` are set (the rebuilt tutorial's sale step reads `LastSaleAt`).
-2. Two servers (publish to a test place): sell on server A, leave, join server B → same result (the E2E test runs
-   exactly this with a fake DataStore and a second Transactions/Engine instance).
+The unpublished build cannot show persistence: its memory store is wiped by Stop. In it, check only the session:
+leave with the second test client and join again while the server keeps running (Test → Clients and Servers →
+remove / add a player) → the sale is kept.
+
+1. Real saves need a **published private test place** (File → Publish to a new place, Game Settings → Security →
+   Enable Studio Access to API Services; then `GameId ~= 0` and the real DataStore is used). Sell a dog, wait for the
+   autosave (or leave): Stop / Play → the dog is still gone, the coins are kept, `Stats.TotalSellValue` and
+   `LastSaleAt` are set (the rebuilt tutorial's sale step reads `LastSaleAt`).
+2. Two servers of that test place: sell on server A, leave, join server B → same result (the E2E test runs exactly
+   this with a fake DataStore and a second Transactions/Engine instance).
 
 ## 5. Remote contract (`ReplicatedStorage.ShelterRequest:InvokeServer(action, args)` → `true, data | false, message`)
 

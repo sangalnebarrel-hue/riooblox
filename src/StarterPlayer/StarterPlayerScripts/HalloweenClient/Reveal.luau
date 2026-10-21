@@ -439,6 +439,17 @@ local function deadYard(): Instance?
 	return d and d:FindFirstChild("38_DeadYard")
 end
 
+-- the colour a tinted part (seal rune, slit) rests at: read once and kept on the part, so a cache rebuilt while the glow
+-- is lit (a part streamed in, a respawn) never takes the tint as its base (a part streamed back in is the server's again)
+local function baseColor(d: BasePart): Color3
+	local base = d:GetAttribute("RevealBaseColor")
+	if typeof(base) ~= "Color3" then
+		base = d.Color
+		d:SetAttribute("RevealBaseColor", base)
+	end
+	return base
+end
+
 local function buildCache(churchRoot: Instance): any
 	local c: any = { Root = churchRoot, Doors = {}, Portal = nil, PortalParts = {}, PortalLights = {}, Rings = {}, Pupil = nil,
 		Cracks = {}, Slit = {}, SlitLights = {}, SealRunes = {}, Dust = {}, Fog = {}, Sig = 0 }
@@ -458,7 +469,7 @@ local function buildCache(churchRoot: Instance): any
 					table.insert(rec.Parts, d)
 					table.insert(rec.Rel, base:ToObjectSpace(d.CFrame))
 					if d:GetAttribute("SealRune") then
-						table.insert(c.SealRunes, { Part = d, Color = d.Color })
+						table.insert(c.SealRunes, { Part = d, Color = baseColor(d) })
 					end
 				end
 			end
@@ -510,7 +521,7 @@ local function buildCache(churchRoot: Instance): any
 	end
 	for _, d in ipairs(churchRoot:GetChildren()) do
 		if d:IsA("BasePart") and d:GetAttribute("ChurchSlit") then
-			table.insert(c.Slit, { Part = d, T = tonumber(d:GetAttribute("RevealT")) or .25, Color = d.Color })
+			table.insert(c.Slit, { Part = d, T = tonumber(d:GetAttribute("RevealT")) or .25, Color = baseColor(d) })
 			for _, l in ipairs(d:GetChildren()) do
 				if l:IsA("Light") then
 					table.insert(c.SlitLights, { Light = l, B = tonumber(l:GetAttribute("RevealBrightness")) or 1.5 })

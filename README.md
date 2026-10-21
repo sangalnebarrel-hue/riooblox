@@ -1,7 +1,8 @@
 # DOGROTS — HALLOWEEN PART II · THE UNDERYARD
 
-Готовый плейс: **`build/DOGROTS_HALLOWEEN_PART2_THE_UNDERYARD.rbxl`**. Его создаёт сборка (каталог `build/` в git не
-хранится). Откройте файл в Roblox Studio, проверьте и опубликуйте как обычно.
+Готовый плейс: **`build/DOGROTS_HALLOWEEN_PART2_THE_UNDERYARD.rbxl`** (лежит в репозитории вместе с
+`build/build_report.json`; сборка пересоздаёт его из исходника). Откройте файл в Roblox Studio, проверьте и опубликуйте
+как обычно.
 
 | Путь | Что там |
 |---|---|

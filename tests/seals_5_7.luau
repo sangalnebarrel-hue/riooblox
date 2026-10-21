@@ -9,6 +9,12 @@
 --   H13 hint, the bell trial waves, resonance goal scaling, milestones, the key cap, AFK exclusion and the assault life.
 -- * Localization.Seals2: Russian for every server message, no key repeated from another dictionary or the base table.
 local L = require("./lib/economy_env")
+-- the modules' PlayerRemoving handlers, so a test can play a disconnect
+local removing = {}
+L.Stubs.Players.PlayerRemoving = { Connect = function(_, fn)
+	table.insert(removing, fn)
+	return { Disconnect = function() end }
+end }
 local fs = require("@lune/fs")
 local roblox = require("@lune/roblox")
 local Vector3, CFrame = roblox.Vector3, roblox.CFrame
@@ -1088,6 +1094,53 @@ test("doors: H13 moth hint on approach, never without the dog", function()
 	end)[1]
 	truthy(st2 and st2.Data.Hint == nil, "no hint without H13")
 	roll = lcg(7)
+end)
+
+test("doors: a HOLLOW KING left in a closed chest is announced once, also when its winner disconnects in the room", function()
+	local function kingAnnounces()
+		return #signalsOf("C2Announce", function(s)
+			return s.Data.Kind == "HollowKing" and s.Data.Source == "Doors"
+		end)
+	end
+	local function kingVisit(uid)
+		local pl = newPlayer(uid, 4)
+		U(pl).Seals["5"].Offered = true
+		handlers.C2Hello(pl, {})
+		signals = {}
+		delays = {}
+		setDeal(pl, { "Rare", "Reward", "Reward", "Reward" })
+		roll = function()
+			return .001 -- every roll low: the 0.5% Hollow King lands in a chest
+		end
+		local ok, err = open(pl, 1)
+		truthy(ok, tostring(err))
+		roll = lcg(99)
+		local visit = Doors.StateOf(pl).Rare
+		local king = false
+		for _, rows in ipairs(visit.Chests) do
+			for _, r in ipairs(rows) do
+				king = king or (r.Kind == "Dog" and r.Id == "HW_HollowKing")
+			end
+		end
+		truthy(king, "the visit holds the Hollow King")
+		return pl, visit
+	end
+	-- stays: the visit timer ends the visit with the chest closed
+	local a = kingVisit(531)
+	runDelays()
+	eq(kingAnnounces(), 1, "announced when the visit ends")
+	UY.Dist[a] = "BellSquare"
+	-- disconnects inside the room: PlayerRemoving announces, the later visit timer neither repeats it nor re-creates state
+	local b, visit = kingVisit(532)
+	for _, fn in ipairs(removing) do
+		fn(b)
+	end
+	b.Parent = nil
+	eq(kingAnnounces(), 1, "announced on disconnect")
+	truthy(visit.KingAnnounced, "marked")
+	runDelays()
+	eq(kingAnnounces(), 1, "only once")
+	eq(Doors.HasState(b), false, "no state left for the departed player")
 end)
 
 -- a Chapter II player who may play seal `seal` (previous cleared + offered), near its start

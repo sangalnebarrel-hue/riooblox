@@ -1567,6 +1567,9 @@ function C2.Start(c: any, m: any)
 	registerRequests()
 	if not C2.Enabled() then
 		-- switched off: only dogs that were earned and wait for room in the dog storage still arrive
+		Players.PlayerRemoving:Connect(function(player)
+			ram[player] = nil
+		end)
 		task.spawn(function()
 			while true do
 				task.wait(10)

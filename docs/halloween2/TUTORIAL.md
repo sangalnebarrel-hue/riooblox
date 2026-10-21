@@ -179,17 +179,20 @@ portrait / landscape / desktop.
 5. **Steps 5–9:** sell at the outlined Collector, buy any UPGRADE TREE node, open LAYERS (check the "Next:"
    line), buy a pickaxe at the outlined stall and hit the ore, buy IRON GRIP (OPEN STRENGTH).
 6. **Step 10:** walk to a Lucky Pad → toast "+1 FREE COMMON LUCKY BLOCK"; check the BAG has a Common block
-   (not paid). Repeat with 60 stored blocks (command bar below) → the "storage is full" toast.
+   (not paid). Repeat with 60 stored blocks (the temporary Script below) → the "storage is full" toast.
 7. **Steps 11–14:** walk to the Lab, open the DOGDEX, open TRADE, FINISH.
 8. **Skip:** on any task step wait 2 minutes → SKIP THIS STEP; at step 10 → CLAIM FREE BLOCK.
 9. **Robustness:** open a menu mid-focus (camera returns), reset the character mid-focus, press H (HIDE UI),
    rotate a phone emulator (portrait / landscape), switch the Studio locale to `ru-ru`.
 10. **Replay:** Settings → HOW TO PLAY → NEXT / BACK through all 15 cards; nothing is saved.
 
-Command bar (server, Studio) — jump to a step / reset (the next projection updates the client):
+Jump to a step / reset (the next projection updates the client): paste into a **temporary Script** in
+ServerScriptService before Play and delete it afterwards. Not the command bar: a command-bar `require` gets its own
+Runtime instance with an empty memory store, so it never sees the running game's profile.
 ```lua
 local RT = require(game.ServerScriptService.Economy.Runtime)
-local p1 = game.Players:GetPlayers()[1]
+local p1 = game.Players.PlayerAdded:Wait()
+repeat task.wait(1) until RT.Views[p1.UserId] -- the profile is loaded
 RT.Tx:Run({"p:" .. p1.UserId}, function(v)
 	local t = v["p:" .. p1.UserId].Onboarding
 	t.Status, t.Step, t.StepAt, t.FreeBlock, t.FreeBlockFull = "Active", 10, os.time(), nil, nil
