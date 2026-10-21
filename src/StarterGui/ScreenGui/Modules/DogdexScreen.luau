@@ -1567,8 +1567,9 @@ refreshEntry = function()
 	local top = gradient and gradient[1] or Theme.RarityColor(def.Rarity)
 	ew.Gradient.Color = ColorSequence.new(top:Lerp(Theme.White, found and 0.4 or 0.75), Theme.White)
 	ew.Slot:Show({ Kind = "Dog", DogId = def.Id, Variant = "Normal", Silhouette = not found })
+	local evDef = def.EventDex and eventOf(def.EventDex) or nil
 	if def.EventDex then
-		ew.Number:Set(string.format("🌕 #%02d", def.EventIndex or 0), EVENT_ACCENT)
+		ew.Number:Set(string.format("%s #%02d", evDef and evDef.Glyph or "🌕", def.EventIndex or 0), evDef and evDef.Accent or EVENT_ACCENT)
 	else
 		ew.Number:Set(def.MuseumExcluded and T("BONUS") or string.format("#%03d", def.Index or 0), def.MuseumExcluded and P.gold or ACCENT)
 	end
@@ -1580,7 +1581,17 @@ refreshEntry = function()
 	ew.Fav:SetStyle(e and e.Favorite and "gold" or "secondary")
 	local subtitle = def.MuseumExcluded and T("Bonus dog: not part of the 100") or F("Dog #%03d of %d", def.Index or 0, Rewards.Total)
 	if def.EventDex then
-		subtitle = F("Event dog · BURIED MOON 2026 · #%02d of %d", def.EventIndex or 0, Info.EventTotal(def.EventDex))
+		if evDef and evDef.Chapter == 2 then
+			-- THE UNDERYARD dogs are H09-H16: their place in their own collection is #01-#08
+			local first = math.huge
+			for _, d in ipairs((Info.EventSpecies and Info.EventSpecies[def.EventDex]) or {}) do
+				first = math.min(first, d.EventIndex or first)
+			end
+			local pos = (def.EventIndex or 0) - (first == math.huge and 0 or first - 1)
+			subtitle = UF("Event dog · THE UNDERYARD 2026 · #%02d of %d", pos, Info.EventTotal(def.EventDex))
+		else
+			subtitle = F("Event dog · BURIED MOON 2026 · #%02d of %d", def.EventIndex or 0, Info.EventTotal(def.EventDex))
+		end
 	end
 	entryWin:SetTitle(found and T("DOGDEX ENTRY") or T("UNDISCOVERED DOG"), subtitle)
 	-- Base stats.

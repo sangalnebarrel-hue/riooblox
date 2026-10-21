@@ -85,13 +85,14 @@ test("offering cost: the Bell remembers (40% off two days after a seal opened)",
 	local c, disc = R.OfferingCost(1, START + 2 * DAY, Cfg)
 	eq(c, 60)
 	truthy(disc, "discount flag")
-	eq(R.OfferingCost(3, START + 2 * DAY, Cfg), 300, "seal III opened one day ago")
-	eq(R.OfferingCost(3, START + 3 * DAY, Cfg), 180)
-	eq(R.OfferingCost(6, START + 6 * DAY, Cfg), 390)
-	eq(R.OfferingCost(7, START + 8 * DAY, Cfg), 480)
+	eq(R.OfferingCost(3, START + 2 * DAY, Cfg), 900, "seal III opened one day ago")
+	eq(R.OfferingCost(3, START + 3 * DAY, Cfg), 540)
+	eq(R.OfferingCost(6, START + 6 * DAY, Cfg), 1170)
+	eq(R.OfferingCost(7, START + 8 * DAY, Cfg), 1440)
 	eq(R.OfferingCost(9, START, Cfg), 0, "unknown seal")
 	for i, seal in ipairs(Cfg.Seals) do
-		eq(seal.Offering, ({ 100, 200, 300, 400, 500, 650, 800 })[i], "offering " .. i)
+		-- the story-length offerings (tests/chapter2_pacing.luau checks what they mean in hours)
+		eq(seal.Offering, ({ 100, 600, 900, 1200, 1500, 1950, 2400 })[i], "offering " .. i)
 	end
 end)
 
@@ -189,11 +190,11 @@ test("rested allowance accrues per full UTC day since the start, capped", functi
 	R.RestedUpdate(rested, { Day = sd + 3, Raw = 600, Rested = 0 }, sd + 4, Cfg)
 	eq(rested.Pool, 600, "a full day adds nothing")
 	R.RestedUpdate(rested, { Day = sd + 4, Raw = 0, Rested = 0 }, sd + 9, Cfg)
-	eq(rested.Pool, 750, "cap")
+	eq(rested.Pool, Cfg.Rested.Cap, "cap")
 	-- a late player on Oct 28: 8 empty days -> capped
 	local late = { Day = -1, Pool = 0 }
 	R.RestedUpdate(late, { Day = -1 }, sd + 8, Cfg)
-	eq(late.Pool, 750)
+	eq(late.Pool, Cfg.Rested.Cap)
 	-- before the start nothing accrues
 	local early = { Day = -1, Pool = 0 }
 	eq(R.RestedUpdate(early, { Day = -1 }, sd - 3, Cfg), 0)
@@ -532,7 +533,7 @@ test("config contract: seals, dogs, keys, quality keys, numbers other packages r
 	eq(Cfg.Combat.MaxHP, 100)
 	eq(Cfg.Finale.Rewards.First.Keys, 3)
 	eq(Cfg.Exchange.CandyPerShard, 25)
-	eq(Cfg.Rested.Cap, 750)
+	eq(Cfg.Rested.Cap, 1200)
 	eq(#Cfg.Tutorial.Steps, 6)
 	eq(#Cfg.Contracts.Pool, 11)
 	for _, key in ipairs(Cfg.Journal.Order) do

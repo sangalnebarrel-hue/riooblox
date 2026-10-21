@@ -170,6 +170,14 @@ L.UI = {
 	["THE BLACK BELL HOLDS"] = "ЧЁРНЫЙ КОЛОКОЛ УСТОЯЛ",
 	["The assault failed: fill the resonance again"] = "Штурм провалился: снова наполни резонанс",
 	-- HALLOWEEN window / HUD (Chapter I labels this package relabels)
+	-- after the event: the SKINS rail tile (UITheme) and the cosmetics-only HALLOWEEN window
+	["SKINS"] = "СКИНЫ",
+	["Your Halloween pickaxe skins: equip or remove them"] = "Твои хэллоуинские скины кирки: надень или сними их",
+	-- COLLECTION: owned pickaxe skins are put on from the detail sheet
+	["EQUIP"] = "НАДЕТЬ",
+	["UNEQUIP"] = "СНЯТЬ",
+	["Skin equipped"] = "Скин надет",
+	["Skin removed"] = "Скин снят",
 	["PUMPKIN BLOCK FOR EXORCISTS"] = "ТЫКВЕННЫЙ БЛОК ЭКЗОРЦИСТАМ",
 	["A PUMPKIN BLOCK FOR THE EXORCISTS"] = "ТЫКВЕННЫЙ БЛОК ДЛЯ ЭКЗОРЦИСТОВ",
 }
@@ -243,6 +251,7 @@ L.Templates = {
 	["%s found the Hollow King behind a Crooked Door"] = "%s находит Полого короля за Кривой дверью",
 	["%s won %s from the Gravekeeper's last stand"] = "%s получает в последнем бою Смотрителя кладбища: %s",
 	["%s and the party broke the Gravekeeper's last stand"] = "%s и отряд сломили последний бой Смотрителя кладбища",
+	["Event dog · THE UNDERYARD 2026 · #%02d of %d"] = "Собака события · ПОДДВОРЬЕ 2026 · №%02d из %d",
 	["DEX II reward for %d dogs: %s"] = { "Награда Догдекса II за %d собаку: %s", "Награда Догдекса II за %d собаки: %s",
 		"Награда Догдекса II за %d собак: %s" },
 }

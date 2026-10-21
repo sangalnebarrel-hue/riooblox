@@ -1737,6 +1737,11 @@ function Trials.Replay(i: number)
 	if sealPlaying then
 		return
 	end
+	-- the scene is filmed in the Underyard: elsewhere it is not streamed in (the church replay has the same rule)
+	if CS and type(CS.InZone) == "function" and not CS.InZone() then
+		api.Toast("Go down to the Underyard to replay this scene.", "Спустись в Поддворье, чтобы пересмотреть эту сцену.", "warn")
+		return
+	end
 	Trials.PlaySeal(i, { Replay = true })
 end
 

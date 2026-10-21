@@ -353,12 +353,14 @@ never move them. Seal-state visuals are attributes on parts/models (client `Unde
 | Seal | Opens (UTC) | Offering (shards) | Activity |
 |---|---|---|---|
 | I ECHO | 2026-10-20 00:00 | 100 | Echo Dig |
-| II PROCESSION | 2026-10-20 00:00 | 200 | Funeral Run |
-| III REFLECTION | 2026-10-21 | 300 | Mirror Graves |
-| IV HOLLOW | 2026-10-22 | 400 | Hollow Mine |
-| V CHOICE | 2026-10-23 | 500 | Crooked Doors (3 door outcomes total; doors are limited per day) |
-| VI CHOIR | 2026-10-24 | 650 | Choir Hunt |
-| VII LAST BELL | 2026-10-26 | 800 | Last Bell Trial |
+| II PROCESSION | 2026-10-20 00:00 | 600 | Funeral Run |
+| III REFLECTION | 2026-10-21 | 900 | Mirror Graves |
+| IV HOLLOW | 2026-10-22 | 1200 | Hollow Mine |
+| V CHOICE | 2026-10-23 | 1500 | Crooked Doors (3 door outcomes total; doors are limited per day) |
+| VI CHOIR | 2026-10-24 | 1950 | Choir Hunt |
+| VII LAST BELL | 2026-10-26 | 2400 | Last Bell Trial |
+(Integration retune, from 200/300/400/500/650/800: the first clears no longer pay for the next offering, so the story is
+~6.7 h of active Chapter II play on time; tools/chapter2_pacing.luau + tests/chapter2_pacing.luau.)
 A seal is playable when: its date has passed, the previous seal is cleared, and its offering is paid at its altar in
 Bell Square. Clearing = server-validated trial success (§8.4). Seals are not a timer: the date gate only opens new
 story beats; players always have contracts, coffins, doors, resonance, boss and older trials to play.
@@ -382,7 +384,7 @@ per-grant rounding drift: keep `Eff` as a float in the profile and grant floor(c
 
 ### 8.3 Catch-up (late players)
 * **Rested allowance:** for every full UTC day since `Chapter2Config.Start` (2026-10-20) on which the player earned
-  < 500 raw shards, `Rested.Pool += (500 − earned) × .5`, capped at 750; rested shards are consumed before DR tiers
+  < 500 raw shards, `Rested.Pool += (500 − earned) × .5`, capped at 1200 (was 750); rested shards are consumed before DR tiers
   (they extend the 100% tier).
 * **"The Bell remembers":** a seal whose date opened ≥ 2 days ago costs 40% less to offer.
 * All seals are already open for late players, so they can progress several seals per day while still hitting DR.

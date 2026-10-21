@@ -57,6 +57,12 @@ if Halloween then
 		UIcons = okI and type(m) == "table" and m or nil
 	end
 end
+-- Chapter II config (the cosmetics tab reads its skin defs: DexOnly)
+local Cfg2: any = nil
+if Halloween and Halloween:FindFirstChild("Chapter2Config") then
+	local okC, m = pcall(require, Halloween.Chapter2Config)
+	Cfg2 = okC and type(m) == "table" and m or nil
+end
 Config = Config or { HalloweenEventEnabled = false }
 local Dict = { UI = {}, Templates = {}, Exact = {}, Patterns = {} }
 do
@@ -3518,13 +3524,15 @@ local function skinViewport(id: string, aspect: number?): (any, any)
 end
 
 pages.cosmetics = function(page: Frame)
-	local P = {}
+	local P: any = {}
 	local scroll = scrollPage(page)
-	local orderList = {} -- [WP-K2] Chapter I skins only (Chapter II skins are shown in the Underyard window)
+	-- every pickaxe skin: Chapter II skins (Config.Skins.Chapter == 2) show once the player owns one or has finished
+	-- Chapter I (no spoiler before the reveal), so a skin won in the Underyard is equipped here like any other
+	local orderList = {}
+	local chapter2: { [string]: boolean } = {}
 	for _, sid in ipairs((Config.Skins and Config.Skins.Order) or {}) do
-		if not (Config.Skins.Chapter and Config.Skins.Chapter[sid] == 2) then
-			table.insert(orderList, sid)
-		end
+		table.insert(orderList, sid)
+		chapter2[sid] = Config.Skins.Chapter ~= nil and Config.Skins.Chapter[sid] == 2
 	end
 	local head = panel(scroll, "Header", C(86, 40, 120), C(54, 22, 84))
 	local headTitle = sectionTitle(head, "⛏️", T("PICKAXE SKINS"))
@@ -3568,7 +3576,7 @@ pages.cosmetics = function(page: Frame)
 				equipBurst(i)
 			end)
 		end })
-		cards[i] = { Id = id, Frame = card, Holder = holder, Glyph = glyph, GlyphArt = glyphArt, Lock = lockF, Rarity = rarity, Name = name, Source = source,
+		cards[i] = { Id = id, Chapter2 = chapter2[id], Frame = card, Holder = holder, Glyph = glyph, GlyphArt = glyphArt, Lock = lockF, Rarity = rarity, Name = name, Source = source,
 			Equip = equip, Color = rc, Kick = 0 }
 		-- tap / click a still preview: it turns for a moment (a scroll drag on phones does the same, harmlessly)
 		holder.InputBegan:Connect(function(input)
@@ -3620,7 +3628,16 @@ pages.cosmetics = function(page: Frame)
 		end
 	end
 
+	local function cardShown(c: any): boolean
+		if not c.Chapter2 then
+			return true
+		end
+		local owned = view().Skins or {}
+		return owned[c.Id] == true or player:GetAttribute("HalloweenChapter1Complete") == true
+	end
+	local shownKey = ""
 	function P.Layout(L)
+		P.LastLayout = L
 		local w = L.Width - 12
 		local narrow = w < 640
 		place(head, 2, 2, w, narrow and 104 or 64)
@@ -3633,7 +3650,20 @@ pages.cosmetics = function(page: Frame)
 		local cw = math.floor((w - gap * (cols - 1)) / cols)
 		local ch = narrow and 262 or 262
 		P.Aspect = (cw - 16) / math.max(1, ch - 120)
-		for i, c in ipairs(cards) do
+		local shown = 0
+		local key = {}
+		for _, c in ipairs(cards) do
+			local on = cardShown(c)
+			c.Frame.Visible = on
+			table.insert(key, on and "1" or "0")
+		end
+		shownKey = table.concat(key)
+		for _, c in ipairs(cards) do
+			if not c.Frame.Visible then
+				continue
+			end
+			shown += 1
+			local i = shown
 			local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
 			place(c.Frame, 2 + col * (cw + gap), y + row * (ch + gap), cw, ch)
 			local ph = ch - 120
@@ -3651,7 +3681,7 @@ pages.cosmetics = function(page: Frame)
 			c.Source.TextSize = fit
 			place(c.Equip.Instance, 12, ch - 52, cw - 24, 42)
 		end
-		scroll.CanvasSize = UDim2.fromOffset(0, y + math.ceil(#cards / cols) * (ch + gap) + 4)
+		scroll.CanvasSize = UDim2.fromOffset(0, y + math.ceil(shown / cols) * (ch + gap) + 4)
 	end
 
 	-- one frame loop while the tab is open. A ViewportFrame whose camera does not move is not re-rendered, so only ONE
@@ -3734,11 +3764,25 @@ pages.cosmetics = function(page: Frame)
 		local owned = v.Skins or {}
 		local equipped = v.Skin or ""
 		unequip.Instance.Visible = equipped ~= ""
+		-- a Chapter II skin that just became visible (won, or Chapter I finished): lay the grid out again
+		local key = {}
+		for _, c in ipairs(cards) do
+			table.insert(key, cardShown(c) and "1" or "0")
+		end
+		if table.concat(key) ~= shownKey and P.LastLayout then
+			P.Layout(P.LastLayout)
+		end
 		for _, c in ipairs(cards) do
 			local has = owned[c.Id] == true
 			local on = equipped == c.Id
 			local srcs = skinSources(c.Id)
-			c.Source.Text = has and T("Owned forever: keep it after the event.") or (#srcs > 0 and (T("Find it in:") .. " " .. table.concat(srcs, " · ")) or "")
+			local src = #srcs > 0 and (T("Find it in:") .. " " .. table.concat(srcs, " · ")) or ""
+			if c.Chapter2 then
+				local def = Cfg2 and Cfg2.Skins and Cfg2.Skins.Defs and Cfg2.Skins.Defs[c.Id]
+				src = UT(def and def.DexOnly and "Only the Dex II gives it: find all eight Underyard dogs."
+					or "The Black Coffin, the Dex II, the Gravekeeper's last stand or the Tailor of the Dead.")
+			end
+			c.Source.Text = has and T("Owned forever: keep it after the event.") or src
 			local stroke = c.Frame:FindFirstChildWhichIsA("UIStroke")
 			if stroke and c.Kick <= 0 then
 				stroke.Color = on and NEON or has and PUMPKIN_HI or PANEL_EDGE
@@ -3817,15 +3861,17 @@ local function build()
 	if ui then
 		return ui
 	end
-	ui = { Lang = Kit.Lang(), Pages = {} }
+	ui = { Lang = Kit.Lang(), Pages = {}, Ended = st.Ended == true }
+	-- after the event (st.Ended): only the cosmetics tab, fed by AfterEvent's SkinList
+	local tabIds = st.Ended and { "cosmetics" } or S.Tabs
 	local tabs = {}
-	for _, id in ipairs(S.Tabs) do
+	for _, id in ipairs(tabIds) do
 		table.insert(tabs, { Id = id, Text = T(TAB_TEXT[id]), NoTranslate = true })
 	end
 	win = Kit.Window.new({
 		Key = "Halloween", Name = "HalloweenWindow", Title = T("NIGHT OF THE BURIED MOON"),
 		Subtitle = T("THE DEAD YARD · candy, curses and the Blood Moon"), Accent = PUMPKIN, Icon = "HalloweenGlyph", NoTranslate = true,
-		MaxSize = Vector2.new(1140, 790), Tabs = tabs, Tab = "event",
+		MaxSize = Vector2.new(1140, 790), Tabs = tabs, Tab = tabIds[1],
 		OnOpen = function()
 			S._opened()
 		end,
@@ -3901,7 +3947,7 @@ local function build()
 		win.Title.Size = UDim2.new(1, titleSpan, 0, win.Title.Size.Y.Offset)
 		win.Subtitle.Size = UDim2.new(1, titleSpan, 0, win.Subtitle.Size.Y.Offset)
 	end
-	for _, id in ipairs(S.Tabs) do
+	for _, id in ipairs(tabIds) do
 		local ok, p = pcall(pages[id], win:Page(id))
 		if ok then
 			ui.Pages[id] = p
@@ -4084,11 +4130,20 @@ function revealTab()
 	end
 end
 
+local openEnded
 function S.Open(arg: any?, _page: any?)
 	if not Config.HalloweenEventEnabled or (Shared and not Shared.Enabled()) then
-		Kit.Toast(T("The Night of the Buried Moon has ended"), { Kind = "warn", NoTranslate = true })
+		-- after the event: owned pickaxe skins stay usable (the cosmetics tab alone), everything else has ended
+		task.spawn(openEnded)
 		return
 	end
+	if st.Ended and ui then
+		if win then
+			win:Destroy()
+		end
+		ui, win = nil, nil
+	end
+	st.Ended = nil
 	if ui and ui.Lang ~= Kit.Lang() and not (win and win.IsOpen) then
 		win:Destroy()
 		ui, win = nil, nil
@@ -4118,6 +4173,32 @@ function S.Open(arg: any?, _page: any?)
 	if p and p.Shown then
 		p.Shown()
 	end
+	audio("UiOpen")
+end
+
+openEnded = function()
+	local ok, res = invoke("SkinList", {})
+	local v = ok and type(res) == "table" and res.View or nil
+	if type(v) ~= "table" or next(v.Skins or {}) == nil then
+		Kit.Toast(T("The Night of the Buried Moon has ended"), { Kind = "warn", NoTranslate = true })
+		return
+	end
+	if ui and (not ui.Ended or ui.Lang ~= Kit.Lang()) and not (win and win.IsOpen) then
+		win:Destroy()
+		ui, win = nil, nil
+	end
+	st.Ended = true
+	st.View = v
+	build()
+	st.Tab = "cosmetics"
+	if not win.IsOpen then
+		win:Open()
+	end
+	local p = ui.Pages.cosmetics
+	if p and p.Shown then
+		p.Shown()
+	end
+	refreshAll()
 	audio("UiOpen")
 end
 

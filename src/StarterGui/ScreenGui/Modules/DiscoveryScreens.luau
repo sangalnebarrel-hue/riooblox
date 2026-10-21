@@ -1,5 +1,9 @@
 local Rep=game:GetService('ReplicatedStorage');local D=require(Rep.DogEconomy.ItemDefinitions);local Depth=require(Rep.DogEconomy.DepthDefinitions)
 local V=require(script.Parent.PreviewRenderer);local Screens={}
+-- the dig collection: only finds a depth can drop (event showcase finds such as the Underyard's are in no depth list)
+local DIG,DIG_TOTAL={},0
+for i=1,5 do local d=Depth[tostring(i)];for _,id in ipairs(d and d.Items or {})do if not DIG[id]then DIG[id]=true;DIG_TOTAL+=1 end end end
+local function digFound(col)local n=0;for id in pairs(col or {})do if DIG[id]then n+=1 end end;return n end
 local tiers={'All','TINY','SMALL','STANDARD','HEAVY','MASSIVE','COLOSSAL','TITANIC','MONSTROUS','IMPOSSIBLE','WORLD RECORD'}
 function Screens.Build(c)
  local U,p,s,root,W,H=c.U,c.Snapshot.Profile,c.State,c.Parent,c.W,c.H;local P=U.Colors
@@ -38,7 +42,7 @@ function Screens.Build(c)
   U.Frame(sc,'End',0,y,1,1).BackgroundTransparency=1
  end
  if c.Page=='Discoveries'then
-  local heading=U.Header(root,'DiscoveriesHeading',0,0,W,42);U.Center(heading,'DISCOVERIES',W*.24,0,W*.5,42,35,P.text,true);U.Text(root,'Found '..U.Count(p.Collection)..' / '..U.Count(D),W-220,5,210,30,20,U.TextGold,true)
+  local heading=U.Header(root,'DiscoveriesHeading',0,0,W,42);U.Center(heading,'DISCOVERIES',W*.24,0,W*.5,42,35,P.text,true);U.Text(root,'Found '..digFound(p.Collection)..' / '..DIG_TOTAL,W-220,5,210,30,20,U.TextGold,true)
   local detailW=c.Mobile and 0 or math.floor(W*.32);local leftW=W-detailW-(detailW>0 and 12 or 0)
   U.Search(root,'SearchFinds','Search discoveries…',s.FindSearch,0,49,leftW,function(v)change('FindSearch',v)end)
   local filters={{'FindDepth',{'All',1,2,3,4,5},function(v)return v=='All'and 'All depths'or Depth[tostring(v)].Name end},{'FindClass',{'All','Treasure','Artifact','Special','Secret','World Find'},function(v)return v=='All'and 'All classes'or v end},{'FindTier',tiers,function(v)return v=='All'and 'All weights'or v end},{'FindMutation',{'All','NORMAL','GOLDEN','RAINBOW','CURSED','GLITCHED','HAUNTED','PUMPKINIZED','BLOOD MOON','ECLIPSED'},function(v)return v=='All'and 'All types'or v end},{'FindSort',{'Newest','Heaviest','Lightest','Rarest','Value','Favorites'},function(v)return v end}}
@@ -54,7 +58,7 @@ function Screens.Build(c)
  elseif c.Page=='Inspect'then details(root,p.Items[s.SelectedItem],W,H)
  elseif c.Page=='Collection'then
   local sc=U.Scroll(root,'CollectionPage',0,0,W,H)
-  local found=U.Count(p.Collection);local total=U.Count(D)
+  local found=digFound(p.Collection);local total=DIG_TOTAL
   section(sc,'YOUR COLLECTION',8,0,W-24)
   U.Text(sc,found..' / '..total..' discoveries',16,45,W-40,30,22,P.text,true)
   U.Bar(sc,16,82,W-40,24,total>0 and found/total or 0,P.green)
@@ -155,7 +159,7 @@ function Screens.Records(c,section,info)
  local U,p,s,root,W,H=c.U,c.Snapshot.Profile,c.State,c.Parent,c.W,c.H;local P=U.Colors;local stats=p.Stats
  local sc=U.Scroll(root,'RecordsPage',0,0,W,H);section(sc,'RECORDS',0,0,W-8)
  local cols=math.clamp(math.floor((W-8)/220),1,4);local cw=(W-18-(cols-1)*10)/cols;local deepest=1;for k in pairs(p.UnlockedLayers)do deepest=math.max(deepest,tonumber(k)or 1)end
- local summary={{'TOTAL FINDS',stats.TotalFinds},{'UNIQUE DISCOVERIES',U.Count(p.Collection)..' / '..U.Count(D)},{'TOTAL SELL VALUE',U.Fmt(stats.TotalSellValue)},{'SECRET FINDS',stats.SecretFinds},{'DEEPEST LAYER',Depth[tostring(deepest)].Name},{'TOTAL DIGS',stats.TotalDigs},{'LONGEST STREAK',stats.LongestStreak},{'BIGGEST SALE',U.Fmt(stats.BiggestSale)}}
+ local summary={{'TOTAL FINDS',stats.TotalFinds},{'UNIQUE DISCOVERIES',digFound(p.Collection)..' / '..DIG_TOTAL},{'TOTAL SELL VALUE',U.Fmt(stats.TotalSellValue)},{'SECRET FINDS',stats.SecretFinds},{'DEEPEST LAYER',Depth[tostring(deepest)].Name},{'TOTAL DIGS',stats.TotalDigs},{'LONGEST STREAK',stats.LongestStreak},{'BIGGEST SALE',U.Fmt(stats.BiggestSale)}}
  for i,v in ipairs(summary)do
   local card=U.Panel(sc,'RecordStat',((i-1)%cols)*(cw+10),50+math.floor((i-1)/cols)*94,cw,84)
   U.Text(card,v[1],12,5,cw-24,30,14,P.muted)
@@ -191,7 +195,7 @@ function Screens.DesktopRecords(c,section)
  section(root,'RECORDS',0,0,W-8);local bh=H-124;local lw=math.floor(W*.23);local rw=math.floor(W*.29);local mw=W-lw-rw-24;local mx=lw+12;local rx=mx+mw+12
  local left=U.Panel(root,'RecordSummary',0,49,lw,bh,true);section(left,'RECORD SUMMARY',5,5,lw-10)
  local deepest=1;for k in pairs(p.UnlockedLayers)do deepest=math.max(deepest,tonumber(k)or 1)end
- local summary={{'Total finds',s.TotalFinds},{'Unique discoveries',U.Count(p.Collection)..' / '..U.Count(D)},{'Best weight tier',tiers[(s.BestTier or 0)+1]or '—'},{'Total sell value',U.Fmt(s.TotalSellValue)},{'Secret finds',s.SecretFinds},{'Deepest layer',Depth[tostring(deepest)].Name},{'Total digs',s.TotalDigs},{'Completed trades',s.CompletedTrades}}
+ local summary={{'Total finds',s.TotalFinds},{'Unique discoveries',digFound(p.Collection)..' / '..DIG_TOTAL},{'Best weight tier',tiers[(s.BestTier or 0)+1]or '—'},{'Total sell value',U.Fmt(s.TotalSellValue)},{'Secret finds',s.SecretFinds},{'Deepest layer',Depth[tostring(deepest)].Name},{'Total digs',s.TotalDigs},{'Completed trades',s.CompletedTrades}}
  local sh=(bh-61)/#summary
  for i,v in ipairs(summary)do local y=51+(i-1)*sh;U.Text(left,v[1],12,y,lw*.55,sh,15,P.muted);local t=U.Text(left,tostring(v[2]),lw*.58,y,lw*.38,sh,18,P.text,true);t.TextXAlignment=Enum.TextXAlignment.Right end
  local mid=U.Scroll(root,'PersonalRecords',mx,49,mw,bh);section(mid,'PERSONAL RECORDS',0,0,mw-8)

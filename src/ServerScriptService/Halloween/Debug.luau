@@ -241,7 +241,9 @@ function D.StartChapter2(core, modules)
 	end
 	cmd.Rested = function(player, a)
 		return tx(player, function(_p, u)
-			u.Rested.Pool = n(a, 750, 0, 750)
+			local okC, C2Cfg = pcall(require, game:GetService("ReplicatedStorage").Halloween.Chapter2Config)
+			local cap = okC and type(C2Cfg) == "table" and C2Cfg.Rested and C2Cfg.Rested.Cap or 1200
+			u.Rested.Pool = n(a, cap, 0, cap)
 			return { Message = "Rested pool " .. u.Rested.Pool }
 		end)
 	end

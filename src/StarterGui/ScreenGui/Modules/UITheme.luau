@@ -494,7 +494,9 @@ U.RailSpecs={
 }
 -- NIGHT OF THE BURIED MOON (Halloween event, WP9): the HALLOWEEN tile and the Moon Candy / Curse pills while the event is on.
 U.HalloweenEnabled=(function()local ok,HC=pcall(function()return require(game:GetService('ReplicatedStorage'):WaitForChild('Halloween',2):WaitForChild('Config',2))end);return ok and type(HC)=='table'and HC.HalloweenEventEnabled==true end)()
-if U.HalloweenEnabled then table.insert(U.RailSpecs,{key='Halloween',label='HALLOWEEN',color=C(255,128,24),glyph='🎃',tip='Night of the Buried Moon: candy, quests, the cauldron and the Dead Yard'})end
+if U.HalloweenEnabled then table.insert(U.RailSpecs,{key='Halloween',label='HALLOWEEN',color=C(255,128,24),glyph='🎃',tip='Night of the Buried Moon: candy, quests, the cauldron and the Dead Yard'})
+-- after the event: a SKINS tile (owned Halloween pickaxe skins stay usable; the server sets HwHasSkins, AfterEvent)
+else table.insert(U.RailSpecs,{key='Halloween',label='SKINS',color=C(150,80,230),glyph='⛏',tip='Your Halloween pickaxe skins: equip or remove them',when='HwHasSkins'})end
 -- CHAPTER II · THE UNDERYARD (WP-L): the UNDERYARD tile once Chapter I is complete (when = player attribute that must be
 -- true: U.LayoutHUD hides the tile until then) and the Bell Shards pill; the Lucky Dust pill whenever you have some.
 U.Chapter2Enabled=U.HalloweenEnabled and(function()local ok,HC=pcall(function()return require(game:GetService('ReplicatedStorage'):WaitForChild('Halloween',2):WaitForChild('Config',2))end);return ok and type(HC)=='table'and HC.HalloweenChapter2Enabled==true end)()

@@ -2,8 +2,10 @@
 -- With Config.HalloweenEventEnabled = false the event server does not start (HalloweenServer), but pickaxe skins are
 -- owned forever (docs/halloween2/DESIGN.md §2): the equipped skin keeps showing because the player attribute
 -- PickaxeSkin is set from the saved profile, and the Halloween Request remote still answers SkinEquip so a skins menu
--- can change it. Every other action is refused politely. Player data is never written except p.Halloween.Skin and the
--- delivery of Chapter II dogs that were earned while the dog storage was full (p.Underyard.PendingDogs, DESIGN §9.4).
+-- can change it (SkinList feeds the HALLOWEEN window's after-event cosmetics tab, opened from the SKINS rail tile while
+-- the player attribute HwHasSkins is true). Every other action is refused politely. Player data is never written except
+-- p.Halloween.Skin and the delivery of Chapter II dogs that were earned while the dog storage was full
+-- (p.Underyard.PendingDogs, DESIGN §9.4).
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local SSS = game:GetService("ServerScriptService")
@@ -19,6 +21,29 @@ local function project(player: Player, Runtime: any)
 	local h = type(p) == "table" and p.Halloween or nil
 	local skin = type(h) == "table" and type(h.Skin) == "string" and h.Skin or ""
 	player:SetAttribute("PickaxeSkin", (skin ~= "" and owned(h, skin)) and skin or "")
+	-- the SKINS rail tile (UITheme) shows while the player owns any Halloween pickaxe skin
+	local any = false
+	for _, v in pairs(type(h) == "table" and type(h.Skins) == "table" and h.Skins or {}) do
+		if v == true then
+			any = true
+			break
+		end
+	end
+	player:SetAttribute("HwHasSkins", any)
+end
+
+-- the skins part of a view for the HALLOWEEN window's after-event cosmetics tab: {Skins = {[id] = true}, Skin, Ended}
+local function skinView(player: Player, Runtime: any): any
+	local p = Runtime.Views[player.UserId]
+	local h = type(p) == "table" and p.Halloween or nil
+	local set = {}
+	for id, v in pairs(type(h) == "table" and type(h.Skins) == "table" and h.Skins or {}) do
+		if v == true and type(id) == "string" then
+			set[id] = true
+		end
+	end
+	local equipped = player:GetAttribute("PickaxeSkin")
+	return { Skins = set, Skin = type(equipped) == "string" and equipped or "", Ended = true }
 end
 
 -- one parked Chapter II dog into the dog storage (the same mint as Halloween Core's ctx.Dog) -> true when delivered
@@ -100,7 +125,7 @@ function AE.Start(request: RemoteFunction?, closedMessage: string)
 	end
 	local busy = {}
 	request.OnServerInvoke = function(player: Player, action: any, args: any)
-		if action ~= "SkinEquip" or not Runtime then
+		if (action ~= "SkinEquip" and action ~= "SkinList") or not Runtime then
 			return false, closedMessage
 		end
 		-- every equip is a profile write: the economy's request budget keeps a spamming client from lagging the server
@@ -109,6 +134,9 @@ function AE.Start(request: RemoteFunction?, closedMessage: string)
 		end
 		if busy[player] or not Runtime.Ready(player) then
 			return false, "Your saved profile is still loading"
+		end
+		if action == "SkinList" then
+			return true, { View = skinView(player, Runtime) }
 		end
 		local id = type(args) == "table" and type(args.Id) == "string" and #args.Id <= 40 and args.Id or ""
 		busy[player] = true
@@ -129,6 +157,9 @@ function AE.Start(request: RemoteFunction?, closedMessage: string)
 			return false, tostring(result)
 		end
 		player:SetAttribute("PickaxeSkin", id)
+		if type(result) == "table" then
+			result.View = skinView(player, Runtime)
+		end
 		return true, result
 	end
 	Players.PlayerRemoving:Connect(function(player)

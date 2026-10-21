@@ -2433,7 +2433,15 @@ pages.collection = function(page: Frame)
 		local model = itemModel(item)
 		local fragments = tonumber(view().Fragments) or 0
 		local btnSpec = nil
-		if item.Owned then
+		if item.Owned and item.Kind == "Skin" then
+			-- an owned pickaxe skin is put on (or taken off) right here (SkinEquip, the same request as the HALLOWEEN window)
+			local on = player:GetAttribute("PickaxeSkin") == item.Id
+			btnSpec = { Text = on and T("UNEQUIP") or T("EQUIP"), Style = on and "secondary" or "gold", OnClick = function(b)
+				act(b, item.Id, "SkinEquip", { Id = on and "" or item.Id }, function()
+					closeSheet("equipped")
+				end, on and T("Skin removed") or T("Skin equipped"))
+			end }
+		elseif item.Owned then
 			btnSpec = { Text = "✓ " .. T("OWNED"), Style = "success", Disabled = true }
 		elseif item.Cost and not item.DexOnly then
 			btnSpec = { Text = F("CRAFT · %d FRAGMENTS", item.Cost), Style = "gold", Disabled = fragments < item.Cost or not eligible(), OnClick = function(b)

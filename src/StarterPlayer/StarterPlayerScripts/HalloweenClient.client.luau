@@ -33,7 +33,7 @@ local ORDER = { "State", "Lighting", "ZoneFX", "Soundscape", "BloodMoonFX", "Cur
 	"AmbientFX", "SpotFX", "Cinema", "CombatFX", "BossFX", "FinaleFX", "MainMapLayer", "ParticleGovernor", "HUD",
 	"CombatHUD", "Onboarding",
 	-- CHAPTER II · THE UNDERYARD + calendar (docs/halloween2/DESIGN.md); missing modules are skipped
-	"Chapter2State", "Reveal", "UnderyardFX", "Trials", "CoffinFX", "Chapter2Guide", "CalendarFX", "DecorIdle" }
+	"Chapter2State", "Reveal", "UnderyardFX", "Trials", "CoffinFX", "Chapter2Guide", "CalendarFX" }
 -- modules that only exist when their chapter is switched on are still required (they check Shared.*Enabled
 -- themselves), so a server-side switch at boot never needs a client change
 

@@ -80,7 +80,7 @@ local function profile(kind)
 	u.Chapter1.Complete, u.Chapter1.At, u.Chapter1.Notified = true, NOW - 2 * DAY, true
 	u.RevealSeen, u.Entered = true, true
 	u.Tutorial.Step, u.Tutorial.Done = #Cfg.Tutorial.Steps, true
-	p.Resources.BellShards, p.Resources.LuckyDust = 640, 1250
+	p.Resources.BellShards, p.Resources.LuckyDust = 2500, 1250
 	u.Keys, u.Fragments = 2, 60
 	if kind == "mid" or kind == "mid3" then
 		local s1 = u.Seals["1"]
@@ -314,9 +314,9 @@ end)
 
 test("seal states: date lock, previous seal, offering (catch-up discount, the guide pays), trial, doors, gold", function()
 	local _, cv = views("mid")
-	local s4 = UV.SealState(cv, 4, NOW, ctxOf({ InZone = true, Shards = 640 }))
+	local s4 = UV.SealState(cv, 4, NOW, ctxOf({ InZone = true, Shards = 2500 }))
 	eq(s4.State, "Previous", "IV waits for III")
-	local s6 = UV.SealState(cv, 6, NOW, ctxOf({ InZone = true, Shards = 640 }))
+	local s6 = UV.SealState(cv, 6, NOW, ctxOf({ InZone = true, Shards = 2500 }))
 	eq(s6.State, "Waiting", "VI opens tomorrow")
 	eq(s6.Action, "Opens")
 	truthy(s6.OpensIn > 0 and s6.OpensIn <= DAY, "countdown")
@@ -327,7 +327,7 @@ test("seal states: date lock, previous seal, offering (catch-up discount, the gu
 	eq(UV.SealState(cv, 3, NOW, ctxOf({ InZone = false })).Action, "Descend", "outside: descend")
 	eq(UV.SealState(cv, 3, NOW, ctxOf({ InZone = true, InTrial = true })).Action, "InTrial")
 	local _, cv3 = views("mid3")
-	local o4 = UV.SealState(cv3, 4, NOW, ctxOf({ InZone = true, Shards = 640, Near = "SealAltar_4" }))
+	local o4 = UV.SealState(cv3, 4, NOW, ctxOf({ InZone = true, Shards = 2500, Near = "SealAltar_4" }))
 	eq(o4.State, "Offer")
 	eq(o4.Action, "Offer")
 	eq(o4.Cost, cv3.Seals[4].Cost)
@@ -360,7 +360,7 @@ test("objective line and badges", function()
 	eq(o.Seal, 3)
 	title, line = UV.ObjectiveText(o, "ru", NOW)
 	truthy(cyrillic(title) and cyrillic(line), "Russian objective: " .. title .. " / " .. line)
-	local b = UV.Badges(cv, nil, NOW, ctxOf({ InZone = true, Shards = 640, Keys = 2 }))
+	local b = UV.Badges(cv, nil, NOW, ctxOf({ InZone = true, Shards = 2500, Keys = 2 }))
 	truthy(b.contracts >= 1, "a finished contract to claim")
 	truthy(b.dex >= 1, "a Dex II milestone to claim")
 	truthy(b.journal >= 1, "unread journal entries")
@@ -962,6 +962,64 @@ test("HALLOWEEN window: the CHAPTER II card and the dex CHAPTER I / CHAPTER II s
 	HS.Close()
 	CE.Advance(0.5)
 	Lang.Override = "en"
+end)
+
+test("pickaxe skins: Chapter II skins are equipped in the HALLOWEEN window; after the event the cosmetics tab alone", function()
+	local HConfig = CE.Require(RSFake.Halloween.Config)
+	local function card(id)
+		for _, d in ipairs(CE.PlayerGui:GetDescendants()) do
+			if d.Name == "Skin_" .. id then
+				return d
+			end
+		end
+		return nil
+	end
+	-- during the event: an owned Chapter II skin has a card with EQUIP that sends SkinEquip
+	load("done")
+	HS.Open("cosmetics")
+	CE.Advance(0.8)
+	local c = card("UY_TVHead")
+	truthy(c and CE.Shown(c), "a Chapter II skin card in the HALLOWEEN cosmetics tab")
+	local owns = current.HView and current.HView.Skins and current.HView.Skins.UY_TVHead == true
+	if owns then
+		CE.Click(find(c, "Equip"))
+		CE.Advance(0.3)
+		local call = lastCall("SkinEquip")
+		truthy(call and call.Args.Id == "UY_TVHead", "SkinEquip UY_TVHead sent")
+	end
+	HS.Close()
+	CE.Advance(0.5)
+	-- after the event: SkinList feeds a cosmetics-only window
+	HConfig.HalloweenEventEnabled = false
+	local okRun, err = pcall(function()
+		replies.SkinList = function()
+			return true, { View = { Skins = { UY_TVHead = true, GraveShovel = true }, Skin = "GraveShovel", Ended = true } }
+		end
+		replies.SkinEquip = function(a)
+			return true, { Message = "Skin equipped", Skin = a.Id, View = { Skins = { UY_TVHead = true, GraveShovel = true }, Skin = a.Id, Ended = true } }
+		end
+		HS.Open()
+		CE.Advance(0.8)
+		truthy(HS.IsOpen(), "the after-event skins window opens")
+		local tv = card("UY_TVHead")
+		truthy(tv and CE.Shown(tv), "an owned Chapter II skin after the event")
+		CE.Click(find(tv, "Equip"))
+		CE.Advance(0.3)
+		local call = lastCall("SkinEquip")
+		truthy(call and call.Args.Id == "UY_TVHead", "after the event: SkinEquip sent")
+		HS.Close()
+		CE.Advance(0.5)
+		-- nothing owned: the event-over toast, no window
+		replies.SkinList = function()
+			return true, { View = { Skins = {}, Skin = "", Ended = true } }
+		end
+		HS.Open()
+		CE.Advance(0.5)
+		truthy(not HS.IsOpen(), "no window without skins")
+	end)
+	HConfig.HalloweenEventEnabled = true
+	replies.SkinList, replies.SkinEquip = nil, nil
+	truthy(okRun, tostring(err))
 end)
 
 -- the DogDex window reads the economy snapshot through Modules.Net

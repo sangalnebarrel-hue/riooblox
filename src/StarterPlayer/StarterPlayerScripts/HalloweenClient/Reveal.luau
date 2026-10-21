@@ -540,6 +540,9 @@ local function church(): any
 	local r = yard and yard:FindFirstChild("Church")
 	if not r then
 		if cache.Root then
+			if cache.Conn then
+				cache.Conn:Disconnect()
+			end
 			cache = { Root = nil }
 			State.Church.Applied = nil
 		end
@@ -547,8 +550,25 @@ local function church(): any
 	end
 	local portal = r:FindFirstChild("ChurchPortal")
 	local doorL = r:FindFirstChild("ChurchDoorL")
-	if cache.Root ~= r or cache.Portal ~= portal or (cache.Doors[1] and cache.Doors[1].Model ~= doorL) or (doorL and not cache.Doors[1]) then
+	-- parts that stream in later (the right door leaf, crack strips, the slit) mark the cache dirty: rebuild at most 4x a second
+	local dirty = cache.Dirty and os.clock() - (cache.BuiltAt or 0) >= .25
+	if dirty or cache.Root ~= r or cache.Portal ~= portal or (cache.Doors[1] and cache.Doors[1].Model ~= doorL) or (doorL and not cache.Doors[1]) then
+		local old = cache
+		if old.Conn then
+			old.Conn:Disconnect()
+		end
 		cache = buildCache(r)
+		if old.Root == r and portal and old.Portal == portal and old.Rings then
+			-- the spinning rings' rest offsets stay valid (a rebuild mid-spin would bake the current rotation in)
+			cache.Rings, cache.FrameCF = old.Rings, old.FrameCF
+		end
+		cache.BuiltAt = os.clock()
+		local c = cache
+		c.Conn = r.DescendantAdded:Connect(function(d)
+			if d:IsA("BasePart") or d:IsA("Light") or d:IsA("Attachment") then
+				c.Dirty = true
+			end
+		end)
 		State.Church.Applied = nil
 	end
 	return cache

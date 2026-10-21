@@ -93,7 +93,7 @@ C.Seals = {
 	},
 	{
 		Index = 2, Id = "Procession", Numeral = "II", Name = { "PROCESSION", "ПРОЦЕССИЯ" }, Trial = { Id = "FuneralRun", TimeLimit = 75, Goal = 10 },
-		Title = { "FUNERAL RUN", "ПОХОРОННЫЙ ЗАБЕГ" }, District = "FuneralCarnival", Opens = { Year = 2026, Month = 10, Day = 20 }, Offering = 200,
+		Title = { "FUNERAL RUN", "ПОХОРОННЫЙ ЗАБЕГ" }, District = "FuneralCarnival", Opens = { Year = 2026, Month = 10, Day = 20 }, Offering = 600,
 		Text = { "Run the dead carnival: ten rings in order, past the swinging coffins and over the carousel.",
 			"Пробеги мёртвый карнавал: десять колец по порядку, мимо качающихся гробов и через карусель." },
 		Gold = { Time = 55 },
@@ -104,7 +104,7 @@ C.Seals = {
 	},
 	{
 		Index = 3, Id = "Reflection", Numeral = "III", Name = { "REFLECTION", "ОТРАЖЕНИЕ" }, Trial = { Id = "MirrorGraves", TimeLimit = 240, Goal = 3 },
-		Title = { "MIRROR GRAVES", "ЗЕРКАЛЬНЫЕ МОГИЛЫ" }, District = "MourningMarsh", Opens = { Year = 2026, Month = 10, Day = 21 }, Offering = 300,
+		Title = { "MIRROR GRAVES", "ЗЕРКАЛЬНЫЕ МОГИЛЫ" }, District = "MourningMarsh", Opens = { Year = 2026, Month = 10, Day = 21 }, Offering = 900,
 		Text = { "The pond remembers the graves mirrored left to right. Turn the runes until the water agrees.",
 			"Пруд помнит могилы, отражённые слева направо. Поворачивай руны, пока вода не согласится." },
 		Gold = { NoMistakes = true },
@@ -115,7 +115,7 @@ C.Seals = {
 	},
 	{
 		Index = 4, Id = "Hollow", Numeral = "IV", Name = { "HOLLOW", "ПУСТОТА" }, Trial = { Id = "HollowMine", TimeLimit = 240, Goal = 14, Combat = true },
-		Title = { "HOLLOW MINE", "ПОЛАЯ ШАХТА" }, District = "Undercrypt", Opens = { Year = 2026, Month = 10, Day = 22 }, Offering = 400,
+		Title = { "HOLLOW MINE", "ПОЛАЯ ШАХТА" }, District = "Undercrypt", Opens = { Year = 2026, Month = 10, Day = 22 }, Offering = 1200,
 		Text = { "Break the hollow ore cores on the sunken mine floor while the Undercrypt collapses around you.",
 			"Разбей полые рудные ядра на дне затопленной шахты, пока Подклепье рушится вокруг." },
 		Gold = { Total = 20, NoDowns = true },
@@ -128,7 +128,7 @@ C.Seals = {
 	},
 	{
 		Index = 5, Id = "Choice", Numeral = "V", Name = { "CHOICE", "ВЫБОР" }, Trial = { Id = "CrookedDoors", TimeLimit = 0, Goal = 3 },
-		Title = { "CROOKED DOORS", "КРИВЫЕ ДВЕРИ" }, District = "CrookedRow", Opens = { Year = 2026, Month = 10, Day = 23 }, Offering = 500,
+		Title = { "CROOKED DOORS", "КРИВЫЕ ДВЕРИ" }, District = "CrookedRow", Opens = { Year = 2026, Month = 10, Day = 23 }, Offering = 1500,
 		Text = { "Four crooked doors, a few openings a day. Behind them: treasure, a test, the Doorkeeper or a hidden room.",
 			"Четыре кривые двери и всего несколько попыток в день. За ними сокровище, испытание, Привратник или тайная комната." },
 		Gold = { NoDowns = true }, -- Seal V Gold: the three outcomes without being downed in a challenge / mini boss
@@ -138,7 +138,7 @@ C.Seals = {
 	},
 	{
 		Index = 6, Id = "Choir", Numeral = "VI", Name = { "CHOIR", "ХОР" }, Trial = { Id = "ChoirHunt", TimeLimit = 480, Goal = 7 },
-		Title = { "CHOIR HUNT", "ОХОТА НА ХОР" }, District = "*", Opens = { Year = 2026, Month = 10, Day = 24 }, Offering = 650,
+		Title = { "CHOIR HUNT", "ОХОТА НА ХОР" }, District = "*", Opens = { Year = 2026, Month = 10, Day = 24 }, Offering = 1950,
 		Text = { "Seven spirits sing one note each of the Last Bell's song. Follow the melody, catch them with a Perfect.",
 			"Семь духов поют по одной ноте песни Последнего колокола. Иди на мелодию и лови их идеальным ударом." },
 		Gold = { Time = 300 },
@@ -148,7 +148,7 @@ C.Seals = {
 	},
 	{
 		Index = 7, Id = "LastBell", Numeral = "VII", Name = { "LAST BELL", "ПОСЛЕДНИЙ КОЛОКОЛ" }, Trial = { Id = "LastBell", TimeLimit = 360, Goal = 3, Combat = true },
-		Title = { "LAST BELL TRIAL", "ИСПЫТАНИЕ ПОСЛЕДНЕГО КОЛОКОЛА" }, District = "BlackBellArena", Opens = { Year = 2026, Month = 10, Day = 26 }, Offering = 800,
+		Title = { "LAST BELL TRIAL", "ИСПЫТАНИЕ ПОСЛЕДНЕГО КОЛОКОЛА" }, District = "BlackBellArena", Opens = { Year = 2026, Month = 10, Day = 26 }, Offering = 2400,
 		Text = { "THE BELLKEEPER holds the Black Bell's rope. Survive the tolls, break the chains, burn his weak point.",
 			"ЗВОНАРЬ держит верёвку Чёрного колокола. Переживи удары, разбей цепи, прожги его слабое место." },
 		Gold = { NoBleedOut = true },
@@ -162,6 +162,10 @@ C.Seals = {
 C.SealCount = #C.Seals
 
 -- "The Bell remembers": a seal whose date opened at least this many days ago costs 40% less to offer (§8.3)
+-- The offerings set the story's length (brief: an 8-12 h story over days; tools/chapter2_pacing.luau and
+-- tests/chapter2_pacing.luau run them through the real DR / rested / discount rules): an ordinary player on time spends
+-- ~6.5 h of active Chapter II play from Oct 20 to Oct 27-28 (~45 min a day), a late starter (Oct 28) still breaks the
+-- seventh seal by Oct 30-31. Seal I stays at 100 (the onboarding refunds it). Was 200/300/400/500/650/800 (~1.2 h).
 C.Offering = { DiscountAfterDays = 2, Discount = .4 }
 
 ---------------------------------------------------------------------------------------------------------------------
@@ -212,7 +216,7 @@ C.DailyReturns = {
 C.Rested = {
 	PerDay = 500, -- a full UTC day with less than this raw shards ...
 	Fraction = .5, -- ... adds (PerDay - earned) x Fraction to the pool
-	Cap = 750,
+	Cap = 1200, -- was 750: with the story-length offerings a player who starts on Oct 28 still finishes by Oct 30-31
 }
 -- shard sources (C2.Progress / ctx.Shards labels): Streak Echo Ore Spirit Objective Repeat Boss Door Resonance Assault
 -- (DR) and the exempt ones above. "Earn Bell Shards" contracts and Stats.ShardsEarned ignore these:
