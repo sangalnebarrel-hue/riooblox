@@ -768,7 +768,7 @@ function C2.DeliverPendingDogs(player: Player, hint: { any }?): (boolean, any)
 			ctx.C2Signal("C2PendingDog", { Rewards = table.clone(out), Left = #u.PendingDogs })
 		end
 		return { Rewards = out }
-	end, { Dogs = ids, Silent = false })
+	end, { Dogs = ids, Silent = false, EvenIfClosed = true }) -- earned dogs arrive even after Chapter II is switched off
 	if not ok then
 		return false, res
 	end
@@ -862,17 +862,31 @@ function C2.BossReward(player: Player, difficulty: number, info: { [string]: any
 	end
 	difficulty = math.clamp(math.floor(tonumber(difficulty) or 0), 1, 5)
 	local fin = Cfg.Finale.Rewards
-	local dogIds = {}
-	for _, d in ipairs(fin.First.Dogs) do
-		table.insert(dogIds, d.Id)
+	-- one roll over a table's dog chances (rarest first) -> the dog row or nil
+	local function pickDog(list: { any }, x: number): any
+		local sorted = table.clone(list)
+		table.sort(sorted, function(a, b)
+			return a.Chance < b.Chance
+		end)
+		for _, d in ipairs(sorted) do
+			if x < d.Chance then
+				return d
+			end
+			x -= d.Chance
+		end
+		return nil
 	end
-	for _, d in ipairs(fin.Repeat.Dogs) do
-		if not table.find(dogIds, d.Id) then
-			table.insert(dogIds, d.Id)
+	-- rolled before the write: only a dog that can really be granted is declared (each declared dog adds a shared supply
+	-- key; two keys force the durable journal path), and which table applies (first / repeat) is decided inside
+	local dogRoll, skinRoll, skinPick = rng:NextNumber(), rng:NextNumber(), rng:NextNumber()
+	local dogIds = {}
+	if inf.Finale == true then
+		for _, d in ipairs({ pickDog(fin.First.Dogs, dogRoll) or false, pickDog(fin.Repeat.Dogs, dogRoll) or false }) do
+			if d and not table.find(dogIds, d.Id) then
+				table.insert(dogIds, d.Id)
+			end
 		end
 	end
-	-- rolled before the write (dog supply keys must be declared); which table applies is decided inside
-	local dogRoll, skinRoll, skinPick = rng:NextNumber(), rng:NextNumber(), rng:NextNumber()
 	return C2.Transact(player, "C2Boss", function(_p, u, ctx)
 		local out = { Rewards = {}, Difficulty = difficulty }
 		local function add(row)
@@ -901,18 +915,10 @@ function C2.BossReward(player: Player, difficulty: number, info: { [string]: any
 			if t.Decor then
 				add({ Kind = "Decor", Id = t.Decor })
 			end
-			-- one roll over the dog chances (rarest first)
-			local x = dogRoll
-			local sorted = table.clone(t.Dogs)
-			table.sort(sorted, function(a, b)
-				return a.Chance < b.Chance
-			end)
-			for _, d in ipairs(sorted) do
-				if x < d.Chance then
-					add({ Kind = "Dog", Id = d.Id, Rank = d.Rank })
-					break
-				end
-				x -= d.Chance
+			-- the dog roll (declared above)
+			local d = pickDog(t.Dogs, dogRoll)
+			if d then
+				add({ Kind = "Dog", Id = d.Id, Rank = d.Rank })
 			end
 			if t.SkinChance and skinRoll < t.SkinChance then
 				local pool = {}
@@ -1483,6 +1489,35 @@ local function refresh(player: Player, st: any)
 	end)
 end
 
+-- a dog that waited for room in the dog storage (§9.4) arrives once the saved profile has room; checked every 10 s, also
+-- while Chapter II is switched off (the dog was earned)
+local function deliverPending(player: Player, st: any)
+	if st.DeliveringDogs or os.clock() - (st.PendingDogTry or -1e9) < 10 then
+		return
+	end
+	local Runtime = core and core.Runtime
+	local profile = Runtime and Runtime.Views and Runtime.Views[player.UserId]
+	local u = type(profile) == "table" and profile.Underyard or nil
+	local list = type(u) == "table" and u.PendingDogs or nil
+	if type(list) ~= "table" or #list == 0 then
+		return
+	end
+	st.PendingDogTry = os.clock()
+	if not R().Free(profile) then
+		return
+	end
+	st.DeliveringDogs = true
+	local hint = table.clone(list)
+	task.spawn(function()
+		local ok, err = pcall(C2.DeliverPendingDogs, player, hint)
+		if not ok then
+			warn("Chapter2 pending dog delivery failed: " .. tostring(err))
+		end
+		st.DeliveringDogs = nil
+	end)
+end
+C2.DeliverPending = deliverPending
+
 local function tickPlayer(player: Player, st: any, dt: number)
 	local cst = core.State(player)
 	local view = cst and cst.View
@@ -1499,23 +1534,7 @@ local function tickPlayer(player: Player, st: any, dt: number)
 			refresh(player, st)
 		end
 	end
-	-- a dog that waited for room in the dog storage arrives once there is room (checked every 10 s on the saved view)
-	local pendingDogs = type(c2) == "table" and c2.PendingDogs or nil
-	if type(pendingDogs) == "table" and #pendingDogs > 0 and not st.DeliveringDogs and os.clock() - (st.PendingDogTry or -1e9) >= 10 then
-		st.PendingDogTry = os.clock()
-		local Runtime = core.Runtime
-		local profile = Runtime and Runtime.Views and Runtime.Views[player.UserId]
-		if type(profile) == "table" and R().Free(profile) then
-			st.DeliveringDogs = true
-			task.spawn(function()
-				local ok, err = pcall(C2.DeliverPendingDogs, player, pendingDogs)
-				if not ok then
-					warn("Chapter2 pending dog delivery failed: " .. tostring(err))
-				end
-				st.DeliveringDogs = nil
-			end)
-		end
-	end
+	deliverPending(player, st)
 	if C2.Eligible(player) and C2.InUnderyard(player) and core.IsActive(player) and C2.HasTeamDog(player, "HW_HollowKing") then
 		st.Crown += dt
 		if st.Crown >= 60 then
@@ -1547,6 +1566,20 @@ function C2.Start(c: any, m: any)
 	-- requests are registered even when Chapter II is off: each answers "Chapter II is closed"
 	registerRequests()
 	if not C2.Enabled() then
+		-- switched off: only dogs that were earned and wait for room in the dog storage still arrive
+		task.spawn(function()
+			while true do
+				task.wait(10)
+				for player, cst in pairs(core.Players) do
+					if cst.Ready and player.Parent then
+						local ok, err = pcall(deliverPending, player, stateOf(player))
+						if not ok then
+							warn("Chapter2 pending dog check failed: " .. tostring(err))
+						end
+					end
+				end
+			end
+		end)
 		return
 	end
 	C2.PublishPhase()

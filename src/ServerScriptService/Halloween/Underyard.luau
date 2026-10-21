@@ -595,6 +595,21 @@ function UY.Start(c: any, m: any)
 			toast(player, err)
 		end
 	end)
+	-- Bell Square stations: the Toll Box, the Contracts Board and the Tailor of the Dead open their tab of the Underyard
+	-- window (DESIGN §19; MaxActivationDistance below the window's proximity radius, so the Toll Box BUY is lit at once)
+	for _, s in ipairs({
+		{ "TollBox", "EXCHANGE", "ОБМЕНЯТЬ", "THE TOLL BOX", "КОПИЛКА ЗВОНАРЯ", "Contracts" },
+		{ "ContractsBoard", "OPEN", "ОТКРЫТЬ", "CONTRACTS", "КОНТРАКТЫ", "Contracts" },
+		{ "Tailor", "OPEN", "ОТКРЫТЬ", "THE TAILOR OF THE DEAD", "ПОРТНОЙ МЁРТВЫХ", "Collection" },
+	}) do
+		UY.Prompt(s[1], { Name = "Uy" .. s[1] .. "Prompt", ActionText = s[2], ActionTextRU = s[3], ObjectText = s[4],
+			ObjectTextRU = s[5], HoldDuration = 0, MaxActivationDistance = 12 }, function(player)
+			local remote = RS:FindFirstChild("DogEconomyOpen")
+			if remote and remote:IsA("RemoteEvent") then
+				remote:FireClient(player, "Underyard", { Tab = s[6] })
+			end
+		end)
+	end
 	Players.PlayerAdded:Connect(track)
 	for _, player in ipairs(Players:GetPlayers()) do
 		track(player)

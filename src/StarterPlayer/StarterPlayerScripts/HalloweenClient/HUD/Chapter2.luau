@@ -311,6 +311,9 @@ function M.Start(H: any, env: any)
 				end
 			end
 		end
+		if type(data.RewardKind) == "string" and type(data.Id) == "string" then
+			return UV.RowName({ Kind = data.RewardKind, Id = data.Id }, lang())
+		end
 		return ""
 	end
 	function M.Announce(data: any)

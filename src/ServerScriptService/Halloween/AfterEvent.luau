@@ -2,7 +2,8 @@
 -- With Config.HalloweenEventEnabled = false the event server does not start (HalloweenServer), but pickaxe skins are
 -- owned forever (docs/halloween2/DESIGN.md §2): the equipped skin keeps showing because the player attribute
 -- PickaxeSkin is set from the saved profile, and the Halloween Request remote still answers SkinEquip so a skins menu
--- can change it. Every other action is refused politely. Player data is never written except p.Halloween.Skin.
+-- can change it. Every other action is refused politely. Player data is never written except p.Halloween.Skin and the
+-- delivery of Chapter II dogs that were earned while the dog storage was full (p.Underyard.PendingDogs, DESIGN §9.4).
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local SSS = game:GetService("ServerScriptService")
@@ -18,6 +19,38 @@ local function project(player: Player, Runtime: any)
 	local h = type(p) == "table" and p.Halloween or nil
 	local skin = type(h) == "table" and type(h.Skin) == "string" and h.Skin or ""
 	player:SetAttribute("PickaxeSkin", (skin ~= "" and owned(h, skin)) and skin or "")
+end
+
+-- one parked Chapter II dog into the dog storage (the same mint as Halloween Core's ctx.Dog) -> true when delivered
+local function deliverOne(player: Player, Runtime: any, R: any): boolean
+	local uid = player.UserId
+	local view = Runtime.Views[uid]
+	local u = type(view) == "table" and view.Underyard or nil
+	local first = type(u) == "table" and type(u.PendingDogs) == "table" and u.PendingDogs[1] or nil
+	if type(first) ~= "table" or type(first.Id) ~= "string" or not R.Free(view) or not Runtime.Engine.AssetReady(first.Id) then
+		return false
+	end
+	local id = first.Id
+	local key, supplyKey = "p:" .. uid, "supply:" .. id
+	local ok = Runtime.Tx:Run({ key, supplyKey }, function(v)
+		local p = v[key]
+		Runtime.Engine:Authorize(p, uid)
+		local row = type(p.Underyard) == "table" and type(p.Underyard.PendingDogs) == "table" and p.Underyard.PendingDogs[1] or nil
+		R.Check(type(row) == "table" and row.Id == id and R.Free(p), "Nothing to deliver")
+		local supply = v[supplyKey] or {}
+		v[supplyKey] = supply
+		local dog = R.Mint(p, id, Runtime.Engine.Guid(), supply, os.time(), Runtime.Engine.Random, "BuriedMoon",
+			type(row.Variant) == "string" and row.Variant or nil, true)
+		dog.PricePaid = 0
+		dog.Origin = "Underyard"
+		table.remove(p.Underyard.PendingDogs, 1)
+		R.Validate(p)
+		return { Delivered = id }
+	end)
+	if ok then
+		pcall(Runtime.Refresh, player)
+	end
+	return ok == true
 end
 
 function AE.Start(request: RemoteFunction?, closedMessage: string)
@@ -43,6 +76,14 @@ function AE.Start(request: RemoteFunction?, closedMessage: string)
 				end
 				if Runtime.Ready(player) then
 					project(player, Runtime)
+					-- Chapter II dogs that waited for room in the dog storage still arrive after the event
+					while player.Parent do
+						local okD, delivered = pcall(deliverOne, player, Runtime, R)
+						if not okD then
+							warn("Halloween AfterEvent: pending dog delivery failed: " .. tostring(delivered))
+						end
+						task.wait(okD and delivered and 2 or 10)
+					end
 					return
 				end
 				task.wait(1)
@@ -61,6 +102,10 @@ function AE.Start(request: RemoteFunction?, closedMessage: string)
 	request.OnServerInvoke = function(player: Player, action: any, args: any)
 		if action ~= "SkinEquip" or not Runtime then
 			return false, closedMessage
+		end
+		-- every equip is a profile write: the economy's request budget keeps a spamming client from lagging the server
+		if type(Runtime.Allow) == "function" and not Runtime.Allow(player, 2) then
+			return false, "Please wait a moment"
 		end
 		if busy[player] or not Runtime.Ready(player) then
 			return false, "Your saved profile is still loading"

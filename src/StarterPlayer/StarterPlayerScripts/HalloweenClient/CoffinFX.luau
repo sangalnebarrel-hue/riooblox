@@ -2560,7 +2560,8 @@ end
 ---------------------------------------------------------------------------------------------------------------------
 -- C2Announce: the Hollow King's banner for everyone when no arrival names the raiser (Arrival false). Mythic is the HUD's.
 function CoffinFX.Announce(data: any)
-	if type(data) ~= "table" or data.Kind ~= "HollowKing" or data.Arrival == true then
+	-- only the Black Coffin's raise (no Source / "Coffin"); a Crooked Door or finale Hollow King is the HUD's banner
+	if type(data) ~= "table" or data.Kind ~= "HollowKing" or data.Arrival == true or (data.Source ~= nil and data.Source ~= "Coffin") then
 		return
 	end
 	if data.UserId == player.UserId then

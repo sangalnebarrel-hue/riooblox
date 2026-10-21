@@ -876,7 +876,7 @@ test("ECHO DIG: countdown, rises, digs, Perfect share, streaks, contracts, shard
 		seen[i] = true
 		eq(t.Part.Attrs.UyRun, run.Id)
 		eq(t.Part.Attrs.UyMembers, "," .. leader.UserId .. ",", "only the members get the prompt")
-		eq(t.Shared, false, "a solo run's echoes are the leader's")
+		eq(t.Shared, true, "echoes are the run's (members only: CanHit + UyMembers), never one owner's")
 		eq(t.Panel, false, "no strike panel (the trial HUD shows the run)")
 		yes(t.Part.Attrs.ExpireAt > L.Time, "life")
 	end

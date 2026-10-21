@@ -289,8 +289,8 @@ local function announce(payload: any, kind: string, revealAt: number, arrival: b
 	end
 	local main = payload.Main
 	c2.Signal("all", "C2Announce", { Kind = kind, Name = payload.Name, UserId = payload.UserId,
-		DogId = main.Kind == "Dog" and main.Id or nil, RewardKind = main.Kind, Id = main.Id, Rank = payload.Rank, RevealAt = revealAt,
-		Arrival = arrival })
+		DogId = main.Kind == "Dog" and main.Id or nil, ItemId = main.Kind ~= "Dog" and main.Id or nil, RewardKind = main.Kind, Id = main.Id,
+		Rank = payload.Rank, RevealAt = revealAt, Arrival = arrival })
 end
 
 function Coffin.Broadcast(player: Player, payload: any)

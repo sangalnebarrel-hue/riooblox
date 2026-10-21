@@ -244,7 +244,12 @@ function Seals.Leave(player: Player, reason: string?)
 	end
 	reason = reason or "Left"
 	run.Left[player.UserId] = reason
-	if reason == "BledOut" then
+	-- leaving / walking out / disconnecting while downed in a combat trial counts as a bleed-out for Gold (checked before
+	-- detach: EventHP.Leave un-downs the player)
+	local hp = modules and modules.EventHP
+	local downed = player:GetAttribute("HwDowned") == true
+		or (hp ~= nil and type(hp.IsDowned) == "function" and hp.IsDowned(player) == true)
+	if reason == "BledOut" or (run.Def and run.Def.Combat and run.State == "Running" and downed) then
 		run.BledOut = true
 	end
 	detach(run, player)
@@ -408,10 +413,14 @@ finish = function(run: any, result: string, reason: string?, perPlayerInfo: any?
 				gold = Seals.DefaultGold(run, pl)
 			end
 			golds[tostring(pl.UserId)] = gold
-			local info = perPlayerInfo and perPlayerInfo[pl.UserId] or nil
-			task.spawn(grant, run, pl, gold, info)
 		end
+		-- Won first: the client's results card exists before the grants' C2Seal / C2Shards arrive (a grant on the RAM fast
+		-- path commits without yielding and would otherwise overtake it)
 		Seals.Signal(run, "Won", { Gold = golds, Elapsed = Seals.Elapsed(run) })
+		for _, pl in ipairs(members) do
+			local info = perPlayerInfo and perPlayerInfo[pl.UserId] or nil
+			task.spawn(grant, run, pl, golds[tostring(pl.UserId)], info)
+		end
 	else
 		Seals.Signal(run, "Failed", { Reason = reason or "Failed" })
 	end

@@ -1365,7 +1365,8 @@ pages.seals = function(page: Frame)
 		local rested = view().Rested and tonumber(view().Rested.Pool) or 0
 		local line = F("Bell Shards today: %d%% efficiency", rate)
 		if left > 0 then
-			line ..= " · " .. F("%d more at this rate", math.floor(left))
+			-- at full rate the rested pool extends the 100% tier
+			line ..= " · " .. F("%d more at this rate", math.floor(left + ((tonumber(d.Rate) or 1) >= 1 and rested or 0)))
 		end
 		if rested > 0 then
 			line ..= " · " .. F("rested %d", rested)
@@ -1700,10 +1701,12 @@ pages.contracts = function(page: Frame)
 		todayRate.Text = math.floor(rate * 100 + 0.5) .. "%"
 		todayRate.TextColor3 = rate >= 1 and SICKLY or rate >= 0.3 and CANDLE or BLOOD
 		local raw = (tonumber(d.Day) == day) and (tonumber(d.Raw) or 0) or 0
+		-- shards paid from the rested catch-up pool were earned today too (they do not move the player through the tiers)
+		local earned = raw + ((tonumber(d.Day) == day) and (tonumber(d.Rested) or 0) or 0)
 		local tiers = (Cfg.DailyReturns and Cfg.DailyReturns.Tiers) or {}
 		local first = tiers[1] and tiers[1].Upto or 500
 		todayBar:SetValue(math.clamp(raw / math.max(1, (tiers[2] and tiers[2].Upto) or first * 2), 0, 1))
-		todayBar:SetText(F("%d earned today", raw))
+		todayBar:SetText(F("%d earned today", earned))
 		todayBar:SetColor(rate >= 1 and SICKLY or rate >= 0.3 and CANDLE or BLOOD)
 		local rested = v.Rested and tonumber(v.Rested.Pool) or 0
 		local info = F("The first %d shards of a day count in full, the next %d at 35%%, the rest at 10%%. Contracts, first clears and the Toll Box are never reduced.",

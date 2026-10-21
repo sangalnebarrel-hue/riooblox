@@ -110,7 +110,8 @@ C.Seals = {
 		Gold = { NoMistakes = true },
 		Rewards = { First = 200, Repeat = 30, Keys = 1, Rows = {} },
 		GoldRewards = { Keys = 1 },
-		Activity = { Graves = 6, Directions = 4, Rounds = { 4, 5, 6 }, WrongPenalty = 15, ObjectiveShards = 4 },
+		-- the trial starts at the Mirror Pond (SealConfig[3]); the window's waypoint and BEGIN read this StartAnchor
+		Activity = { Graves = 6, Directions = 4, Rounds = { 4, 5, 6 }, WrongPenalty = 15, ObjectiveShards = 4, StartAnchor = "PondConsult" },
 	},
 	{
 		Index = 4, Id = "Hollow", Numeral = "IV", Name = { "HOLLOW", "ПУСТОТА" }, Trial = { Id = "HollowMine", TimeLimit = 240, Goal = 14, Combat = true },
@@ -204,7 +205,7 @@ C.DailyReturns = {
 		Dex = true, -- Dex II milestone
 		Refund = true, -- Black Coffin shards row (a refund of the opening price)
 		Duplicate = true, -- duplicate conversion
-		Overflow = true, -- Coffin Key overflow conversion
+		-- (Coffin Key overflow is NOT exempt: keys come from many uncapped sources, the conversion pays like earned shards)
 		Debug = true,
 	},
 }
@@ -262,7 +263,7 @@ C.Contracts = {
 C.Coffin = {
 	Price = { Shards = 150, Keys = 1 }, -- at the coffin shrine in Bell Square
 	MaxKeys = 12, -- stored keys; never sold
-	OverflowKeyShards = 60, -- a reward key above MaxKeys converts to this many shards (DR-exempt "Overflow")
+	OverflowKeyShards = 60, -- a reward key above MaxKeys converts to this many shards ("Overflow", daily DR applies)
 	Last = 10, -- results kept in Coffins.Last
 	TotalWeight = 100000,
 	-- the table is built below (rows with weights, ids from §9.8); C.Coffin.Table
@@ -659,8 +660,9 @@ do
 	}
 	for _, id in ipairs(C.Finds.Order) do
 		local def = C.Finds.Defs[id]
+		-- the reveal / announcement rarity is the find's own tier (the COFFIN tab lists it under that tier)
 		table.insert(rows, { Key = id, Group = "Find", Kind = "Find", Id = id, Tier = def.Tier, Weight = C.Finds.TierWeight[def.Tier],
-			Rank = C.Finds.TierRank[def.Tier] + 1 })
+			Rank = C.Finds.TierRank[def.Tier] })
 	end
 	local decorRank = { Rare = 2, Epic = 3, Legendary = 4, Mythic = 5 }
 	for _, id in ipairs(C.Decor.Order) do

@@ -149,11 +149,12 @@ local function spawnEcho(run: any, now: number): any?
 	local life = Rules.EchoLife(a, st.Bonus)
 	local facing = Echo.Roll() * math.pi * 2
 	local size = a.HitSize or { 6, 4.5, 6 }
-	local solo = #run.Players <= 1
+	-- echoes are always shared by the run: Echo.CanHit admits only members, and an owner-only echo would lock out the rest
+	-- of a party whose leader left
 	local target = S.Add({
 		Kind = Echo.Kind, CFrame = hitCF(st.Points[i], facing), Radius = 3.2, Size = Vector3.new(size[1], size[2], size[3]), HP = 1, MaxHP = 1,
 		Unit = 1, Color = Color3.fromRGB(150, 230, 200), Material = "Ground", Variant = "Echo", Seed = math.floor(Echo.Roll() * 1e6),
-		Name = a.LabelEn, NameRU = a.LabelRu, Ground = st.Points[i], Facing = facing, Panel = false, Shared = not solo, Owner = run.Leader,
+		Name = a.LabelEn, NameRU = a.LabelRu, Ground = st.Points[i], Facing = facing, Panel = false, Shared = true,
 		Data = { Run = run, Index = i },
 		Attributes = { UyRun = run.Id, UyTrial = run.TrialId, UyMembers = Rules.Members(run.Players), Index = i, LifeFrom = now, Life = life,
 			ExpireAt = now + life, Pup = st.Bonus > 0 },

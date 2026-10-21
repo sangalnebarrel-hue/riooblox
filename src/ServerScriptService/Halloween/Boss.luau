@@ -1941,9 +1941,10 @@ local function grantChapter2(fightId: string, player: Player, plan): boolean
 	if type(C2.Enabled) == "function" and not C2.Enabled() then
 		return true -- Chapter II switched off: nothing to pay (the player data waits)
 	end
-	local receipt = "hw-boss2:" .. tostring(fightId) .. ":" .. player.UserId
+	local base = "hw-boss2:" .. tostring(fightId) .. ":" .. player.UserId
 	local delays = T.RewardRetry or {}
 	plan.C2Tries = 0
+	plan.C2Fresh = plan.C2Fresh or 0 -- survives parking: an aborted journal never blocks this reward again
 	while true do
 		local latched = player:GetAttribute("HalloweenChapter1Complete")
 		if latched == false then
@@ -1951,6 +1952,7 @@ local function grantChapter2(fightId: string, player: Player, plan): boolean
 		end
 		local err = "Chapter I state still loading"
 		if latched == true then
+			local receipt = plan.C2Fresh > 0 and (base .. "#" .. plan.C2Fresh) or base
 			local okCall, ok, res = pcall(C2.BossReward, player, plan.Difficulty, { Finale = plan.Finale == true, Receipt = receipt })
 			if okCall and ok then
 				res = type(res) == "table" and res or {}
@@ -1963,6 +1965,16 @@ local function grantChapter2(fightId: string, player: Player, plan): boolean
 			err = tostring(if okCall then res else ok)
 			if err == "Finish Chapter I first" or err == "Chapter II is closed" then
 				return true
+			end
+			-- the write itself said no: its journal is aborted (or was never written) and a retry with the same receipt would
+			-- return that error forever, so the next try gets a fresh receipt. "pending" may have committed: keep that receipt
+			-- from then on (its cached reply prevents a double payment); a throw after a commit keeps it too.
+			if okCall then
+				if string.find(string.lower(err), "pending", 1, true) then
+					plan.C2Unknown = true
+				elseif not plan.C2Unknown then
+					plan.C2Fresh += 1
+				end
 			end
 		end
 		plan.C2Tries += 1
