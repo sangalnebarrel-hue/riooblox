@@ -72,7 +72,7 @@ BASE=другой.rbxl OUT=/tmp/test.rbxl ./tools/check.sh
 
 Все правки идемпотентны: повторный запуск сначала удаляет свой прошлый результат.
 
-**Тесты.** Добавлено 32 тестовых файла (596 тестов), все проходят. Во всём наборе падают только 20 старых тестов
+**Тесты.** Добавлено 33 тестовых файла (603 теста), все проходят. Во всём наборе (46 файлов, 836 тестов) падают только 20 старых тестов
 исходного плейса, к обновлению они не относятся (§13).
 
 ---
@@ -808,14 +808,14 @@ SoundService.DOGROTS_SFX     Pickaxe 1.00 (внутри DOGROTS_MiningSFX; ко�
   и ни один объект исходника вне перестраиваемых корней не потерян.
 * `chapter1_balance.py` — генератор таблиц ребаланса.
 
-**Тесты (`tests`, 32 файла + 2 помощника)**
+**Тесты (`tests`, 33 файла + 2 помощника)**
 
-* Новые файлы с числом тестов: `chapter2_rules` (15), `chapter2_feature` (17), `combat` (36), `boss_finale` (26),
-  `finale_client` (18), `chapter1_rebalance` (17), `lucky_dust` (21), `lucky_dust_ui` (14), `shelter_e2e` (15),
-  `tutorial` (33), `reveal` (38), `seals_1_4` (22), `seals_1_4_client` (15), `seals_1_4_world` (11), `seals_5_7` (24),
-  `seals_5_7_client` (18), `coffin` (15), `coffin_client` (18), `event_dogs2` (22), `pickaxe_skins2` (11),
-  `underyard_cosmetics` (10), `underyard_ui` (12), `underyard_runtime` (37), `underyard_world` (19),
-  `underyard_layout` (5), `underyard_carnival_row` (20), `underyard_districts_h3` (18), `calendar` (26), `cinema` (13),
+* Новые файлы с числом тестов: `chapter2_rules` (15), `chapter2_feature` (17), `chapter2_pacing` (3), `combat` (36),
+  `boss_finale` (26), `finale_client` (18), `chapter1_rebalance` (18), `lucky_dust` (21), `lucky_dust_ui` (14),
+  `shelter_e2e` (15), `tutorial` (33), `reveal` (38), `seals_1_4` (22), `seals_1_4_client` (15), `seals_1_4_world` (11),
+  `seals_5_7` (25), `seals_5_7_client` (18), `coffin` (15), `coffin_client` (18), `event_dogs2` (22),
+  `pickaxe_skins2` (11), `underyard_cosmetics` (10), `underyard_ui` (13), `underyard_runtime` (37), `underyard_world` (19),
+  `underyard_layout` (5), `underyard_carnival_row` (20), `underyard_districts_h3` (18), `calendar` (26), `cinema` (14),
   `audio_mixer` (11), `audio_kits` (13), `music_themes` (6).
 * Помощники: `lib/client_env.luau` (безголовый «клиент Roblox» для UI-тестов) и `lib/underyard_env.luau` (офлайн-сборка
   Поддворья).
