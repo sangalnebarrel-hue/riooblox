@@ -7,7 +7,7 @@
 --   Bell Shards      EffOf(raw, cfg) · ApplyDR(rawToday, amount, cfg) -> effective, newRawToday · Exempt(source, cfg)
 --                    ShardGrant(daily, rested, amount, cfg) -> granted, fromRested · DRRate(raw, cfg) · RestedUpdate(...)
 --   Seals            OfferingCost(i, now, cfg) -> cost, discounted · SealMask(seals) · ClearedCount(seals) · SealPlayable(...)
---   Contracts        PickContracts(userId, day, cfg, cleared?) -> list · ContractDef(id, cfg)
+--   Contracts        PickContracts(userId, day, cfg, cleared?, chapter1?) -> list · ContractDef(id, cfg)
 --   Black Coffin     CoffinTotal(cfg) · CoffinChance(row, cfg) · CoffinRoll(rng, cfg, ownedSets?, opts?) -> row
 --   Duplicates       DuplicateConversion(row, cfg, opts?) -> rows | nil
 --   Dex II / craft   Dex2Count(p, cfg) · Dex2Claimable(p, cfg) · Dex2Reward(count, cfg) · CraftCost(id, cfg) -> cost, kind
@@ -348,13 +348,15 @@ function R.ContractDef(id: any, cfg: any): any
 	return nil
 end
 
--- cleared: seals the player has cleared when the list is drawn (contracts with MinCleared above it are skipped)
-function R.PickContracts(userId: number, day: number, cfg: any, cleared: number?): { any }
+-- cleared: seals the player has cleared when the list is drawn (contracts with MinCleared above it are skipped);
+-- chapter1 = false: THE DEAD YARD is switched off, so contracts that need it (Needs = "Chapter1", the Gravekeeper) are skipped
+function R.PickContracts(userId: number, day: number, cfg: any, cleared: number?, chapter1: boolean?): { any }
 	local cc = cfg.Contracts
 	local rand = lcg((math.floor(num(userId)) % 2147483) * 7919 + math.floor(num(day)) * 104729 + 911)
 	local pool = {}
 	for _, row in ipairs(cc.Pool) do
-		if num(row.MinCleared) <= (cleared == nil and math.huge or num(cleared)) and num(row.Weight) > 0 then
+		if num(row.MinCleared) <= (cleared == nil and math.huge or num(cleared)) and num(row.Weight) > 0
+			and not (row.Needs == "Chapter1" and chapter1 == false) then
 			table.insert(pool, row)
 		end
 	end

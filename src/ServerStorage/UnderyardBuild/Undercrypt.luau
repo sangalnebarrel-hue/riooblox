@@ -201,9 +201,10 @@ return {
 			local tl = G.Flat(E, RT) + 5
 			K.Part(mouth, "TunnelFloor", V3(RW + 1, 4, tl), K.Look(V3(tc.X, -1.95, tc.Z), V3(tc.X, -1.95, tc.Z) + t1), C(78, 72, 82), M.Cobblestone, G.Solid())
 			local rc = RT:Lerp(RB, .5)
-			-- the WedgePart's high edge is at its -Z: point -Z up-ramp
-			K.Wedge(mouth, "Ramp", V3(RW, RT.Y - RB.Y, rampLen), K.Look(V3(rc.X, (RT.Y + RB.Y) / 2, rc.Z), V3(rc.X, (RT.Y + RB.Y) / 2, rc.Z) - rd),
-				C(70, 64, 74), M.Cobblestone, G.Solid())
+			-- a WedgePart's tall face / high edge is at its local +Z and the slope faces -Z: point -Z (the look) down-ramp,
+			-- so the high edge meets the tunnel floor at RampTop and the low edge the mine floor at RampBottom
+			local rcy = V3(rc.X, (RT.Y + RB.Y) / 2, rc.Z)
+			K.Wedge(mouth, "Ramp", V3(RW, RT.Y - RB.Y, rampLen), K.Look(rcy, rcy + rd), C(70, 64, 74), M.Cobblestone, G.Solid())
 			-- timber edging + cross boards on the slope (decor, flush on the surface)
 			local slope = (RB - RT).Unit
 			for _, s in ipairs({ -1, 1 }) do
@@ -306,14 +307,15 @@ return {
 			for k = 0, 3 do
 				local xa, xb = 112 + k * 27.5, 112 + (k + 1) * 27.5
 				local h = ROOF_Y + ROOF_T + rng:NextNumber(-.5, 1.5)
-				K.Wedge(hill, "HillFace", V3(xb - xa + 1, h, zB - zA), at((xa + xb) / 2, h / 2, (zA + zB) / 2) * ANG(0, PI, 0) * ANG(0, rng:NextNumber(-.03, .03), 0),
+				-- (a WedgePart's high edge is its local +Z: +Z toward the cavern, so the face rises from z 2494 to the roof)
+				K.Wedge(hill, "HillFace", V3(xb - xa + 1, h, zB - zA), at((xa + xb) / 2, h / 2, (zA + zB) / 2) * ANG(0, rng:NextNumber(-.03, .03), 0),
 					rockCol(), M.Slate, G.Solid())
 			end
 			-- west flank: y 0 at x 94 up to the roof at x 104
 			for k = 0, 4 do
 				local za, zb = 2505 + k * 23.4, 2505 + (k + 1) * 23.4
 				local h = ROOF_Y + ROOF_T + rng:NextNumber(-.5, 1.2)
-				K.Wedge(hill, "HillFlank", V3(zb - za + 1, h, 11), at(99, h / 2, (za + zb) / 2) * ANG(0, -PI / 2, 0), rockCol(), M.Slate, G.Solid())
+				K.Wedge(hill, "HillFlank", V3(zb - za + 1, h, 11), at(99, h / 2, (za + zb) / 2) * ANG(0, PI / 2, 0), rockCol(), M.Slate, G.Solid())
 			end
 			-- east strip up to the boundary
 			for k = 0, 5 do
@@ -335,7 +337,7 @@ return {
 					rock(hill, V3(xb - xa + 3, top - yb, zb - za + 3), at(cx, (top + yb) / 2, cz) * ANG(rng:NextNumber(-.05, .05), rng:NextNumber(-.18, .18), rng:NextNumber(-.05, .05)))
 					if (ix + iz) % 2 == 1 and iz < MZ - 1 then -- scree slopes rising south between the blocks
 						local sh = rng:NextNumber(3, 6)
-						K.Wedge(hill, "Scree", V3(xb - xa, sh, (zb - za) * .8), at(cx + rng:NextNumber(-2, 2), top + sh / 2 - .3, cz + (zb - za) * .2) * ANG(0, PI + rng:NextNumber(-.25, .25), 0),
+						K.Wedge(hill, "Scree", V3(xb - xa, sh, (zb - za) * .8), at(cx + rng:NextNumber(-2, 2), top + sh / 2 - .3, cz + (zb - za) * .2) * ANG(0, rng:NextNumber(-.25, .25), 0),
 							rockCol(), M.Slate, G.Solid())
 					end
 					if rng:NextNumber() < .55 then
@@ -367,7 +369,7 @@ return {
 				end
 			end
 			-- west flank of the massif + the mouth block (rock around and above the arch)
-			K.Wedge(hill, "HillFlank", V3(Z1 - 2622, 10, 10), at(99, 5, (2622 + Z1) / 2) * ANG(0, -PI / 2, 0), rockCol(), M.Slate, G.Solid())
+			K.Wedge(hill, "HillFlank", V3(Z1 - 2622, 10, 10), at(99, 5, (2622 + Z1) / 2) * ANG(0, PI / 2, 0), rockCol(), M.Slate, G.Solid())
 		end
 
 		------------------------------------------------------------------------------------------ the catacomb mouth

@@ -121,12 +121,13 @@ return {
 		if not fwBase then
 			K.Part(ground, "MarshMudBed", V3(W, 4, D), at((X0 + X1) / 2, GY - 2, (Z0 + Z1) / 2), MUD, M.Mud, G.Solid())
 			-- banks: north + east meet the neighbours' floor (y 0) when nothing else lays it
-			K.Wedge(ground, "MarshBank", V3(W, -GY, 6), at((X0 + X1) / 2, GY / 2, Z0 + 3), BANK, M.Mud, G.Solid())
-			K.Wedge(ground, "MarshBank", V3(D, -GY, 6), at(X1 - 3, GY / 2, (Z0 + Z1) / 2) * ANG(0, -PI / 2, 0), BANK, M.Mud, G.Solid())
+			-- (a WedgePart's high edge is its local +Z: each bank's +Z faces out of the marsh, so it rises toward the rim)
+			K.Wedge(ground, "MarshBank", V3(W, -GY, 6), at((X0 + X1) / 2, GY / 2, Z0 + 3) * ANG(0, PI, 0), BANK, M.Mud, G.Solid())
+			K.Wedge(ground, "MarshBank", V3(D, -GY, 6), at(X1 - 3, GY / 2, (Z0 + Z1) / 2) * ANG(0, PI / 2, 0), BANK, M.Mud, G.Solid())
 		end
 		-- west + south: a shore rising under the boundary cliffs
-		K.Wedge(ground, "MarshBank", V3(D, .5 - GY, 8), at(X0 + 4, (GY + .5) / 2, (Z0 + Z1) / 2) * ANG(0, PI / 2, 0), BANK, M.Mud, G.Solid())
-		K.Wedge(ground, "MarshBank", V3(W, .5 - GY, 8), at((X0 + X1) / 2, (GY + .5) / 2, Z1 - 4) * ANG(0, PI, 0), BANK, M.Mud, G.Solid())
+		K.Wedge(ground, "MarshBank", V3(D, .5 - GY, 8), at(X0 + 4, (GY + .5) / 2, (Z0 + Z1) / 2) * ANG(0, -PI / 2, 0), BANK, M.Mud, G.Solid())
+		K.Wedge(ground, "MarshBank", V3(W, .5 - GY, 8), at((X0 + X1) / 2, (GY + .5) / 2, Z1 - 4), BANK, M.Mud, G.Solid())
 		-- the black water sheet (walk-through; the mud bed below is the floor)
 		K.Part(ground, "BlackWater", V3(W - .4, .2, D - .4), at((X0 + X1) / 2, WY - .1, (Z0 + Z1) / 2), WATER, M.Glass,
 			{ Transparency = .18, Reflectance = .22, Shadow = false })
@@ -215,7 +216,8 @@ return {
 		-- ramp from the neighbour floor (y 0) up to the deck
 		local function rampUp(parent, p: Vector3, dir: Vector3, width: number)
 			local c = p - dir * 1.25
-			K.Wedge(parent, "BoardwalkRamp", V3(width, BY, 2.5), K.Look(V3(c.X, BY / 2, c.Z), V3(c.X, BY / 2, c.Z) + dir),
+			-- high edge (local +Z) at the deck (+dir), the low edge on the neighbour floor
+			K.Wedge(parent, "BoardwalkRamp", V3(width, BY, 2.5), K.Look(V3(c.X, BY / 2, c.Z), V3(c.X, BY / 2, c.Z) - dir),
 				plankColor(), M.WoodPlanks, G.Solid())
 		end
 
@@ -240,7 +242,8 @@ return {
 			local GL = 7
 			E0 = V3(foot.X, BY, foot.Z) + u * GL
 			local mid = V3(foot.X, (GY + BY) / 2, foot.Z) + u * (GL / 2)
-			K.Wedge(decks, "BoardwalkGangplank", V3(DECK_W, BY - GY, GL), K.Look(mid, mid + u), plankColor(), M.WoodPlanks, G.Solid())
+			-- the wedge's high edge (local +Z) at the boardwalk end (+u), the low edge on the mud at the bridge landing
+			K.Wedge(decks, "BoardwalkGangplank", V3(DECK_W, BY - GY, GL), K.Look(mid, mid - u), plankColor(), M.WoodPlanks, G.Solid())
 			for k = 1, 4 do
 				local c = V3(foot.X, GY + (BY - GY) * (k - .5) / 4.6 + .1, foot.Z) + u * (GL * (k - .5) / 4.6)
 				K.Part(decks, "GangplankCleat", V3(DECK_W - .6, .2, .35), K.Look(c, c + u) * ANG(math.atan((BY - GY) / GL), 0, 0), COL.TimberDark, M.Wood)

@@ -463,6 +463,26 @@ function View.MothCloud(pos: Vector3, opts: any?): any
 	return handle
 end
 
+-- the noun after a count: Russian takes the counted form (1 осколок, 2 осколка, 5 осколков), English the plain name
+local function counted(kind: string, n: number): string
+	local ui = View.Loc().UI
+	local kinds = ui.Kinds
+	local forms = ui.Counted and ui.Counted[kind]
+	if forms and Shared.IsRussian() then
+		if type(forms) == "string" then
+			return forms
+		end
+		local m10, m100 = n % 10, n % 100
+		if m10 == 1 and m100 ~= 11 then
+			return forms[1]
+		elseif m10 >= 2 and m10 <= 4 and (m100 < 12 or m100 > 14) then
+			return forms[2]
+		end
+		return forms[3]
+	end
+	return View.Pair(kinds[kind] or { tostring(kind), tostring(kind) })
+end
+
 -- a reward row -> one short line ("+52 Bell Shards", "Coffin Key", "Showcase find")
 function View.RewardLine(r: any): string
 	local kinds = View.Loc().UI.Kinds
@@ -470,16 +490,17 @@ function View.RewardLine(r: any): string
 	if r.Converted then
 		local parts = {}
 		for _, c in ipairs(r.Conversion or {}) do
-			table.insert(parts, "+" .. tostring(c.Amount or 0) .. " " .. View.Pair(kinds[c.Kind] or { tostring(c.Kind), tostring(c.Kind) }))
+			local amount = math.floor(tonumber(c.Amount) or 0)
+			table.insert(parts, "+" .. tostring(amount) .. " " .. counted(tostring(c.Kind), amount))
 		end
 		return name .. " → " .. table.concat(parts, " · ")
 	end
-	local n = tonumber(r.Amount) or 0
+	local n = math.floor(tonumber(r.Amount) or 0)
 	if (r.Kind == "Shards" or r.Kind == "Dust" or r.Kind == "Fragments" or r.Kind == "Bones" or r.Kind == "Cash" or r.Kind == "Candy") and n > 0 then
-		return "+" .. Shared.Format(n) .. " " .. name
+		return "+" .. Shared.Format(n) .. " " .. counted(r.Kind, n)
 	end
 	if r.Kind == "Key" and n > 1 then
-		return "+" .. n .. " " .. name
+		return "+" .. n .. " " .. counted("Key", n)
 	end
 	return name
 end

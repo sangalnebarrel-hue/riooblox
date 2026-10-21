@@ -592,6 +592,30 @@ test("HUD layout: desktop / phone landscape / phone portrait, English and Russia
 	local party = hudGui():FindFirstChild("Party")
 	yes(CE.Shown(party), "party shown")
 	yes(CE.Shown(party.Member3) and not CE.Shown(party.Member4), "three rows")
+	-- phone landscape with a full party of six: the card stays clear of the screen centre (the character) and the party
+	-- rows that do not fit fold into "+k"
+	CE.Screen = roblox.Vector2.new(844, 390)
+	main:SetAttribute("HUDInnerLeft", 136)
+	main:SetAttribute("HUDInnerRight", 786)
+	for _, stripBottom in ipairs({ 63, 121 }) do
+		main:SetAttribute("HwStripBottom", stripBottom)
+		signal("C2Trial", payload("Tick", "EchoDig", 1, cur.Payload.Data, { EndsAt = CE.Unix + 60, Total = 7, Players = { 1, 2, 3, 4, 5, 6 },
+			Score = { ["1"] = 4, ["2"] = 2, ["3"] = 1, ["4"] = 1, ["5"] = 0, ["6"] = 0 } }))
+		Trials.Refresh()
+		CE.Advance(.2)
+		onScreen(hudGui(), "phone_land party of 6, strip " .. stripBottom)
+		local c = hudGui().TrialCard
+		local p, sz = c.AbsolutePosition, c.AbsoluteSize
+		yes(not (p.X <= 422 and p.X + sz.X >= 422 and p.Y <= 195 and p.Y + sz.Y >= 195), "card clear of the screen centre")
+	end
+	for _, k in ipairs({ "HUDInnerLeft", "HUDInnerRight", "HwStripBottom" }) do
+		main:SetAttribute(k, nil)
+	end
+	CE.Screen = roblox.Vector2.new(1280, 720)
+	signal("C2Trial", payload("Tick", "EchoDig", 1, cur.Payload.Data, { EndsAt = CE.Unix + 60, Total = 7, Players = { 1, 2, 3 },
+		Score = { ["1"] = 4, ["2"] = 2, ["3"] = 1 } }))
+	Trials.Refresh()
+	CE.Advance(.2)
 	-- hidden with menus / HIDE UI / cinematics
 	main:SetAttribute("OpenMenu", "Shop")
 	CE.Advance(.2)

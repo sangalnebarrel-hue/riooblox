@@ -165,12 +165,31 @@ test("catalog: the 10 Underyard decorations with their fixed ids, sizes and even
 	end
 	-- the Chapter I rewards keep their own hint
 	check(string.find(Catalog.RewardHint(Catalog.Get("hw_bone_arch"), false), "Pumpkin") ~= nil, "Chapter I hint")
-	-- one rarity everywhere: the plot decor screen (catalog) and the Black Coffin / Underyard window (Chapter2Config)
+	-- one rarity and one name everywhere: the plot decor screen (catalog) and the Black Coffin / Underyard window
+	-- (Chapter2Config); the bag / showcase (ItemDefinitions) and the same window for finds
 	local C2Cfg = L.Require("ReplicatedStorage.Halloween.Chapter2Config")
+	local function upper(s)
+		return (string.gsub(string.upper(s), "[\208\209][\128-\191]", function(ch)
+			local map = { ["а"] = "А", ["б"] = "Б", ["в"] = "В", ["г"] = "Г", ["д"] = "Д", ["е"] = "Е", ["ё"] = "Ё", ["ж"] = "Ж", ["з"] = "З",
+				["и"] = "И", ["й"] = "Й", ["к"] = "К", ["л"] = "Л", ["м"] = "М", ["н"] = "Н", ["о"] = "О", ["п"] = "П", ["р"] = "Р", ["с"] = "С",
+				["т"] = "Т", ["у"] = "У", ["ф"] = "Ф", ["х"] = "Х", ["ц"] = "Ц", ["ч"] = "Ч", ["ш"] = "Ш", ["щ"] = "Щ", ["ъ"] = "Ъ", ["ы"] = "Ы",
+				["ь"] = "Ь", ["э"] = "Э", ["ю"] = "Ю", ["я"] = "Я" }
+			return map[ch] or ch
+		end))
+	end
 	for id in DECOR do
 		local def = C2Cfg.Decor.Defs[id]
 		check(def ~= nil, id .. " missing in Chapter2Config.Decor")
-		check(Catalog.Get(id).Rarity == def.Rarity, id .. " rarity: catalog " .. tostring(Catalog.Get(id).Rarity) .. ", Chapter II " .. tostring(def.Rarity))
+		local item = Catalog.Get(id)
+		check(item.Rarity == def.Rarity, id .. " rarity: catalog " .. tostring(item.Rarity) .. ", Chapter II " .. tostring(def.Rarity))
+		check(upper(def.Name[1]) == item.Name, id .. " name: catalog " .. item.Name .. ", Chapter II " .. def.Name[1])
+		check(upper(def.Name[2]) == item.RU, id .. " Russian name: catalog " .. item.RU .. ", Chapter II " .. def.Name[2])
+	end
+	for _, id in ipairs(C2Cfg.Finds.Order) do
+		local def, item = C2Cfg.Finds.Defs[id], Items.ById and Items.ById[id] or Items[id]
+		check(item ~= nil, id .. " missing in ItemDefinitions")
+		check(def.Name[1] == (item.Name or item.DisplayName), id .. " name: items " .. tostring(item.Name or item.DisplayName) .. ", Chapter II " .. def.Name[1])
+		check(def.Name[2] == item.RU, id .. " Russian name: items " .. tostring(item.RU) .. ", Chapter II " .. def.Name[2])
 	end
 end)
 

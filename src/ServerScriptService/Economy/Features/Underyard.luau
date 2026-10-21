@@ -275,9 +275,12 @@ function F.EnsureDaily(p: any, now: number): boolean
 		return false
 	end
 	rules.RestedUpdate(u.Rested, u.Daily, today, cfg)
+	-- THE DEAD YARD switched off (Config.HalloweenChapter1Enabled): no Gravekeeper contract that could never progress
+	local sh = load("Shared")
+	local chapter1 = not (sh and type(sh.Chapter1Enabled) == "function") or sh.Chapter1Enabled()
 	u.Daily = {
 		Day = today, Raw = 0, Eff = 0, Rested = 0, Exchange = 0, Doors = 0, Keys = 0, Resonance = 0,
-		Contracts = { Day = today, List = rules.PickContracts(tonumber(p.UserId) or 0, today, cfg, F.Cleared(u)), AllClaimed = false },
+		Contracts = { Day = today, List = rules.PickContracts(tonumber(p.UserId) or 0, today, cfg, F.Cleared(u), chapter1), AllClaimed = false },
 	}
 	return true
 end

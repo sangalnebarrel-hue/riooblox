@@ -151,11 +151,19 @@ function Strike.new(ctx)
   if type(code)~='string'then return L('Connection problem; try again','Проблема со связью, попробуй ещё раз')end
   local row=CODES[code];if row then return L(row[1],row[2])end
   if string.sub(code,1,2)=='M:'then return Text.Message(code)end
-  -- server strings of other kinds: the Halloween localization table when it has them
+  -- server strings of other kinds: the Halloween localization table first, then every other Localization module
+  -- (Chapter II refusals live in Localization.Boss / Seals2 / Underyard)
   local ok,res=pcall(function()
-   local loc=RS:FindFirstChild('Localization');local mod=loc and loc:FindFirstChild('Halloween')
-   local t=mod and require(mod);local exact=type(t)=='table'and t.Exact
-   return Text.IsRussian()and type(exact)=='table'and exact[code]or nil
+   if not Text.IsRussian()then return nil end
+   local loc=RS:FindFirstChild('Localization');if not loc then return nil end
+   local first=loc:FindFirstChild('Halloween')
+   local list={first}
+   for _,m in ipairs(loc:GetChildren())do if m~=first and m:IsA('ModuleScript')then table.insert(list,m)end end
+   for _,m in ipairs(list)do
+    local okR,t=pcall(require,m);local exact=okR and type(t)=='table'and t.Exact
+    if type(exact)=='table'and type(exact[code])=='string'then return exact[code]end
+   end
+   return nil
   end)
   return (ok and type(res)=='string')and res or code
  end

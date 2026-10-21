@@ -437,7 +437,9 @@ function M.Start(ctx)
 			end
 		elseif theme == "TRIAL" and UR then
 			local left = trialEnds > 0 and trialEnds - workspace:GetServerTimeNow() or math.huge
-			Music.SetLayer("TRIAL", "Urgent", (left > 0 and left <= UR.Config.Sound.UrgentAt) and 1 or 0)
+			-- the one owner of the Urgent layer: it fades in over the first 5 s of the last UrgentAt seconds
+			local at = UR.Config.Sound.UrgentAt
+			Music.SetLayer("TRIAL", "Urgent", (left > 0 and left < at) and math.clamp((at - left) / 5, 0, 1) or 0)
 		elseif theme == "FINALE_HOUND" and UR and finaleFolder then
 			local hp, max = tonumber(finaleFolder:GetAttribute("HoundHP")), tonumber(finaleFolder:GetAttribute("HoundMax"))
 			Music.SetLayer("FINALE_HOUND", "Frenzy", (hp and max and max > 0 and hp / max <= UR.Config.Sound.FrenzyAt) and 1 or 0)

@@ -340,8 +340,8 @@ test("marsh: the gate path, the pond ring and the marsh choir points are walkabl
 	local g = L.Gates.MourningMarsh
 	local a = g.Position + g.Facing * 9
 	local gp = marsh.Boardwalks:FindFirstChild("BoardwalkGangplank")
-	if gp then -- the path starts at the top of the gangplank from the framework bridge
-		a = gp.CFrame * V3(0, gp.Size.Y / 2, -gp.Size.Z / 2)
+	if gp then -- the path starts at the top of the gangplank from the framework bridge (its high edge: local +Z)
+		a = gp.CFrame * V3(0, gp.Size.Y / 2, gp.Size.Z / 2)
 	end
 	local b = L.ChoirPaths[7]
 	local mid = a:Lerp(b, .5)
@@ -364,8 +364,9 @@ test("marsh: the gate path, the pond ring and the marsh choir points are walkabl
 		assert(not marsh:FindFirstChild("MarshMudBed", true), "mud bed duplicated over the framework floor")
 		local gp = marsh.Boardwalks:FindFirstChild("BoardwalkGangplank")
 		assert(gp and gp.CanCollide, "no gangplank from the bridge")
-		local foot = gp.CFrame * V3(0, -gp.Size.Y / 2, gp.Size.Z / 2)
-		local head = gp.CFrame * V3(0, gp.Size.Y / 2, -gp.Size.Z / 2)
+		-- a WedgePart's low edge is its front bottom (local -Z), the high edge its back top (local +Z)
+		local foot = gp.CFrame * V3(0, -gp.Size.Y / 2, -gp.Size.Z / 2)
+		local head = gp.CFrame * V3(0, gp.Size.Y / 2, gp.Size.Z / 2)
 		assert(math.abs(foot.Y - L.Marsh.GroundY) < .1 and math.abs(head.Y - L.Marsh.BoardwalkY) < .1, "gangplank heights")
 		local onBridge = false
 		for _, d in root:GetDescendants() do
@@ -501,9 +502,9 @@ test("undercrypt: mine floor at y -16 covering the Floor box; a >= 10 wide ramp 
 	local ramp = crypt.CatacombMouth:FindFirstChild("Ramp")
 	assert(ramp and ramp:IsA("WedgePart") and ramp.CanCollide, "ramp wedge")
 	assert(ramp.Size.X >= 10, "ramp width " .. ramp.Size.X)
-	-- the sloped top runs from RampTop (high edge, local -Z) to RampBottom
-	local hi = ramp.CFrame * V3(0, ramp.Size.Y / 2, -ramp.Size.Z / 2)
-	local lo = ramp.CFrame * V3(0, -ramp.Size.Y / 2, ramp.Size.Z / 2)
+	-- the sloped top runs from RampTop (the WedgePart's high edge, local +Z, as Roblox builds it) to RampBottom
+	local hi = ramp.CFrame * V3(0, ramp.Size.Y / 2, ramp.Size.Z / 2)
+	local lo = ramp.CFrame * V3(0, -ramp.Size.Y / 2, -ramp.Size.Z / 2)
 	assert((hi - U.RampTop).Magnitude < .6, "ramp top end " .. tostring(hi))
 	assert((lo - U.RampBottom).Magnitude < .6, "ramp bottom end " .. tostring(lo))
 	-- the respawn point stands on the floor with headroom

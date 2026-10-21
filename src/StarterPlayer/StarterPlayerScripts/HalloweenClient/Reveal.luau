@@ -2453,9 +2453,13 @@ function Reveal.Tick()
 	local blocked = env.Menu or env.Cinema or env.Mining or env.Dead or env.Combat or env.Trial or env.Overlay or State.Note.Showing
 	if Rules.CinematicDue({ Enabled = on, Eligible = isEligible, RevealSeen = seen or scene.Pending, Distance = dist, Playing = scene.Playing,
 		Now = now, CooldownUntil = scene.CooldownUntil, Blocked = blocked }) and c.Root then
-		local started, why = Reveal.PlayChurch()
-		if not started and why ~= "Busy" then
-			scene.CooldownUntil = now + 2
+		if not (notified() or State.Note.Sent) and Reveal.Notify() then
+			-- "IS THAT ALL?" first (§6.1): the cinematic follows on the first tick after FIND OUT (Note.Sent, not Showing)
+		else
+			local started, why = Reveal.PlayChurch()
+			if not started and why ~= "Busy" then
+				scene.CooldownUntil = now + 2
+			end
 		end
 	end
 	-- the teaser

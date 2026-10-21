@@ -1231,8 +1231,9 @@ function Cinema.Play(opts: { [string]: any }): (any, string?)
 			cam.CameraType = Enum.CameraType.Scriptable
 			table.insert(run.Undo, function()
 				local c = workspace.CurrentCamera
-				-- a mining session that somehow began under the shot owns the Scriptable camera now: leave it alone
-				if not c or miningActive() then
+				-- leave the camera alone only when a mining session already owned a Scriptable camera before the shot (a Force
+				-- shot over a quarry session); a Halloween strike session never owns the camera, so it is restored
+				if not c or (miningActive() and prevType == Enum.CameraType.Scriptable) then
 					return
 				end
 				if c.CameraType == Enum.CameraType.Scriptable then

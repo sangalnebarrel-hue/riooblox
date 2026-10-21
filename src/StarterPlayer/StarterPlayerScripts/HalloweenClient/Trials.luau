@@ -825,6 +825,13 @@ local function layoutHud(h: any, texts: { string }, partyN: number)
 	local x, y, w, phone = Trials.HudRect(size.X, size.Y, {
 		HUDInnerLeft = mainAttr("HUDInnerLeft"), HUDInnerRight = mainAttr("HUDInnerRight"), HwStripBottom = mainAttr("HwStripBottom"),
 	})
+	-- phone landscape: a compact card in the right part of the free zone, clear of the character in the screen's centre
+	local land = phone and size.X > size.Y
+	if land then
+		w = math.min(w, 300)
+		x = math.floor(math.max(12, num(mainAttr("HUDInnerRight"), size.X - 12) - w - 8))
+		lines = math.min(lines, 1)
+	end
 	local pad = phone and 8 or 10
 	local headH = 44
 	local barH = phone and 22 or 24
@@ -833,7 +840,7 @@ local function layoutHud(h: any, texts: { string }, partyN: number)
 	local hasTime = current and current.Limit and current.Limit > 0
 	local inner0 = w - pad * 2
 	-- the Gold target gets its own row when the card is narrow (phones), long lines wrap onto two rows
-	local goldRow = inner0 < 400 and h.Gold.Visible
+	local goldRow = not land and inner0 < 400 and h.Gold.Visible
 	local goldH = goldRow and (phone and 22 or 24) or 0
 	local rows = {}
 	local textSize = phone and 13 or 15
@@ -895,15 +902,18 @@ local function layoutHud(h: any, texts: { string }, partyN: number)
 			yy += rows[i] * lineH
 		end
 	end
-	-- party under the card, as wide as the card (rows of 22 px)
+	-- party under the card, as wide as the card (rows of 22 px); only the rows that fit above the screen's bottom
 	h.PartyBox.Visible = partyN > 1
+	local rowH = phone and 20 or 22
+	local top = y + cardH + 6
+	local shown = math.min(partyN, math.max(1, math.floor((size.Y - top - 16) / rowH)))
+	h.PartyShown = shown
 	if partyN > 1 then
-		local rowH = phone and 20 or 22
 		local pw = math.min(w, phone and 260 or 300)
-		h.PartyBox.Position = UDim2.fromOffset(x, y + cardH + 6)
-		h.PartyBox.Size = UDim2.fromOffset(pw, 8 + partyN * rowH)
+		h.PartyBox.Position = UDim2.fromOffset(x, top)
+		h.PartyBox.Size = UDim2.fromOffset(pw, 8 + shown * rowH)
 		for i, r in ipairs(h.Party) do
-			r.Row.Visible = i <= partyN
+			r.Row.Visible = i <= shown
 			r.Row.Position = UDim2.fromOffset(8, 4 + (i - 1) * rowH)
 			r.Row.Size = UDim2.fromOffset(pw - 16, rowH)
 			r.Dot.Position = UDim2.new(0, 0, .5, 0)
@@ -916,7 +926,7 @@ local function layoutHud(h: any, texts: { string }, partyN: number)
 			r.Score.Size = UDim2.new(.2, 0, 1, -2)
 		end
 	end
-	h.Bottom = y + cardH + (partyN > 1 and (6 + 8 + partyN * (phone and 20 or 22)) or 0)
+	h.Bottom = y + cardH + (partyN > 1 and (6 + 8 + shown * rowH) or 0)
 	if main then
 		main:SetAttribute("HwTrialBottom", h.Bottom)
 	end
@@ -987,11 +997,7 @@ function Trials.Refresh()
 				audio("TrialTick", nil, { Volume = .7, Pitch = 1 + (5 - sec) * .05 })
 			end
 		end
-		local urgent = (t >= goAt and left < 15) and math.clamp((15 - left) / 5, 0, 1) or 0
-		if math.abs(urgent - (h.Urgent or 0)) > .05 then
-			h.Urgent = urgent
-			setUrgent(urgent)
-		end
+		-- (the TRIAL theme's Urgent layer is Soundscape's: it owns the music)
 		-- the server cut the limit (a wrong consult): "-15 s"
 		if run.LastEndsAt and endsAt < run.LastEndsAt - .5 then
 			local cut = math.floor(run.LastEndsAt - endsAt + .5)
@@ -1072,6 +1078,13 @@ function Trials.Refresh()
 		end
 	end
 	layoutHud(h, texts, partyN)
+	-- rows that do not fit (phone landscape, big parties): the last shown row says how many more are in the party
+	local shown = h.PartyShown or partyN
+	if partyN > shown and h.Party[shown] then
+		h.Party[shown].Score.Text = "+" .. (partyN - shown + 1)
+		h.Party[shown].Name.Text = L("more", "ещё")
+		h.Party[shown].HP.Visible = false
+	end
 	updateMarks()
 end
 
@@ -1194,15 +1207,28 @@ local REASONS = {
 }
 Trials.Reasons = REASONS
 
+-- {English, Russian {one, few, many} after a number (or one form for every count), icon}
 local REWARD_TEXT = {
-	Shards = { "Bell Shards", "осколков колокола", "🔔" },
+	Shards = { "Bell Shards", { "осколок колокола", "осколка колокола", "осколков колокола" }, "🔔" },
 	Dust = { "Lucky Dust", "счастливой пыли", "✨" },
-	Key = { "Coffin Key", "ключ от гроба", "🗝" },
-	Fragments = { "fragments", "фрагментов", "🧵" },
-	Candy = { "Candy", "конфет", "🍬" },
-	Bones = { "Bones", "костей", "🦴" },
-	Cash = { "Coins", "монет", "🪙" },
+	Key = { "Coffin Keys", { "ключ от гроба", "ключа от гроба", "ключей от гроба" }, "🗝" },
+	Fragments = { "fragments", { "фрагмент", "фрагмента", "фрагментов" }, "🧵" },
+	Candy = { "Candy", { "конфета", "конфеты", "конфет" }, "🍬" },
+	Bones = { "Bones", { "кость", "кости", "костей" }, "🦴" },
+	Cash = { "Coins", { "монета", "монеты", "монет" }, "🪙" },
 }
+local function ruCount(forms: any, n: number): string
+	if type(forms) == "string" then
+		return forms
+	end
+	local m10, m100 = n % 10, n % 100
+	if m10 == 1 and m100 ~= 11 then
+		return forms[1]
+	elseif m10 >= 2 and m10 <= 4 and (m100 < 12 or m100 > 14) then
+		return forms[2]
+	end
+	return forms[3]
+end
 
 -- one reward row -> display text (EN / RU through L)
 function Trials.RewardText(row: any): string
@@ -1215,9 +1241,9 @@ function Trials.RewardText(row: any): string
 	local out: string
 	if t then
 		if kind == "Key" then
-			out = string.format("%s +%d %s", t[3], amount, L(amount == 1 and "Coffin Key" or "Coffin Keys", amount == 1 and "ключ от гроба" or "ключа от гроба"))
+			out = string.format("%s +%d %s", t[3], amount, L(amount == 1 and "Coffin Key" or "Coffin Keys", ruCount(t[2], amount)))
 		else
-			out = string.format("%s +%s %s", t[3], Shared.Format(amount), L(t[1], t[2]))
+			out = string.format("%s +%s %s", t[3], Shared.Format(amount), L(t[1], ruCount(t[2], amount)))
 		end
 	elseif kind == "Dog" then
 		local def = Cfg.Dogs.Defs[row.Id or ""]

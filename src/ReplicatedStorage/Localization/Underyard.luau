@@ -131,6 +131,10 @@ L.UI = {
 	-- titles (Chapter2Config.Titles)
 	["HOLLOW CROWN"] = "ПОЛАЯ КОРОНА",
 	["THE LAST BARK"] = "ПОСЛЕДНИЙ ЛАЙ",
+	["FALSE VICTORY"] = "ЛОЖНАЯ ПОБЕДА",
+	["THE BELL TOLLS"] = "КОЛОКОЛ ЗВОНИТ",
+	["THE BURIED CHOIR"] = "ПОГРЕБЁННЫЙ ХОР",
+	["THE BELL SILENCES YOU"] = "КОЛОКОЛ ЗАСТАВИЛ ВАС УМОЛКНУТЬ",
 }
 
 L.Templates = {
@@ -146,7 +150,7 @@ L.Templates = {
 	["%d COFFIN KEYS"] = { "%d КЛЮЧ ОТ ГРОБА", "%d КЛЮЧА ОТ ГРОБА", "%d КЛЮЧЕЙ ОТ ГРОБА" },
 	["%d FRAGMENTS"] = { "%d ФРАГМЕНТ", "%d ФРАГМЕНТА", "%d ФРАГМЕНТОВ" },
 	["%d Candy -> %d Bell Shards"] = "%d конфет -> %d осколков колокола",
-	["Rested: %d shards at 100%%"] = "Отдых: %d осколков по 100%%",
+	["Rested: %d shards at 100%%"] = { "Отдых: %d осколок по 100%%", "Отдых: %d осколка по 100%%", "Отдых: %d осколков по 100%%" },
 	["Today %d / %d"] = "Сегодня %d / %d",
 	["Doors today: %d / %d"] = "Дверей сегодня: %d / %d",
 	-- daily contracts (Chapter2Config.Contracts.Pool; goal = the first number)
