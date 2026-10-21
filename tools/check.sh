@@ -27,8 +27,8 @@ mkdir -p "$WORK/empty_src" "$(dirname "$OUT")"
 "$LUNE" run tools/compare_places.luau "$BASE" "$OUT"
 
 # Every test file runs. The source place already fails 20 tests (docs/HALLOWEEN_PART2.md §13): a file may print at
-# most its known number of FAIL lines; anything more, or a file that exits with an error without FAIL lines (a crash),
-# fails the check (after the static analysis below).
+# most its known number of FAIL lines; anything more, a file without its summary line (it stopped early), or a file that
+# exits with an error without FAIL lines (a crash) fails the check (after the static analysis below).
 known_failures() {
 	case "$1" in
 	animations) echo 6 ;; dogdex) echo 2 ;; lab) echo 2 ;; mining_rules) echo 7 ;; uikit) echo 1 ;; upgrade_tree) echo 2 ;;
@@ -36,6 +36,8 @@ known_failures() {
 	esac
 }
 unexpected=""
+# tests that read a built place (baked dog assets, dig chains) read the one just built
+export DOGROTS_PLACE="$OUT"
 if [ -d tests ]; then
 	for t in tests/*.luau; do
 		echo "== $t"
@@ -44,7 +46,11 @@ if [ -d tests ]; then
 		# FAIL lines count whatever the exit status (a file may print failures and still exit 0)
 		n="$(grep -c '^FAIL ' "$WORK/test.log" || true)"
 		k="$(known_failures "$(basename "$t" .luau)")"
-		if [ "$n" -gt "$k" ] || { [ "$status" -ne 0 ] && [ "$n" -eq 0 ]; }; then
+		# every test file ends with "<name>: N passed, M failed"; without it the file stopped early (Lune exits 0
+		# when the main thread yields and nothing resumes it)
+		summary=1
+		grep -Eq ': [0-9]+ passed, [0-9]+ failed' "$WORK/test.log" || summary=0
+		if [ "$n" -gt "$k" ] || [ "$summary" -eq 0 ] || { [ "$status" -ne 0 ] && [ "$n" -eq 0 ]; }; then
 			unexpected="$unexpected $t"
 		elif [ "$n" -gt 0 ]; then
 			echo "(known failures of the source place: $n)"

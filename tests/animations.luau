@@ -31,8 +31,10 @@ local function check(cond, msg)
 	end
 end
 
--- The built place when check.sh just built it, else the base place (the clips are not rebuilt).
-local placePath = if fs.isFile("build/DOGROTS_HALLOWEEN_PART2_THE_UNDERYARD.rbxl") then "build/DOGROTS_HALLOWEEN_PART2_THE_UNDERYARD.rbxl" else "place/DOGROTS_HALLOWEEN_NIGHT_OF_THE_BURIED_MOON.rbxl"
+-- The place check.sh just built (DOGROTS_PLACE), else the built place in build/, else the base place (the clips are not
+-- rebuilt).
+local placePath = require("@lune/process").env.DOGROTS_PLACE
+	or if fs.isFile("build/DOGROTS_HALLOWEEN_PART2_THE_UNDERYARD.rbxl") then "build/DOGROTS_HALLOWEEN_PART2_THE_UNDERYARD.rbxl" else "place/DOGROTS_HALLOWEEN_NIGHT_OF_THE_BURIED_MOON.rbxl"
 local game = roblox.deserializePlace(fs.readFile(placePath))
 local library = game:GetService("ReplicatedStorage"):FindFirstChild("DogAnimationClips")
 local templates = game:GetService("ServerStorage"):FindFirstChild("DogTemplates")
