@@ -179,7 +179,8 @@ portrait / landscape / desktop.
 5. **Steps 5–9:** sell at the outlined Collector, buy any UPGRADE TREE node, open LAYERS (check the "Next:"
    line), buy a pickaxe at the outlined stall and hit the ore, buy IRON GRIP (OPEN STRENGTH).
 6. **Step 10:** walk to a Lucky Pad → toast "+1 FREE COMMON LUCKY BLOCK"; check the BAG has a Common block
-   (not paid). Repeat with 60 stored blocks (the temporary Script below) → the "storage is full" toast.
+   (not paid). For the full-storage case, Stop, enable the `AddStored` line of the temporary Script below (60 stored
+   Common blocks, the storage cap) and Play again: at the Lucky Pad → the "storage is full" toast, no block.
 7. **Steps 11–14:** walk to the Lab, open the DOGDEX, open TRADE, FINISH.
 8. **Skip:** on any task step wait 2 minutes → SKIP THIS STEP; at step 10 → CLAIM FREE BLOCK.
 9. **Robustness:** open a menu mid-focus (camera returns), reset the character mid-focus, press H (HIDE UI),
@@ -197,6 +198,8 @@ RT.Tx:Run({"p:" .. p1.UserId}, function(v)
 	local t = v["p:" .. p1.UserId].Onboarding
 	t.Status, t.Step, t.StepAt, t.FreeBlock, t.FreeBlockFull = "Active", 10, os.time(), nil, nil
 	-- full restart instead: t.Step = 0; t.Seen = {}; t.Skipped = {} (profile evidence is re-derived at once)
+	-- step 6, full storage: fill the block storage (stored blocks are no Lucky Pad evidence)
+	-- require(game.ServerScriptService.Economy.LuckyLifecycle).AddStored(v["p:" .. p1.UserId], "Common", 60, "Test", false)
 end)
 RT.Refresh(p1)
 ```

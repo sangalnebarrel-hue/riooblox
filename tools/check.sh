@@ -24,11 +24,31 @@ mkdir -p "$WORK/empty_src" "$(dirname "$OUT")"
 "$LUNE" run tools/place_build.luau "$BASE" src "$OUT" tools/edits
 "$LUNE" run tools/verify.luau "$OUT" src "$WORK/analyze"
 "$LUNE" run tools/verify_world.luau "$OUT"
+"$LUNE" run tools/compare_places.luau "$BASE" "$OUT"
 
+# Every test file runs. The source place already fails 20 tests (docs/HALLOWEEN_PART2.md §13): a file may fail
+# with at most its known number of failures; anything more, or a file that fails without FAIL lines (a crash), fails
+# the check (after the static analysis below).
+known_failures() {
+	case "$1" in
+	animations) echo 6 ;; dogdex) echo 2 ;; lab) echo 2 ;; mining_rules) echo 7 ;; uikit) echo 1 ;; upgrade_tree) echo 2 ;;
+	*) echo 0 ;;
+	esac
+}
+unexpected=""
 if [ -d tests ]; then
 	for t in tests/*.luau; do
 		echo "== $t"
-		"$LUNE" run "$t"
+		if "$LUNE" run "$t" >"$WORK/test.log" 2>&1; then status=0; else status=1; fi
+		cat "$WORK/test.log"
+		if [ "$status" -ne 0 ]; then
+			n="$(grep -c '^FAIL ' "$WORK/test.log" || true)"
+			if [ "$n" -gt 0 ] && [ "$n" -le "$(known_failures "$(basename "$t" .luau)")" ]; then
+				echo "(known failures of the source place: $n)"
+			else
+				unexpected="$unexpected $t"
+			fi
+		fi
 	done
 fi
 
@@ -37,3 +57,9 @@ if [ ! -f "$WORK/base_analyze/sourcemap.json" ]; then
 	"$LUNE" run tools/verify.luau "$BASE" "$WORK/empty_src" "$WORK/base_analyze" >/dev/null 2>&1 || true
 fi
 "$PYTHON" -I tools/analyze_diff.py "$LUAU_LSP" "$LUAU_DEFS" "$WORK/base_analyze" "$WORK/analyze" src
+
+if [ -n "$unexpected" ]; then
+	echo "FAILED test files:$unexpected"
+	exit 1
+fi
+echo "check.sh: build, verify, compare, tests and analysis done"

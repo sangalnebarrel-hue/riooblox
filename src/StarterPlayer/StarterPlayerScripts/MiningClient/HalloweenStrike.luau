@@ -741,6 +741,21 @@ function Strike.new(ctx)
   return{Part=part,HitPoints=points,Kind=part:GetAttribute('Kind'),Id=part:GetAttribute('TargetId'),Variant=part:GetAttribute('Variant'),
    Color=typeof(col)=='Color3'and col or C3(180,160,140),Material=okM and mat or Enum.Material.Slate}
  end
+ -- a cinematic owns the camera and the controls: a press under it is kept and starts the strike once the shot is over
+ -- (within 2 s), so the click / tap that skipped the shot is not lost
+ local function cinema()return ctx.Main~=nil and ctx.Main:GetAttribute('CinemaActive')==true end
+ local function afterShot(part)
+  local waiting=self.Deferred~=nil
+  self.Deferred={Part=part,Until=os.clock()+2}
+  if waiting then return end
+  local conn
+  conn=ctx.Main:GetAttributeChangedSignal('CinemaActive'):Connect(function()
+   if cinema()then return end
+   conn:Disconnect()
+   local d=self.Deferred;self.Deferred=nil
+   if d and os.clock()<=d.Until and not self.Active then self.Enter(d.Part)end
+  end)
+ end
  function self.Enter(part)
   if self.Active or not enabled()then return end
   if player:GetAttribute('HwDowned')==true then Hud.Toast(message('HW:DOWNED'),U.Colors.red);Audio.Play('Deny');return end -- [WP-B] downed: no strikes
@@ -748,8 +763,7 @@ function Strike.new(ctx)
   if ctx.Mine and ctx.Mine.Active then return end
   if ctx.MenuOpen()then Hud.Toast(L('Close the menu first','Сначала закрой меню'),U.Colors.gold);return end
   -- a cinematic owns the camera and the controls (like Mine.Enter: a session started under it would fight its teardown)
-  local function cinema()return ctx.Main and ctx.Main:GetAttribute('CinemaActive')==true end
-  if cinema()then return end
+  if cinema()then afterShot(part);return end
   if (player:GetAttribute('MiningPickaxe')or 0)<1 then needPickaxe();return end
   local token={};self.Token=token
   self.Active=true;self.Target=part;view=viewOf(part);lastActivity=os.clock();breakPlayed=false
@@ -761,6 +775,8 @@ function Strike.new(ctx)
     self.Active=false;self.Target=nil;self.Token=nil;view=nil;self.RefreshPrompts()
     if not ok then
      if res=='HW:NEED_PICKAXE'then needPickaxe()elseif res~='HW:GONE'then Hud.Toast(message(res),U.Colors.red);Audio.Play('Deny')end
+    elseif cinema()and part.Parent and not ctx.MenuOpen()then
+     afterShot(part) -- a cinematic began during the round trip: start again once it is over
     end
    end
    if ok and not self.Active then task.spawn(invoke,'StrikeEnd',{})end

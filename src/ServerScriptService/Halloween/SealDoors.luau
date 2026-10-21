@@ -44,6 +44,9 @@ local core: any = nil
 local modules: any = nil
 local ram: { [Player]: any } = {}
 local pending: { [Player]: any } = {} -- door fights waiting for Seals.Start (CanStart only accepts these)
+-- players whose PlayerRemoving ran: whatever still runs for them afterwards (another module's PlayerRemoving ending their
+-- door fight, a timer, a transaction that yielded) gets a throwaway state, so ram never keeps a departed player
+local departed: { [Player]: boolean } = setmetatable({} :: any, { __mode = "k" })
 local runsById: { [number]: any } = {}
 local slotsUsed: { [number]: number } = {} -- Doorkeeper slot -> run id
 local rng = Random.new()
@@ -88,7 +91,9 @@ local function stateOf(player: Player): any
 	local st = ram[player]
 	if not st then
 		st = { LastAction = -1e9, Busy = false, Near = false, Synced = false }
-		ram[player] = st
+		if not departed[player] then
+			ram[player] = st
+		end
 	end
 	return st
 end
@@ -1137,6 +1142,7 @@ function D.Start(c: any, m: any)
 		end)
 	end
 	Players.PlayerRemoving:Connect(function(player)
+		departed[player] = true
 		-- a hidden-room visit cut short by a disconnect still announces a HOLLOW KING left in a closed chest
 		local st = ram[player]
 		local visit = st and st.Rare

@@ -1141,6 +1141,29 @@ test("doors: a HOLLOW KING left in a closed chest is announced once, also when i
 	runDelays()
 	eq(kingAnnounces(), 1, "only once")
 	eq(Doors.HasState(b), false, "no state left for the departed player")
+	-- a door fight cut short by a disconnect: whatever order the PlayerRemoving handlers run in (Roblox does not fix it),
+	-- the run Seals ends after SealDoors dropped the player leaves no state behind
+	for _, reverse in ipairs({ false, true }) do
+		local c = newPlayer(reverse and 534 or 533, 4)
+		U(c).Seals["5"].Offered = true
+		handlers.C2Hello(c, {})
+		setDeal(c, { "Challenge", "Challenge", "Challenge", "Challenge" })
+		local ok, out = open(c, 1)
+		truthy(ok and out == "Challenge", tostring(out))
+		local run = SealsMod.RunOf(c)
+		truthy(run and run.State == "Running", "the door fight runs")
+		local from, to, step = 1, #removing, 1
+		if reverse then
+			from, to, step = #removing, 1, -1
+		end
+		for i = from, to, step do
+			removing[i](c)
+		end
+		c.Parent = nil
+		eq(run.State, "Failed", "the fight ends with its opener")
+		eq(Doors.HasState(c), false, "no state left after the fight ended (reverse = " .. tostring(reverse) .. ")")
+		UY.Dist[c] = "BellSquare"
+	end
 end)
 
 -- a Chapter II player who may play seal `seal` (previous cleared + offered), near its start
