@@ -1,0 +1,444 @@
+{
+  "created": [
+    "ReplicatedStorage/AudioMixer (ModuleScript)",
+    "ReplicatedStorage/TutorialConfig (ModuleScript)",
+    "ReplicatedStorage/Decor/DecorIdle (ModuleScript)",
+    "ReplicatedStorage/DogEconomy/LuckyDustConfig (ModuleScript)",
+    "ReplicatedStorage/DogEconomy/ShelterConfig (ModuleScript)",
+    "ReplicatedStorage/Halloween/BossMath (ModuleScript)",
+    "ReplicatedStorage/Halloween/BossPatterns (ModuleScript)",
+    "ReplicatedStorage/Halloween/CalendarRules (ModuleScript)",
+    "ReplicatedStorage/Halloween/Chapter1Rules (ModuleScript)",
+    "ReplicatedStorage/Halloween/Chapter2Config (ModuleScript)",
+    "ReplicatedStorage/Halloween/Chapter2Rules (ModuleScript)",
+    "ReplicatedStorage/Halloween/CoffinConfig (ModuleScript)",
+    "ReplicatedStorage/Halloween/CombatRules (ModuleScript)",
+    "ReplicatedStorage/Halloween/DropRates (ModuleScript)",
+    "ReplicatedStorage/Halloween/DustRules (ModuleScript)",
+    "ReplicatedStorage/Halloween/HalloweenCalendarConfig (ModuleScript)",
+    "ReplicatedStorage/Halloween/Hazards (ModuleScript)",
+    "ReplicatedStorage/Halloween/PickaxeSkins2 (ModuleScript)",
+    "ReplicatedStorage/Halloween/RevealRules (ModuleScript)",
+    "ReplicatedStorage/Halloween/SealConfig (ModuleScript)",
+    "ReplicatedStorage/Halloween/SealRules (ModuleScript)",
+    "ReplicatedStorage/Halloween/Seals1View (ModuleScript)",
+    "ReplicatedStorage/Halloween/Seals2Config (ModuleScript)",
+    "ReplicatedStorage/Halloween/Seals2Rules (ModuleScript)",
+    "ReplicatedStorage/Halloween/Seals2View (ModuleScript)",
+    "ReplicatedStorage/Halloween/UnderyardIcons (ModuleScript)",
+    "ReplicatedStorage/Halloween/UnderyardLayout (ModuleScript)",
+    "ReplicatedStorage/Halloween/UnderyardRuntime (ModuleScript)",
+    "ReplicatedStorage/Halloween/UnderyardView (ModuleScript)",
+    "ReplicatedStorage/Localization/Boss (ModuleScript)",
+    "ReplicatedStorage/Localization/Chapter1Balance (ModuleScript)",
+    "ReplicatedStorage/Localization/Coffin (ModuleScript)",
+    "ReplicatedStorage/Localization/Combat (ModuleScript)",
+    "ReplicatedStorage/Localization/HalloweenDogs2 (ModuleScript)",
+    "ReplicatedStorage/Localization/LuckyDust (ModuleScript)",
+    "ReplicatedStorage/Localization/PickaxeSkins2 (ModuleScript)",
+    "ReplicatedStorage/Localization/Reveal (ModuleScript)",
+    "ReplicatedStorage/Localization/Seals1 (ModuleScript)",
+    "ReplicatedStorage/Localization/Seals2 (ModuleScript)",
+    "ReplicatedStorage/Localization/Shelter (ModuleScript)",
+    "ReplicatedStorage/Localization/Tutorial (ModuleScript)",
+    "ReplicatedStorage/Localization/Underyard (ModuleScript)",
+    "ReplicatedStorage/Localization/UnderyardCarnivalRow (ModuleScript)",
+    "ReplicatedStorage/Localization/UnderyardFX (ModuleScript)",
+    "ReplicatedStorage/Localization/UnderyardItems (ModuleScript)",
+    "ReplicatedStorage/Localization/UnderyardUI (ModuleScript)",
+    "ReplicatedStorage/Navigation/Live (ModuleScript)",
+    "ServerScriptService/Halloween/AfterEvent (ModuleScript)",
+    "ServerScriptService/Halloween/BossFinale (ModuleScript)",
+    "ServerScriptService/Halloween/Calendar (ModuleScript)",
+    "ServerScriptService/Halloween/Chapter2 (ModuleScript)",
+    "ServerScriptService/Halloween/Chapter2Tutorial (ModuleScript)",
+    "ServerScriptService/Halloween/Coffin (ModuleScript)",
+    "ServerScriptService/Halloween/EventHP (ModuleScript)",
+    "ServerScriptService/Halloween/Resonance (ModuleScript)",
+    "ServerScriptService/Halloween/SealBell (ModuleScript)",
+    "ServerScriptService/Halloween/SealChoir (ModuleScript)",
+    "ServerScriptService/Halloween/SealDoors (ModuleScript)",
+    "ServerScriptService/Halloween/SealEcho (ModuleScript)",
+    "ServerScriptService/Halloween/SealMine (ModuleScript)",
+    "ServerScriptService/Halloween/SealMirror (ModuleScript)",
+    "ServerScriptService/Halloween/SealRun (ModuleScript)",
+    "ServerScriptService/Halloween/Seals (ModuleScript)",
+    "ServerScriptService/Halloween/Underyard (ModuleScript)",
+    "ServerStorage/HalloweenBuild/Church (ModuleScript)",
+    "ServerStorage/HalloweenCalendarBuild (Folder)",
+    "ServerStorage/HalloweenCalendarBuild/CalendarKit (ModuleScript)",
+    "ServerStorage/HalloweenCalendarBuild/Stage01 (ModuleScript)",
+    "ServerStorage/HalloweenCalendarBuild/Stage02 (ModuleScript)",
+    "ServerStorage/HalloweenCalendarBuild/Stage03 (ModuleScript)",
+    "ServerStorage/HalloweenCalendarBuild/Stage04 (ModuleScript)",
+    "ServerStorage/HalloweenCalendarBuild/Stage05 (ModuleScript)",
+    "ServerStorage/HalloweenCalendarBuild/Stage06 (ModuleScript)",
+    "ServerStorage/HalloweenCalendarBuild/Stage07 (ModuleScript)",
+    "ServerStorage/HalloweenCalendarBuild/Stage08 (ModuleScript)",
+    "ServerStorage/UnderyardBuild (Folder)",
+    "ServerStorage/UnderyardBuild/BellSquare (ModuleScript)",
+    "ServerStorage/UnderyardBuild/BlackBellArena (ModuleScript)",
+    "ServerStorage/UnderyardBuild/BlackCoffin (ModuleScript)",
+    "ServerStorage/UnderyardBuild/CrookedRow (ModuleScript)",
+    "ServerStorage/UnderyardBuild/FXMarkers (ModuleScript)",
+    "ServerStorage/UnderyardBuild/FuneralCarnival (ModuleScript)",
+    "ServerStorage/UnderyardBuild/Gates (ModuleScript)",
+    "ServerStorage/UnderyardBuild/GothicProps (ModuleScript)",
+    "ServerStorage/UnderyardBuild/Ground (ModuleScript)",
+    "ServerStorage/UnderyardBuild/MourningMarsh (ModuleScript)",
+    "ServerStorage/UnderyardBuild/Roads (ModuleScript)",
+    "ServerStorage/UnderyardBuild/Sky (ModuleScript)",
+    "ServerStorage/UnderyardBuild/UKit (ModuleScript)",
+    "ServerStorage/UnderyardBuild/Undercrypt (ModuleScript)",
+    "ReplicatedStorage/DogEconomy/ItemModels/Underyard (ModuleScript)",
+    "ReplicatedStorage/Halloween/Models/EventDogs2 (ModuleScript)",
+    "ReplicatedStorage/Halloween/Models/Finale (ModuleScript)",
+    "ReplicatedStorage/Halloween/Models/Mourner (ModuleScript)",
+    "ReplicatedStorage/Halloween/Models/Seals1 (ModuleScript)",
+    "ReplicatedStorage/Halloween/Models/Seals2 (ModuleScript)",
+    "ServerScriptService/Economy/Features/LuckyDust (ModuleScript)",
+    "ServerScriptService/Economy/Features/Underyard (ModuleScript)",
+    "StarterGui/ScreenGui/Modules/ShelterScreen (ModuleScript)",
+    "StarterGui/ScreenGui/Modules/TutorialDirector (ModuleScript)",
+    "StarterGui/ScreenGui/Modules/UnderyardScreen (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/CalendarFX (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/Chapter2Guide (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/Chapter2State (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/Cinema (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/CoffinFX (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/CombatFX (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/CombatHUD (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/FinaleFX (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/Reveal (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/Trials (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/UnderyardFX (ModuleScript)",
+    "StarterGui/ScreenGui/Modules/ShelterScreen/ShelterModel (ModuleScript)",
+    "StarterGui/ScreenGui/Modules/UnderyardScreen/Waypoint (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/HUD/Chapter2 (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/Trials/Assault (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/Trials/Bell (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/Trials/Choir (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/Trials/Doors (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/Trials/Echo (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/Trials/Mine (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/Trials/Mirror (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/Trials/Mourner (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/Trials/Resonance (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/Trials/Run (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/Trials/Toll (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/SecretArrivals/Dogs/HW_HollowKing (ModuleScript)",
+    "StarterPlayer/StarterPlayerScripts/SecretArrivals/Mega/HW_HollowKing (ModuleScript)"
+  ],
+  "edits": {
+    "05_audio.luau": {
+      "Created": 15,
+      "Moved": 0,
+      "NewGroups": [
+        "Ambience",
+        "UI",
+        "Pickaxe",
+        "Boss",
+        "SFX",
+        "Cinema",
+        "DOGROTS_MiningSFX",
+        "Halloween"
+      ],
+      "Tree": [
+        "DOGROTS_AUDIO.Ambience 0.80",
+        "DOGROTS_AUDIO.Music 0.70 > Halloween",
+        "DOGROTS_AUDIO.UI 1.00",
+        "DOGROTS_AUDIO.WorldEvents 0.70",
+        "DOGROTS_SFX.Boss 1.00 comp(-14 dB, 3:1, +2)",
+        "DOGROTS_SFX.Cinema 1.00 comp(-12 dB, 3:1, +0)",
+        "DOGROTS_SFX.Pickaxe 1.00 comp(-10 dB, 4:1, +0) > DOGROTS_MiningSFX",
+        "DOGROTS_SFX.SFX 1.00 comp(-16 dB, 3:1, +2)"
+      ]
+    },
+    "30_dogs2.luau": {
+      "Clips": 104,
+      "Dogs": [
+        "H09 HW_BellPup: 170 parts, 2 FX hooks, 13 clips (signature BellJingle)",
+        "H10 HW_CandleCorgi: 241 parts, 2 FX hooks, 13 clips (signature CandleSploot)",
+        "H11 HW_MourningShiba: 209 parts, 2 FX hooks, 13 clips (signature Lament)",
+        "H12 HW_CoffinPug: 204 parts, 1 FX hooks, 13 clips (signature CoffinPeek)",
+        "H13 HW_MothHound: 235 parts, 3 FX hooks, 13 clips (signature Flutter)",
+        "H14 HW_Bridehound: 308 parts, 2 FX hooks, 13 clips (signature Waltz)",
+        "H15 HW_BellkeeperWolf: 244 parts, 2 FX hooks, 13 clips (signature ResonantHowl)",
+        "H16 HW_HollowKing: 294 parts, 4 FX hooks, 13 clips (signature Coronation)"
+      ],
+      "Parts": 1905
+    },
+    "38_church.luau": {
+      "AnchorCreated": true,
+      "Ground": 87,
+      "Hidden": 27,
+      "Lights": 3,
+      "Notes": [
+        "Church: 547 parts, 3 lights, 27 originals hidden"
+      ],
+      "Parts": 547
+    },
+    "40_underyard.luau": {
+      "Anchors": 119,
+      "Builders": [
+        {
+          "Made": [
+            "Ground 1953p 0l"
+          ],
+          "Name": "Ground",
+          "Notes": [
+            "Ground: 1953 parts (island 240, bridges 118, districts 418, abyss 364, wall 695, colliders 118)"
+          ]
+        },
+        {
+          "Made": [
+            "Sky 974p 0l"
+          ],
+          "Name": "Sky",
+          "Notes": [
+            "Sky: 974 parts (ring 688), pale moon 177.74919, 252.76231, 2684.4583, black moon -148.21288, 304.90268, 2619.7346"
+          ]
+        },
+        {
+          "Made": [
+            "Roads 1650p 22l"
+          ],
+          "Name": "Roads",
+          "Notes": [
+            "Roads: 1650 parts, 22 lamps (lights), approach 141 studs, crest y 7"
+          ]
+        },
+        {
+          "Made": [
+            "BellSquare 3454p 28l"
+          ],
+          "Name": "BellSquare",
+          "Notes": [
+            "BellSquare: 3454 parts, 28 lights (tower 1153 parts, top y 100.7, bell clearance 3.19), 10 lamps, 9 benches, 14 graves"
+          ]
+        },
+        {
+          "Made": [
+            "BlackCoffin 457p 3l"
+          ],
+          "Name": "BlackCoffin",
+          "Notes": [
+            "BlackCoffin: seated on the shrine's CoffinSeat",
+            "BlackCoffin: 457 parts, 46 chain links, 42 rune bars"
+          ]
+        },
+        {
+          "Made": [
+            "Gates 1020p 5l"
+          ],
+          "Name": "Gates",
+          "Notes": [
+            "Gates: 1020 parts, 5 gates, 5 lights"
+          ]
+        },
+        {
+          "Made": [
+            "FuneralCarnival 3363p 22l"
+          ],
+          "Name": "FuneralCarnival",
+          "Notes": [
+            "FuneralCarnival: 3363 parts, 22 lights (budget 3500 / 35)"
+          ]
+        },
+        {
+          "Made": [
+            "CrookedRow 3069p 23l"
+          ],
+          "Name": "CrookedRow",
+          "Notes": [
+            "CrookedRow: 3069 parts, 23 lights (budget 3500 / 35)"
+          ]
+        },
+        {
+          "Made": [
+            "MourningMarsh 2809p 20l"
+          ],
+          "Name": "MourningMarsh",
+          "Notes": [
+            "MourningMarsh: 2809 parts, 20 lights, 13 emitters (budget 3000 / 30)"
+          ]
+        },
+        {
+          "Made": [
+            "Undercrypt 2464p 23l"
+          ],
+          "Name": "Undercrypt",
+          "Notes": [
+            "Undercrypt: 2464 parts, 23 lights, 11 emitters (budget 3200 / 30)"
+          ]
+        },
+        {
+          "Made": [
+            "BlackBellArena 1870p 15l"
+          ],
+          "Name": "BlackBellArena",
+          "Notes": [
+            "BlackBellArena: 1870 parts, 15 lights, 12 emitters (budget 3000 / 30); bell crown at 0, 69.8, 2625"
+          ]
+        },
+        {
+          "Made": [
+            "FXMarkers 4p 0l"
+          ],
+          "Name": "FXMarkers",
+          "Notes": [
+            "FXMarkers: MothSwarm 15, FogPoint 33, WispPath 46, GhostResident 15"
+          ]
+        }
+      ],
+      "Lights": 161,
+      "Parts": 23206
+    },
+    "41_calendar.luau": {
+      "Lights": 30,
+      "Parts": 6139,
+      "Site": {
+        "Blocked": 38302,
+        "Doors": 393,
+        "FreeCells": 7522,
+        "Grass": 121,
+        "Prompts": 25,
+        "Seconds": 3.4
+      },
+      "Stages": [
+        {
+          "Lights": 0,
+          "Name": "Stage01",
+          "Notes": [
+            "patches 34, trees 4, thorns 4, mushrooms 3"
+          ],
+          "Parts": 597
+        },
+        {
+          "Lights": 3,
+          "Name": "Stage02",
+          "Notes": [
+            "patches 34, face trees 3, trees 3, pumpkins 5, thorns 3"
+          ],
+          "Parts": 934
+        },
+        {
+          "Lights": 5,
+          "Name": "Stage03",
+          "Notes": [
+            "patches 32, candle stumps 7, roost trees 3, graves 3"
+          ],
+          "Parts": 606
+        },
+        {
+          "Lights": 0,
+          "Name": "Stage04",
+          "Notes": [
+            "face trees 4, sky island trees 15, patches 30, thorns 3"
+          ],
+          "Parts": 926
+        },
+        {
+          "Lights": 4,
+          "Name": "Stage05",
+          "Notes": [
+            "lantern trees 2, ghost markers 10, graves 3, pumpkins 3, patches 30"
+          ],
+          "Parts": 575
+        },
+        {
+          "Lights": 2,
+          "Name": "Stage06",
+          "Notes": [
+            "root systems 10 (+4 loose), ancient trees 3, pumpkins 6, patches 26"
+          ],
+          "Parts": 714
+        },
+        {
+          "Lights": 4,
+          "Name": "Stage07",
+          "Notes": [
+            "sky trees 15, face trees 2, trees 2, roosts 2, candles 6, runes 3, patches 12"
+          ],
+          "Parts": 953
+        },
+        {
+          "Lights": 12,
+          "Name": "Stage08",
+          "Notes": [
+            "pumpkin patch (-60, 724), hollow oak (-153, 207), ghost dog ring (48, 252), witches' ring (161, 213), signs 2; pumpkins 5, ghost markers 4, patches 5"
+          ],
+          "Parts": 834
+        }
+      ]
+    }
+  },
+  "modified": [
+    "ReplicatedStorage/MapRouting",
+    "ReplicatedStorage/SecretArrivalConfig",
+    "ServerScriptService/CommunityServices",
+    "ReplicatedStorage/Decor/DecorModels",
+    "ReplicatedStorage/DogEconomy/DecorCatalog",
+    "ReplicatedStorage/DogEconomy/DogDefinitions",
+    "ReplicatedStorage/DogEconomy/ItemDefinitions",
+    "ReplicatedStorage/DogEconomy/Resources",
+    "ReplicatedStorage/DogEconomy/TitleDefinitions",
+    "ReplicatedStorage/Halloween/Audio",
+    "ReplicatedStorage/Halloween/Config",
+    "ReplicatedStorage/Halloween/Icons",
+    "ReplicatedStorage/Halloween/Music",
+    "ReplicatedStorage/Halloween/PickaxeSkins",
+    "ReplicatedStorage/Halloween/Shared",
+    "ReplicatedStorage/Localization/Halloween",
+    "ReplicatedStorage/Mining/MiningAudio",
+    "ReplicatedStorage/Navigation/Destinations",
+    "ReplicatedStorage/Navigation/PathGuide",
+    "ReplicatedStorage/Navigation/RouteGraph",
+    "ServerScriptService/Economy/EventBlocks",
+    "ServerScriptService/Economy/HalloweenHooks",
+    "ServerScriptService/Economy/OnboardingRules",
+    "ServerScriptService/Economy/OnboardingService",
+    "ServerScriptService/Economy/Runtime",
+    "ServerScriptService/Economy/ShelterRules",
+    "ServerScriptService/Economy/ShelterService",
+    "ServerScriptService/Halloween/Actions",
+    "ServerScriptService/Halloween/Boss",
+    "ServerScriptService/Halloween/Core",
+    "ServerScriptService/Halloween/Debug",
+    "ServerScriptService/Halloween/Exorcism",
+    "ServerScriptService/Halloween/HalloweenServer",
+    "ServerScriptService/Halloween/Strike",
+    "ServerScriptService/Halloween/World",
+    "StarterPlayer/StarterPlayerScripts/CommunityClient",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient",
+    "StarterPlayer/StarterPlayerScripts/PlotCosmetics",
+    "StarterPlayer/StarterPlayerScripts/WorldAmbience",
+    "ReplicatedStorage/DogEconomy/BonusSources/BuriedMoon",
+    "ReplicatedStorage/Halloween/Models/Boss",
+    "ServerScriptService/Economy/Features/Halloween",
+    "StarterGui/ScreenGui/Modules/DecorScreen",
+    "StarterGui/ScreenGui/Modules/DiscoveryScreens",
+    "StarterGui/ScreenGui/Modules/DogInfo",
+    "StarterGui/ScreenGui/Modules/DogdexScreen",
+    "StarterGui/ScreenGui/Modules/EconomyScreens",
+    "StarterGui/ScreenGui/Modules/GUIIntegration",
+    "StarterGui/ScreenGui/Modules/HalloweenScreen",
+    "StarterGui/ScreenGui/Modules/InventoryScreen",
+    "StarterGui/ScreenGui/Modules/OnboardingGuide",
+    "StarterGui/ScreenGui/Modules/UITheme",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/BossFX",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/HUD",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/Lighting",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/MainMapLayer",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/Onboarding",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/ParticleGovernor",
+    "StarterPlayer/StarterPlayerScripts/HalloweenClient/Soundscape",
+    "StarterPlayer/StarterPlayerScripts/MiningClient/HalloweenStrike",
+    "StarterPlayer/StarterPlayerScripts/MiningClient/Mine",
+    "StarterPlayer/StarterPlayerScripts/MiningClient/Shop",
+    "StarterPlayer/StarterPlayerScripts/SecretArrivals/Kit",
+    "StarterPlayer/StarterPlayerScripts/SecretArrivals/Mega",
+    "StarterGui/ScreenGui/Modules/Kit/Nav",
+    "StarterGui/ScreenGui/Modules/Kit/Sound"
+  ]
+}
